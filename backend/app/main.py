@@ -1,9 +1,13 @@
 import secrets
+import hashlib
+import hmac
+from collections import defaultdict, deque
+from time import time
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from typing import Literal
 from uuid import UUID
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from .config import settings
@@ -17,7 +21,7 @@ _origins = [item.strip() for item in settings.cors_allowed_origins.split(",") if
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_origins,
-    allow_credentials=False,
+    allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
@@ -26,10 +30,28 @@ app.add_middleware(
 def startup():
     open_pool()
 
-def require_owner(authorization: str | None = Header(default=None)):
+def _valid_session(value: str | None) -> bool:
+    if not value or not settings.session_secret:
+        return False
+    try:
+        timestamp_text, supplied = value.split(".", 1)
+        timestamp = int(timestamp_text)
+    except (ValueError, TypeError):
+        return False
+    now = int(time())
+    if timestamp > now + 60 or now - timestamp > settings.session_ttl_seconds:
+        return False
+    expected = hmac.new(settings.session_secret.encode(), f"v1:{timestamp}".encode(), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(supplied, expected)
+
+def require_owner(request: Request, authorization: str | None = Header(default=None)):
     expected = f"Bearer {settings.sylus_owner_token}"
-    if not authorization or not secrets.compare_digest(authorization, expected):
-        raise HTTPException(status_code=401, detail="Owner access required")
+    bearer_ok = bool(authorization and secrets.compare_digest(authorization, expected))
+    if not bearer_ok and not _valid_session(request.cookies.get("sylus_session")):
+        raise HTTPException(status_code=401, detail="Owner session required")
+
+class OwnerLogin(BaseModel):
+    password: str = Field(min_length=1, max_length=256)
 
 class MessageIn(BaseModel):
     text: str = Field(min_length=1, max_length=12000)
@@ -55,6 +77,36 @@ class MemoryUpdate(BaseModel):
     content: str | None = Field(default=None, min_length=1, max_length=4000)
     confidence: float | None = Field(default=None, ge=0, le=1)
     sensitivity: Literal["normal", "sensitive"] | None = None
+
+_login_attempts: dict[str, deque[float]] = defaultdict(deque)
+
+@app.post("/v1/session")
+def create_owner_session(payload: OwnerLogin, request: Request, response: Response):
+    if not settings.sylus_owner_password or not settings.session_secret:
+        raise HTTPException(status_code=503, detail="Owner session login is not configured on the server.")
+    client_ip = request.client.host if request.client else "unknown"
+    attempts = _login_attempts[client_ip]
+    now = time()
+    while attempts and now - attempts[0] > 900:
+        attempts.popleft()
+    if len(attempts) >= 5:
+        raise HTTPException(status_code=429, detail="Too many login attempts. Wait 15 minutes and try again.")
+    if not secrets.compare_digest(payload.password, settings.sylus_owner_password):
+        attempts.append(now)
+        raise HTTPException(status_code=401, detail="Owner password was not accepted.")
+    attempts.clear()
+    issued = int(now)
+    signature = hmac.new(settings.session_secret.encode(), f"v1:{issued}".encode(), hashlib.sha256).hexdigest()
+    response.set_cookie(
+        key="sylus_session", value=f"{issued}.{signature}", max_age=settings.session_ttl_seconds,
+        httponly=True, secure=settings.app_env.lower() == "production", samesite="lax", path="/",
+    )
+    return {"authenticated": True, "expires_in": settings.session_ttl_seconds}
+
+@app.delete("/v1/session")
+def delete_owner_session(response: Response):
+    response.delete_cookie(key="sylus_session", path="/", httponly=True, secure=settings.app_env.lower() == "production", samesite="lax")
+    return {"authenticated": False}
 
 @app.get("/health")
 def health():
