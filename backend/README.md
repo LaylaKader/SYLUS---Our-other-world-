@@ -32,7 +32,7 @@ Groq's current documentation says inference requests are not retained by default
 
 - Memory retrieval is basic lexical matching, not semantic/vector retrieval.
 - Automatic memory extraction is intentionally disabled until inspect/edit/delete controls are complete.
-- Emotion state currently starts from defaults per request; persistent emotion-state loading/saving is not yet wired.
+- Emotion state is loaded from and saved to the database on each successful reply. Current event detection is intentionally conservative keyword matching; it needs broader evaluation and owner controls.
 - Conversation rows are stored with a null conversation_id; multi-thread management is not yet implemented.
 - Message pagination, idempotent retry keys, provider timeout/retry policy, structured error telemetry, and secure session provisioning remain.
 - Image generation/storage, voice, proactive scheduler/push/calls, lore sync, and Android native packaging are not connected.
