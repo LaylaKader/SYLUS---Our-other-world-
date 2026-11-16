@@ -2,6 +2,7 @@ import secrets
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from typing import Literal
+from uuid import UUID
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -163,7 +164,7 @@ def create_memory(payload: MemoryCreate, _: None = Depends(require_owner)):
     return {"id": str(row[0]), "category": row[1], "content": row[2], "confidence": float(row[3]), "source": row[4], "sensitivity": row[5], "created_at": row[6], "updated_at": row[7]}
 
 @app.patch("/v1/memories/{memory_id}")
-def update_memory(memory_id: str, payload: MemoryUpdate, _: None = Depends(require_owner)):
+def update_memory(memory_id: UUID, payload: MemoryUpdate, _: None = Depends(require_owner)):
     changes = payload.model_dump(exclude_unset=True)
     if not changes:
         raise HTTPException(status_code=400, detail="No memory changes supplied.")
@@ -180,7 +181,7 @@ def update_memory(memory_id: str, payload: MemoryUpdate, _: None = Depends(requi
     return {"id": str(row[0]), "category": row[1], "content": row[2], "confidence": float(row[3]), "source": row[4], "sensitivity": row[5], "created_at": row[6], "updated_at": row[7]}
 
 @app.delete("/v1/memories/{memory_id}")
-def delete_memory(memory_id: str, _: None = Depends(require_owner)):
+def delete_memory(memory_id: UUID, _: None = Depends(require_owner)):
     with connection() as conn:
         row = conn.execute("DELETE FROM memories WHERE id = %s RETURNING id", (memory_id,)).fetchone()
     if not row:
