@@ -4,7 +4,7 @@
 The interface uses a near-black/charcoal base, muted ruby and burgundy, violet/lavender, champagne-gold details, subtle stars, and restrained crow/rose-inspired ornament. It uses a serif display face with a clean sans-serif UI font. The layout is responsive, with a mobile slide-out navigation and separate Chat, Bond, Memories, Gallery, and Settings views. Decorative details stay behind the conversation area.
 
 ## Implemented in source
-- React + Vite responsive PWA shell with manifest and SVG app icon.
+- React + Vite responsive PWA shell with manifest, SVG app icon, and a service worker that caches only the app shell/static assets; private API responses are never cached.
 - Offline visual preview does not fabricate a chat transcript.
 - Private owner sign-in uses a server-signed HttpOnly session cookie; password is not stored in browser storage.
 - Private API session, message history, and memory endpoints are connected in the UI.
@@ -16,7 +16,7 @@ The interface uses a near-black/charcoal base, muted ruby and burgundy, violet/l
 - Owner sessions use unique signed tokens registered server-side; logout revokes the session record.
 - Database migrations run automatically at backend startup and are tracked in `schema_migrations`.
 - Docker Compose runs frontend, private API, and PostgreSQL. Only the Nginx frontend port is published; API and database stay on the private Compose network. Nginx applies separate rate limits to owner login, chat, and general API routes.
-- GitHub Actions checks frontend build, backend tests, Docker Compose configuration, and container builds.
+- GitHub Actions checks frontend build, backend tests, Docker Compose configuration, container builds, migrations, owner login/logout, protected API access, and memory CRUD.
 
 ## Not implemented yet
 - Automatic memory extraction with an owner review/approval queue (intentionally disabled until that workflow exists).
