@@ -24,7 +24,7 @@ A private, single-owner Android companion with a fast text-chat experience first
 5. Retrieve only relevant memories for each response. Store provenance, timestamps, confidence, and supersession links so outdated or uncertain memories are not treated as facts.
 6. Keep model/provider integrations behind interfaces. No automatic paid fallback; if a configured free/local provider is unavailable or quota-limited, explain the failure rather than silently charging.
 7. Keep voice, proactive messaging/calling, media, Together features, and the future 3D avatar as independent modules.
-8. The 3D avatar must be a replaceable adapter (for example GLB/VRM renderer interface), so adding a model later does not require rewriting chat or memory.
+8. The 3D avatar must be a replaceable adapter (for example GLB/VRM renderer interface), so adding a model later does not require rewriting chat or memory.\n9. Give Sylus a persistent, inspectable artificial-emotion state that shapes expression in a restrained, character-consistent way; emotion never overrides user boundaries or contact permissions.\n10. Keep official canon, secondary wiki reference, community discussion/speculation, and private shared-story continuity in separate knowledge namespaces. Every retrieved lore/update fact needs source provenance and freshness.
 
 ## Build order and acceptance checks
 
@@ -40,18 +40,18 @@ A private, single-owner Android companion with a fast text-chat experience first
 - Add explicit memory extraction, deduplication, conflict handling, relevance retrieval, and user review/edit/delete.
 - Acceptance: test a detail saved in one conversation, retrieve it naturally in a later conversation, update a changed detail, and confirm unrelated memories are not injected.
 
-### Phase C — voice
+### Phase C — emotional continuity and live knowledge\n- Persist the artificial-emotion state and event history; connect the state to the agent prompt and later voice prosody.\n- Add a source-aware lore retrieval service and scheduled updater for official Love and Deepspace news/social announcements. Track main-story branches, Sylus cards, reruns, event dates, and version notices.\n- Use wiki sources as secondary references and Reddit as community discussion only; label speculation and never silently promote it to canon.\n- Acceptance: verify an official announcement updates the knowledge base with source URL and timestamp; verify a Reddit theory remains community/speculation; verify a character mood carries across app restarts without becoming manipulative.\n\n### Phase D — voice
 - Add speech input/output behind replaceable provider interfaces.
 - Test microphone permission, interruption, turn-taking, latency, voice quality, and fallback behavior.
 - No voice cloning or use of protected voice recordings without authorization.
 
-### Phase D — proactive contact and calls
+### Phase E — proactive contact and calls
 - Run a scheduled/background service independent of the browser tab.
 - Parse natural-language contact restrictions using Asia/Dhaka time. Restrictions override autonomous contact for their full duration. Ask by message before resuming calls when permitted; if messaging is also restricted, remain silent.
 - Require Android notification/call permissions and test battery/background limits on real devices.
 - Acceptance: verify allowed contact, blocked contact, expiry, explicit permission to resume, and app force-stop behavior.
 
-### Phase E — later modules
+### Phase F — later modules
 - Add screen sharing/Together activities after chat and calls are reliable.
 - Add a 3D avatar through the replaceable renderer interface. Do not block the chat release on finding a model.
 
