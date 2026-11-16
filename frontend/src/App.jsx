@@ -56,11 +56,14 @@ function App() {
     setSending(true);
     setDraft('');
     try {
-      const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/messages`, { method: 'POST', headers, body: JSON.stringify({ text }) });
-      if (!response.ok) throw new Error('Message could not be saved.');
-      const saved = await response.json();
-      setMessages(current => [...current, saved]);
-      setNotice('Message saved · reply generation is not connected yet');
+      const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/chat`, { method: 'POST', headers, body: JSON.stringify({ text }) });
+      if (!response.ok) {
+        const failure = await response.json().catch(() => ({}));
+        throw new Error(failure.detail || 'Message could not be sent.');
+      }
+      const turn = await response.json();
+      setMessages(current => [...current, turn.user_message, turn.assistant_message]);
+      setNotice('Private conversation saved');
     } catch (error) { setDraft(text); setNotice(error.message); }
     finally { setSending(false); }
   }
