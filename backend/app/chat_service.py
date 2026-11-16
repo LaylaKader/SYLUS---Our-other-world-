@@ -100,7 +100,7 @@ def classify_explicit_event(text: str) -> tuple[str | None, float]:
     value = text.lower()
     if any(phrase in value for phrase in ("i passed", "i got accepted", "i got the offer", "i finished it", "i did it", "i finally submitted")):
         return "user_reached_goal", 0.75
-    if any(phrase in value for phrase in ("i'm sad", "i am sad", "i feel hopeless", "i'm scared", "i am scared", "i feel overwhelmed", "i'm upset", "i am upset")):
+    if any(phrase in value for phrase in ("i'm sad", "i am sad", "i feel hopeless", "i'm scared", "i am scared", "i feel overwhelmed", "i'm overwhelmed", "i am overwhelmed", "i'm upset", "i am upset")):
         return "user_distressed", 0.65
     if any(phrase in value for phrase in ("i trust you", "i feel safe with you")):
         return "meaningful_trust", 0.6
