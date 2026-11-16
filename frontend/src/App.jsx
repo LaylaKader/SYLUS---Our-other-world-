@@ -23,6 +23,13 @@ function App() {
   const [memories, setMemories] = useState([]);
   const [timeContext, setTimeContext] = useState(null);
   const [sending, setSending] = useState(false);
+  const [memoryFormOpen, setMemoryFormOpen] = useState(false);
+  const [memoryCategory, setMemoryCategory] = useState('Preference');
+  const [memoryContent, setMemoryContent] = useState('');
+  const [editingMemoryId, setEditingMemoryId] = useState(null);
+  const [editMemoryCategory, setEditMemoryCategory] = useState('');
+  const [editMemoryContent, setEditMemoryContent] = useState('');
+  const [memoryBusy, setMemoryBusy] = useState(false);
 
   const headers = useMemo(() => ({ 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }), [token]);
 
@@ -66,6 +73,52 @@ function App() {
       setNotice('Private conversation saved');
     } catch (error) { setDraft(text); setNotice(error.message); }
     finally { setSending(false); }
+  }
+
+  async function createMemory(event) {
+    event.preventDefault();
+    if (!memoryContent.trim() || !connected || memoryBusy) return;
+    setMemoryBusy(true);
+    try {
+      const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/memories`, { method: 'POST', headers, body: JSON.stringify({ category: memoryCategory, content: memoryContent.trim(), confidence: 0.9, sensitivity: 'normal' }) });
+      if (!response.ok) throw new Error('Could not save this memory.');
+      const memory = await response.json();
+      setMemories(current => [memory, ...current]);
+      setMemoryContent('');
+      setMemoryFormOpen(false);
+      setNotice('Memory saved to your private database');
+    } catch (error) { setNotice(error.message); }
+    finally { setMemoryBusy(false); }
+  }
+
+  function beginEditMemory(memory) {
+    setEditingMemoryId(memory.id);
+    setEditMemoryCategory(memory.category);
+    setEditMemoryContent(memory.content);
+  }
+
+  async function saveMemoryEdit(memoryId) {
+    if (!editMemoryContent.trim() || memoryBusy) return;
+    setMemoryBusy(true);
+    try {
+      const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/memories/${memoryId}`, { method: 'PATCH', headers, body: JSON.stringify({ category: editMemoryCategory, content: editMemoryContent.trim() }) });
+      if (!response.ok) throw new Error('Could not update this memory.');
+      const updated = await response.json();
+      setMemories(current => current.map(m => m.id === memoryId ? updated : m));
+      setEditingMemoryId(null);
+      setNotice('Memory updated');
+    } catch (error) { setNotice(error.message); }
+    finally { setMemoryBusy(false); }
+  }
+
+  async function removeMemory(memoryId) {
+    if (!window.confirm('Delete this memory permanently?')) return;
+    try {
+      const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/memories/${memoryId}`, { method: 'DELETE', headers });
+      if (!response.ok) throw new Error('Could not delete this memory.');
+      setMemories(current => current.filter(m => m.id !== memoryId));
+      setNotice('Memory deleted');
+    } catch (error) { setNotice(error.message); }
   }
 
   useEffect(() => { if (token && apiUrl) connect(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -117,7 +170,7 @@ function App() {
 
       {active === 'bond' && <section className="content-view"><div className="eyebrow"><span className="eyebrow-line"/> THE STORY WE BUILD</div><h1>Bond<span className="heading-period">.</span></h1><p className="subheading">A connection shaped by time, trust, and the moments we keep.</p><div className="feature-card bond-card"><div className="feature-symbol"><Heart size={25}/></div><div><span className="card-kicker">OUR STORY</span><h2>Still unfolding.</h2><p>Relationship milestones and shared experiences will live here. Nothing is assumed or rushed.</p></div><Sparkles className="card-sparkle" size={20}/></div><div className="small-note"><ShieldCheck size={15}/> Progress is private and always under your control.</div></section>}
 
-      {active === 'memories' && <section className="content-view"><div className="eyebrow"><span className="eyebrow-line"/> WHAT WE CHOOSE TO KEEP</div><h1>Memories<span className="heading-period">.</span></h1><p className="subheading">The little details that make a world feel familiar.</p>{!connected ? <div className="feature-card"><LockKeyhole size={22}/><div><h2>Private memories</h2><p>Connect your private instance to view and manage saved memories.</p></div></div> : memories.length ? <div className="memory-list">{memories.map(m => <article className="memory-card" key={m.id}><div className="memory-icon"><Star size={16}/></div><div><div className="card-kicker">{m.category} · {Math.round(m.confidence*100)}% CONFIDENCE</div><p>{m.content}</p><small>Saved {new Date(m.created_at).toLocaleDateString()}</small></div></article>)}</div> : <div className="feature-card"><BookHeart size={22}/><div><h2>Nothing saved yet.</h2><p>Meaningful preferences, shared moments, and promises can be kept here once memory services are connected.</p></div></div>}</section>}
+      {active === 'memories' && <section className="content-view"><div className="eyebrow"><span className="eyebrow-line"/> WHAT WE CHOOSE TO KEEP</div><h1>Memories<span className="heading-period">.</span></h1><p className="subheading">The little details that make a world feel familiar.</p>{connected && <button className="primary-button add-memory-button" onClick={() => setMemoryFormOpen(v => !v)}>{memoryFormOpen ? 'Close form' : '+ Add a memory'}</button>}{memoryFormOpen && connected && <form className="memory-editor" onSubmit={createMemory}><label className="field-label">CATEGORY</label><input className="settings-input" value={memoryCategory} onChange={e => setMemoryCategory(e.target.value)} maxLength={80}/><label className="field-label">WHAT SHOULD SYLUS REMEMBER?</label><textarea className="settings-input memory-textarea" value={memoryContent} onChange={e => setMemoryContent(e.target.value)} rows={3} maxLength={4000} placeholder="Write a preference, shared moment, or important detail…"/><p className="field-help">Only details you add here are saved automatically at this stage. Sensitive memories are excluded from reply retrieval.</p><button className="primary-button" disabled={memoryBusy || !memoryContent.trim()}>{memoryBusy ? 'Saving…' : 'Save memory'}</button></form>}{!connected ? <div className="feature-card"><LockKeyhole size={22}/><div><h2>Private memories</h2><p>Connect your private instance to view and manage saved memories.</p></div></div> : memories.length ? <div className="memory-list">{memories.map(m => <article className="memory-card" key={m.id}><div className="memory-icon"><Star size={16}/></div><div className="memory-main">{editingMemoryId === m.id ? <><label className="field-label">CATEGORY</label><input className="settings-input" value={editMemoryCategory} onChange={e => setEditMemoryCategory(e.target.value)}/><label className="field-label">MEMORY</label><textarea className="settings-input memory-textarea" rows={3} value={editMemoryContent} onChange={e => setEditMemoryContent(e.target.value)}/><div className="memory-actions"><button className="primary-button" onClick={() => saveMemoryEdit(m.id)} disabled={memoryBusy}>Save</button><button className="secondary-button" onClick={() => setEditingMemoryId(null)}>Cancel</button></div></> : <><div className="card-kicker">{m.category} · {Math.round(m.confidence*100)}% CONFIDENCE</div><p>{m.content}</p><small>Saved {new Date(m.created_at).toLocaleDateString()} · {m.sensitivity || 'normal'}</small><div className="memory-actions"><button className="text-action" onClick={() => beginEditMemory(m)}>Edit</button><button className="text-action danger-action" onClick={() => removeMemory(m.id)}>Delete</button></div></>}</div></article>)}</div> : <div className="feature-card"><BookHeart size={22}/><div><h2>Nothing saved yet.</h2><p>Add only the details you want kept. You can edit or permanently delete them later.</p></div></div>}</section>}
 
       {active === 'gallery' && <section className="content-view"><div className="eyebrow"><span className="eyebrow-line"/> MOMENTS IN FRAME</div><h1>Gallery<span className="heading-period">.</span></h1><p className="subheading">A private collection, made one moment at a time.</p><div className="gallery-empty"><div className="gallery-ornament"><Camera size={27}/><span>✧</span></div><h2>Room for a thousand scenes.</h2><p>Private image generation and gallery storage are not connected yet. When they are, images will appear here—not in a public feed.</p></div></section>}
 
