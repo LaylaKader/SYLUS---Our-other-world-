@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     model_name: str = "openai/gpt-oss-120b"
     cloudflare_account_id: str = ""
     cloudflare_api_token: str = ""
+    cloudflare_image_limit_24h: int = 10
     elevenlabs_api_key: str = ""
     elevenlabs_voice_id: str = ""
     cors_allowed_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
