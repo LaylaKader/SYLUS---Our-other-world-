@@ -59,7 +59,7 @@ jobs:
           docker compose up --build -d
           docker compose --profile hosted-smoke up --build -d hosted
           for attempt in $(seq 1 40); do
-            if curl -fsS http://localhost:8080/health >/dev/null; then
+            if curl -fsS http://localhost:8080/health >/dev/null && curl -fsS http://localhost:18080/health >/dev/null; then
               break
             fi
             sleep 2
