@@ -9,10 +9,12 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from typing import Literal
 from uuid import UUID
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+import base64
+import httpx
 from .config import settings
 from .db import connection, open_pool
 from .migrate import run_migrations
@@ -98,10 +100,15 @@ class MessageOut(BaseModel):
     role: Literal["user", "assistant"]
     text: str
     created_at: datetime
+    media_url: str | None = None
 
 class ChatTurnOut(BaseModel):
     user_message: MessageOut
     assistant_message: MessageOut
+
+class ImageGenerateIn(BaseModel):
+    prompt: str = Field(min_length=1, max_length=1800)
+    caption: str = Field(default='A picture for you.', max_length=300)
 
 class MemoryCreate(BaseModel):
     category: str = Field(min_length=1, max_length=80)
@@ -204,8 +211,8 @@ def time_context(_: None = Depends(require_owner)):
 @app.get("/v1/messages", response_model=list[MessageOut])
 def list_messages(_: None = Depends(require_owner)):
     with connection() as conn:
-        rows = conn.execute("SELECT id, role, body, created_at FROM messages WHERE role IN ('user','assistant') AND archived_at IS NULL ORDER BY created_at ASC").fetchall()
-    return [MessageOut(id=str(r[0]), role=r[1], text=r[2], created_at=r[3]) for r in rows]
+        rows = conn.execute("SELECT m.id, m.role, m.body, m.created_at, a.id FROM messages m LEFT JOIN media_assets a ON a.message_id = m.id WHERE m.role IN ('user','assistant') AND m.archived_at IS NULL ORDER BY m.created_at ASC").fetchall()
+    return [MessageOut(id=str(r[0]), role=r[1], text=r[2], created_at=r[3], media_url=f'/v1/media/{r[4]}' if r[4] else None) for r in rows]
 
 @app.post("/v1/messages", response_model=MessageOut)
 def save_user_message(payload: MessageIn, _: None = Depends(require_owner)):
@@ -271,6 +278,66 @@ def rewind_to_message(message_id: UUID, _: None = Depends(require_owner)):
             "WHERE archived_at IS NULL AND created_at > %s RETURNING id", (row[0],)
         ).fetchall()
     return {"rewound_to": message_id, "archived_count": len(archived)}
+
+@app.post("/v1/media/upload", response_model=MessageOut)
+def upload_image(file: UploadFile = File(...), _: None = Depends(require_owner)):
+    allowed = {"image/jpeg": ("jpg", b"\\xff\\xd8\\xff"), "image/png": ("png", b"\\x89PNG\\r\\n\\x1a\\n"), "image/webp": ("webp", b"RIFF")}
+    if file.content_type not in allowed:
+        raise HTTPException(status_code=415, detail="Please upload a JPG, PNG, or WebP image.")
+    data = file.file.read(8 * 1024 * 1024 + 1)
+    if len(data) > 8 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Images must be 8 MB or smaller.")
+    extension, signature = allowed[file.content_type]
+    if not data.startswith(signature) or (file.content_type == "image/webp" and data[8:12] != b"WEBP"):
+        raise HTTPException(status_code=415, detail="The uploaded file does not match its image type.")
+    with connection() as conn:
+        message = conn.execute(
+            "INSERT INTO messages (role, body) VALUES ('user', %s) RETURNING id, role, body, created_at",
+            ("Shared an image" + (f": {file.filename[:120]}" if file.filename else ""),),
+        ).fetchone()
+        asset = conn.execute(
+            "INSERT INTO media_assets (message_id, content_type, filename, data) VALUES (%s, %s, %s, %s) RETURNING id",
+            (message[0], file.content_type, (file.filename or f"image.{extension}")[:160], data),
+        ).fetchone()
+    return MessageOut(id=str(message[0]), role=message[1], text=message[2], created_at=message[3], media_url=f"/v1/media/{asset[0]}")
+
+@app.get("/v1/media/{asset_id}")
+def get_private_image(asset_id: UUID, _: None = Depends(require_owner)):
+    with connection() as conn:
+        row = conn.execute("SELECT content_type, data FROM media_assets WHERE id = %s", (asset_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Image not found.")
+    return Response(content=bytes(row[1]), media_type=row[0], headers={"Content-Disposition": "inline", "Cache-Control": "no-store, private"})
+
+@app.post("/v1/media/generate", response_model=MessageOut)
+def generate_private_image(payload: ImageGenerateIn, _: None = Depends(require_owner)):
+    if not (settings.cloudflare_account_id and settings.cloudflare_api_token):
+        raise HTTPException(status_code=503, detail="Image generation is not configured. Add the Cloudflare AI credentials in the private server settings; no paid fallback will be used.")
+    prompt = f"{payload.prompt.strip()}. Visual direction: original high-quality in-game 3D character render, cinematic lighting, detailed realistic materials, refined facial anatomy, dark elegant atmosphere, restrained ruby and champagne-gold accents. Avoid chibi, anime 2D, text, watermark, UI. "
+    try:
+        response = httpx.post(
+            f"https://api.cloudflare.com/client/v4/accounts/{settings.cloudflare_account_id}/ai/run/@cf/black-forest-labs/flux-1-schnell",
+            headers={"Authorization": f"Bearer {settings.cloudflare_api_token}", "Content-Type": "application/json"},
+            json={"prompt": prompt[:2048], "steps": 4}, timeout=120.0,
+        )
+        response.raise_for_status()
+        result = response.json()
+        encoded = result.get("result", {}).get("image")
+        if not encoded:
+            raise ValueError("The image provider returned no image.")
+        image_bytes = base64.b64decode(encoded)
+    except (httpx.HTTPError, ValueError, KeyError) as exc:
+        raise HTTPException(status_code=502, detail=f"Image generation failed: {exc}") from exc
+    with connection() as conn:
+        message = conn.execute(
+            "INSERT INTO messages (role, body) VALUES ('assistant', %s) RETURNING id, role, body, created_at",
+            (payload.caption or "A picture for you.",),
+        ).fetchone()
+        asset = conn.execute(
+            "INSERT INTO media_assets (message_id, content_type, filename, data) VALUES (%s, 'image/jpeg', 'sylus-generated.jpg', %s) RETURNING id",
+            (message[0], image_bytes),
+        ).fetchone()
+    return MessageOut(id=str(message[0]), role=message[1], text=message[2], created_at=message[3], media_url=f"/v1/media/{asset[0]}")
 
 @app.post("/v1/chat", response_model=ChatTurnOut)
 def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner)):
