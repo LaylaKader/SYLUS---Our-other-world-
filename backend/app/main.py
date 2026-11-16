@@ -101,7 +101,7 @@ def create_owner_session(payload: OwnerLogin, request: Request, response: Respon
     signature = hmac.new(settings.session_secret.encode(), f"v1:{issued}".encode(), hashlib.sha256).hexdigest()
     response.set_cookie(
         key="sylus_session", value=f"{issued}.{signature}", max_age=settings.session_ttl_seconds,
-        httponly=True, secure=settings.app_env.lower() == "production", samesite="none" if settings.app_env.lower() == "production" else "lax", path="/",
+        httponly=True, secure=settings.app_env.lower() == "production", samesite="lax", path="/",
     )
     return {"authenticated": True, "expires_in": settings.session_ttl_seconds}
 
