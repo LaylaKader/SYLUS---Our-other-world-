@@ -15,7 +15,7 @@ function App() {
   const [mobileMenu, setMobileMenu] = useState(false);
   const [draft, setDraft] = useState('');
   const [messages, setMessages] = useState([]);
-  const [token, setToken] = useState(() => sessionStorage.getItem('sylus_owner_token') || '');
+  const [ownerPassword, setOwnerPassword] = useState('');
   const [connected, setConnected] = useState(false);
   const [checking, setChecking] = useState(false);
   const [notice, setNotice] = useState('Preview mode · private connection not configured');
@@ -31,24 +31,28 @@ function App() {
   const [editMemoryContent, setEditMemoryContent] = useState('');
   const [memoryBusy, setMemoryBusy] = useState(false);
 
-  const headers = useMemo(() => ({ 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }), [token]);
+  const headers = useMemo(() => ({ 'Content-Type': 'application/json' }), []);
 
-  async function connect() {
-    if (!apiUrl.trim() || !token.trim()) { setNotice('Add your private API address and owner key first.'); return; }
+  async function connect(login = true) {
+    if (!apiUrl.trim()) { setNotice('Add your private API address first.'); return; }
     setChecking(true);
     try {
-      const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/time-context`, { headers });
+      if (login && ownerPassword.trim()) {
+        const loginResponse = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/session`, { method: 'POST', headers, credentials: 'include', body: JSON.stringify({ password: ownerPassword }) });
+        if (!loginResponse.ok) { const failure = await loginResponse.json().catch(() => ({})); throw new Error(failure.detail || 'Owner sign-in failed.'); }
+      }
+      const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/time-context`, { headers, credentials: 'include' });
       if (!response.ok) throw new Error(response.status === 401 ? 'Owner key was not accepted.' : `Server responded ${response.status}.`);
       const time = await response.json();
-      const historyResponse = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/messages`, { headers });
+      const historyResponse = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/messages`, { headers, credentials: 'include' });
       if (!historyResponse.ok) throw new Error('Could not load private conversation history.');
       const history = await historyResponse.json();
       setMessages(history.filter(m => m.role !== 'system'));
       setTimeContext(time);
       setConnected(true);
-      sessionStorage.setItem('sylus_owner_token', token);
-      setNotice('Private connection verified');
-      const memoryResponse = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/memories`, { headers });
+      setOwnerPassword('');
+      setNotice('Private owner session verified');
+      const memoryResponse = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/memories`, { headers, credentials: 'include' });
       if (memoryResponse.ok) setMemories(await memoryResponse.json());
     } catch (error) {
       setConnected(false);
@@ -63,7 +67,7 @@ function App() {
     setSending(true);
     setDraft('');
     try {
-      const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/chat`, { method: 'POST', headers, body: JSON.stringify({ text }) });
+      const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/chat`, { method: 'POST', headers, credentials: 'include', body: JSON.stringify({ text }) });
       if (!response.ok) {
         const failure = await response.json().catch(() => ({}));
         throw new Error(failure.detail || 'Message could not be sent.');
@@ -80,7 +84,7 @@ function App() {
     if (!memoryContent.trim() || !connected || memoryBusy) return;
     setMemoryBusy(true);
     try {
-      const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/memories`, { method: 'POST', headers, body: JSON.stringify({ category: memoryCategory, content: memoryContent.trim(), confidence: 0.9, sensitivity: 'normal' }) });
+      const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/memories`, { method: 'POST', headers, credentials: 'include', body: JSON.stringify({ category: memoryCategory, content: memoryContent.trim(), confidence: 0.9, sensitivity: 'normal' }) });
       if (!response.ok) throw new Error('Could not save this memory.');
       const memory = await response.json();
       setMemories(current => [memory, ...current]);
@@ -101,7 +105,7 @@ function App() {
     if (!editMemoryContent.trim() || memoryBusy) return;
     setMemoryBusy(true);
     try {
-      const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/memories/${memoryId}`, { method: 'PATCH', headers, body: JSON.stringify({ category: editMemoryCategory, content: editMemoryContent.trim() }) });
+      const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/memories/${memoryId}`, { method: 'PATCH', headers, credentials: 'include', body: JSON.stringify({ category: editMemoryCategory, content: editMemoryContent.trim() }) });
       if (!response.ok) throw new Error('Could not update this memory.');
       const updated = await response.json();
       setMemories(current => current.map(m => m.id === memoryId ? updated : m));
@@ -114,19 +118,19 @@ function App() {
   async function removeMemory(memoryId) {
     if (!window.confirm('Delete this memory permanently?')) return;
     try {
-      const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/memories/${memoryId}`, { method: 'DELETE', headers });
+      const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/memories/${memoryId}`, { method: 'DELETE', headers, credentials: 'include' });
       if (!response.ok) throw new Error('Could not delete this memory.');
       setMemories(current => current.filter(m => m.id !== memoryId));
       setNotice('Memory deleted');
     } catch (error) { setNotice(error.message); }
   }
 
-  useEffect(() => { if (token && apiUrl) connect(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (apiUrl) connect(false); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function disconnect() {
-    sessionStorage.removeItem('sylus_owner_token');
-    setToken(''); setConnected(false); setMessages([]); setMemories([]); setTimeContext(null);
-    setNotice('Disconnected · private data remains on the server');
+  async function disconnect() {
+    try { await fetch(`${apiUrl.replace(/\/$/, '')}/v1/session`, { method: 'DELETE', headers, credentials: 'include' }); } catch {}
+    setOwnerPassword(''); setConnected(false); setMessages([]); setMemories([]); setTimeContext(null);
+    setNotice('Signed out · private data remains on the server');
   }
 
   const currentTab = tabs.find(t => t.id === active);
@@ -174,7 +178,7 @@ function App() {
 
       {active === 'gallery' && <section className="content-view"><div className="eyebrow"><span className="eyebrow-line"/> MOMENTS IN FRAME</div><h1>Gallery<span className="heading-period">.</span></h1><p className="subheading">A private collection, made one moment at a time.</p><div className="gallery-empty"><div className="gallery-ornament"><Camera size={27}/><span>✧</span></div><h2>Room for a thousand scenes.</h2><p>Private image generation and gallery storage are not connected yet. When they are, images will appear here—not in a public feed.</p></div></section>}
 
-      {active === 'settings' && <section className="content-view"><div className="eyebrow"><span className="eyebrow-line"/> YOUR BOUNDARIES, YOUR CHOICE</div><h1>Settings<span className="heading-period">.</span></h1><p className="subheading">A private space should answer to you.</p><div className="settings-card"><div className="settings-title"><div><span className="card-kicker">PRIVATE CONNECTION</span><h2>Owner access</h2></div><span className={`status-pill ${connected ? 'status-good' : ''}`}>{connected ? 'CONNECTED' : 'NOT CONNECTED'}</span></div><label className="field-label">API ADDRESS</label><input className="settings-input" value={apiUrl} onChange={e => setApiUrl(e.target.value)} placeholder="https://your-private-api.example.com"/><label className="field-label">OWNER ACCESS KEY</label><input className="settings-input" type="password" value={token} onChange={e => setToken(e.target.value)} placeholder="Paste your private owner key" autoComplete="off"/><p className="field-help">The key is kept in this browser session only. Never put it in GitHub or share it with anyone.</p><div className="settings-actions"><button className="primary-button" onClick={connect} disabled={checking}>{checking ? 'Checking…' : connected ? 'Refresh connection' : 'Connect privately'}</button>{connected && <button className="secondary-button" onClick={disconnect}>Disconnect</button>}</div><div className="connection-notice"><span className={`connection-dot ${connected ? 'online' : ''}`}/>{notice}</div></div><div className="settings-card muted-card"><div className="settings-title"><div><span className="card-kicker">LOCAL TIME</span><h2>Dhaka time awareness</h2></div><Clock3 size={19}/></div><p>{timeContext ? `${timeContext.weekday}, ${timeContext.local_date} · ${timeContext.local_time}` : 'Will be read from the private server when connected.'}</p></div><div className="settings-card muted-card"><div className="settings-title"><div><span className="card-kicker">COMING LATER</span><h2>Contact permissions</h2></div><ShieldCheck size={19}/></div><p>Separate message and call permissions, quiet hours, and natural-language restrictions will be added before proactive contact is enabled.</p></div></section>}
+      {active === 'settings' && <section className="content-view"><div className="eyebrow"><span className="eyebrow-line"/> YOUR BOUNDARIES, YOUR CHOICE</div><h1>Settings<span className="heading-period">.</span></h1><p className="subheading">A private space should answer to you.</p><div className="settings-card"><div className="settings-title"><div><span className="card-kicker">PRIVATE CONNECTION</span><h2>Owner access</h2></div><span className={`status-pill ${connected ? 'status-good' : ''}`}>{connected ? 'CONNECTED' : 'NOT CONNECTED'}</span></div><label className="field-label">API ADDRESS</label><input className="settings-input" value={apiUrl} onChange={e => setApiUrl(e.target.value)} placeholder="https://your-private-api.example.com"/><label className="field-label">OWNER PASSWORD</label><input className="settings-input" type="password" value={ownerPassword} onChange={e => setOwnerPassword(e.target.value)} placeholder="Your private owner password" autoComplete="current-password"/><p className="field-help">Your password is sent only to your private server. The server returns an HttpOnly session cookie; the password is not stored in this browser.</p><div className="settings-actions"><button className="primary-button" onClick={() => connect(true)} disabled={checking}>{checking ? 'Checking…' : connected ? 'Refresh connection' : 'Sign in privately'}</button>{connected && <button className="secondary-button" onClick={disconnect}>Disconnect</button>}</div><div className="connection-notice"><span className={`connection-dot ${connected ? 'online' : ''}`}/>{notice}</div></div><div className="settings-card muted-card"><div className="settings-title"><div><span className="card-kicker">LOCAL TIME</span><h2>Dhaka time awareness</h2></div><Clock3 size={19}/></div><p>{timeContext ? `${timeContext.weekday}, ${timeContext.local_date} · ${timeContext.local_time}` : 'Will be read from the private server when connected.'}</p></div><div className="settings-card muted-card"><div className="settings-title"><div><span className="card-kicker">COMING LATER</span><h2>Contact permissions</h2></div><ShieldCheck size={19}/></div><p>Separate message and call permissions, quiet hours, and natural-language restrictions will be added before proactive contact is enabled.</p></div></section>}
 
       <footer className="page-footer"><span>SYLUS <i>·</i> A WORLD OF OUR OWN</span><span>BUILT FOR ONE, KEPT PRIVATE <span className="footer-star">✦</span></span></footer>
     </main>
