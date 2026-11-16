@@ -46,13 +46,6 @@ services:
     depends_on: [backend]
     networks: [sylus-private]
 
-volumes:
-  sylus_pgdata:
-
-networks:
-  sylus-private:
-    driver: bridge
-
   hosted:
     profiles: ["hosted-smoke"]
     build:
@@ -76,3 +69,10 @@ networks:
       db:
         condition: service_healthy
     networks: [sylus-private]
+
+volumes:
+  sylus_pgdata:
+
+networks:
+  sylus-private:
+    driver: bridge
