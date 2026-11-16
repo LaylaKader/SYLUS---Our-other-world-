@@ -20,3 +20,13 @@ This is the first independently coded backend foundation. It is not yet a comple
 ## Not implemented yet
 
 The response-generation/model adapter, automatic memory extraction and retrieval, message pagination, owner-token provisioning UI, voice provider, background scheduler, Android shell, and production deployment are still pending. Do not expose this API publicly until HTTPS, secrets, database access controls, rate limits, backups, and owner-only authorization have been reviewed.
+
+
+## Database migrations
+
+Apply migrations in numeric order:
+
+- `migrations/001_initial.sql` — conversations, messages, memories, initial knowledge, and contact preferences.
+- `migrations/002_emotion_contact_knowledge.sql` — persistent simulated-emotion state/events, explicit channel restrictions, queued outbound sequences with up to three ordered bubbles, source registry, and source-aware lore records.
+
+Migration 002 defines storage only. Emotion transitions, scheduled message generation/delivery, call initiation, live web retrieval, and scheduled official-source synchronization still require application services and end-to-end tests. Do not interpret the presence of these tables as proof those behaviours are live.
