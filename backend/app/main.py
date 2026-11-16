@@ -189,6 +189,7 @@ def time_context(_: None = Depends(require_owner)):
     with connection() as conn:
         row = conn.execute("SELECT created_at FROM messages WHERE role = 'user' AND archived_at IS NULL ORDER BY created_at DESC LIMIT 1").fetchone()
         tz_row = conn.execute("SELECT timezone FROM owner_runtime_context WHERE id = 1").fetchone()
+        vision_row = conn.execute("SELECT 1 FROM provider_acceptances WHERE provider = 'cloudflare_meta_vision'").fetchone()
     tz_name = tz_row[0] if tz_row else DEFAULT_TIMEZONE
     try:
         local_zone = ZoneInfo(tz_name)
@@ -208,6 +209,7 @@ def time_context(_: None = Depends(require_owner)):
         "chat_model": settings.model_name if settings.model_api_key else None,
         "image_generation_ready": bool(settings.cloudflare_account_id and settings.cloudflare_api_token),
         "voice_ready": bool(settings.elevenlabs_api_key and settings.elevenlabs_voice_id),
+        "vision_ready": bool(settings.cloudflare_account_id and settings.cloudflare_api_token and vision_row),
         "last_user_message_utc": last_utc.isoformat() if last_utc else None,
         "last_user_message_local": last_local.isoformat() if last_local else None,
         "seconds_since_last_user_message": elapsed_seconds,
@@ -299,6 +301,63 @@ def create_speech(payload: SpeechIn, _: None = Depends(require_owner)):
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail="The voice provider could not generate audio. Check the private voice configuration and usage allowance.") from exc
     return Response(content=response.content, media_type="audio/mpeg", headers={"Cache-Control": "no-store, private", "Content-Disposition": "inline; filename=sylus-message.mp3"})
+
+@app.post("/v1/vision/accept-license")
+def accept_vision_license(_: None = Depends(require_owner)):
+    if not (settings.cloudflare_account_id and settings.cloudflare_api_token):
+        raise HTTPException(status_code=503, detail="Configure the Cloudflare AI credentials first.")
+    try:
+        response = httpx.post(
+            "https://api.cloudflare.com/client/v4/accounts/" + settings.cloudflare_account_id + "/ai/run/@cf/meta/llama-3.2-11b-vision-instruct",
+            headers={"Authorization": f"Bearer {settings.cloudflare_api_token}", "Content-Type": "application/json"},
+            json={"prompt": "agree"}, timeout=60.0,
+        )
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="Could not register the vision-model license acceptance.") from exc
+    with connection() as conn:
+        conn.execute("INSERT INTO provider_acceptances (provider) VALUES ('cloudflare_meta_vision') ON CONFLICT (provider) DO NOTHING")
+    return {"vision_ready": True}
+
+@app.post("/v1/media/{asset_id}/discuss", response_model=MessageOut)
+def discuss_uploaded_image(asset_id: UUID, _: None = Depends(require_owner)):
+    with connection() as conn:
+        accepted = conn.execute("SELECT 1 FROM provider_acceptances WHERE provider = 'cloudflare_meta_vision'").fetchone()
+        asset = conn.execute(
+            "SELECT a.data, a.content_type, a.message_id FROM media_assets a JOIN messages m ON m.id = a.message_id "
+            "WHERE a.id = %s AND m.archived_at IS NULL", (asset_id,),
+        ).fetchone()
+        if not accepted:
+            raise HTTPException(status_code=428, detail="Accept Meta's model license in Settings before asking Sylus to interpret images.")
+        if not asset:
+            raise HTTPException(status_code=404, detail="Image not found.")
+        history_rows = conn.execute(
+            "SELECT role, body, created_at FROM messages WHERE id <> %s AND role IN ('user','assistant') "
+            "AND archived_at IS NULL ORDER BY created_at DESC LIMIT 12", (asset[2],),
+        ).fetchall()
+    image_data = "data:" + asset[1] + ";base64," + base64.b64encode(bytes(asset[0])).decode("ascii")
+    try:
+        vision_response = httpx.post(
+            "https://api.cloudflare.com/client/v4/accounts/" + settings.cloudflare_account_id + "/ai/run/@cf/meta/llama-3.2-11b-vision-instruct",
+            headers={"Authorization": f"Bearer {settings.cloudflare_api_token}", "Content-Type": "application/json"},
+            json={"messages": [{"role": "user", "content": "Describe this image accurately and concisely. Focus on visible details. Do not infer identity, sensitive traits, or unseen context."}], "image": image_data},
+            timeout=90.0,
+        )
+        vision_response.raise_for_status()
+        visual_description = vision_response.json().get("result", {}).get("response", "")
+        if not visual_description:
+            raise ValueError("The vision model returned no description.")
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(status_code=502, detail="Image understanding failed. The image remains saved privately.") from exc
+    history = [{"role": r[0], "body": r[1][:1800], "created_at": r[2].isoformat()} for r in reversed(history_rows)]
+    user_text = "The owner shared an image. What I can actually see in it: " + visual_description[:5000] + ". Respond naturally to the image, without claiming details that are not visible."
+    try:
+        answer = generate_reply(user_text, str(asset[2]), history, time_context="The owner has just shared an image in the current conversation.")
+    except ProviderRequestFailed as exc:
+        raise HTTPException(status_code=502, detail="I could inspect the image, but Sylus could not reply. The image remains saved privately.") from exc
+    with connection() as conn:
+        row = conn.execute("INSERT INTO messages (role, body) VALUES ('assistant', %s) RETURNING id, role, body, created_at", (answer,)).fetchone()
+    return MessageOut(id=str(row[0]), role=row[1], text=row[2], created_at=row[3])
 
 @app.post("/v1/media/upload", response_model=MessageOut)
 def upload_image(file: UploadFile = File(...), _: None = Depends(require_owner)):
