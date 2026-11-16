@@ -210,7 +210,7 @@ def chat(payload: MessageIn, _: None = Depends(require_owner)):
         tz_row = conn.execute("SELECT timezone FROM owner_runtime_context WHERE id = 1").fetchone()
         user_row = conn.execute("INSERT INTO messages (role, body) VALUES ('user', %s) RETURNING id, role, body, created_at", (text,)).fetchone()
         history_rows = conn.execute(
-            "SELECT role, body, created_at FROM messages WHERE id <> %s AND role IN ('user','assistant') ORDER BY created_at DESC LIMIT 16",
+            "SELECT role, body, created_at FROM messages WHERE id <> %s AND role IN ('user','assistant') ORDER BY created_at DESC LIMIT 12",
             (user_row[0],),
         ).fetchall()
     tz_name = tz_row[0] if tz_row else DEFAULT_TIMEZONE
@@ -229,7 +229,7 @@ def chat(payload: MessageIn, _: None = Depends(require_owner)):
         f"Current owner-local time: {now_local.strftime('%A, %Y-%m-%d %H:%M:%S')} ({tz_name}). "
         f"Current UTC: {now_utc.isoformat()}.{gap} Use this context naturally when relevant; do not announce it unnecessarily."
     )
-    history = [{"role": r[0], "body": r[1], "created_at": r[2].isoformat()} for r in reversed(history_rows)]
+    history = [{"role": r[0], "body": r[1][:1800], "created_at": r[2].isoformat()} for r in reversed(history_rows)]
     try:
         answer = generate_reply(text, str(user_row[0]), history, time_context=time_note)
     except ProviderNotConfigured as exc:
