@@ -42,7 +42,7 @@ function App() {
         if (!loginResponse.ok) { const failure = await loginResponse.json().catch(() => ({})); throw new Error(failure.detail || 'Owner sign-in failed.'); }
       }
       const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/time-context`, { headers, credentials: 'include' });
-      if (!response.ok) throw new Error(response.status === 401 ? 'Owner key was not accepted.' : `Server responded ${response.status}.`);
+      if (!response.ok) throw new Error(response.status === 401 ? 'Sign in with your owner password in Settings.' : `Server responded ${response.status}.`);
       const time = await response.json();
       const historyResponse = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/messages`, { headers, credentials: 'include' });
       if (!historyResponse.ok) throw new Error('Could not load private conversation history.');
