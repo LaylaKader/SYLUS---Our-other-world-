@@ -30,3 +30,11 @@ Apply migrations in numeric order:
 - `migrations/002_emotion_contact_knowledge.sql` — persistent simulated-emotion state/events, explicit channel restrictions, queued outbound sequences with up to three ordered bubbles, source registry, and source-aware lore records.
 
 Migration 002 defines storage only. Emotion transitions, scheduled message generation/delivery, call initiation, live web retrieval, and scheduled official-source synchronization still require application services and end-to-end tests. Do not interpret the presence of these tables as proof those behaviours are live.
+
+
+- `migrations/003_time_and_media.sql` — owner timezone, private media attachment metadata, and message activity indexes.
+- `GET /v1/time-context` — owner-protected current local date/time, weekday, timezone, last user-message timestamp, and elapsed time since that message. Uses Asia/Dhaka by default and database UTC timestamps.
+
+## Image generation status
+
+`app/media.py` defines replaceable image-generation and private-storage interfaces. The provider, private object storage, chat attachment endpoint, and client image rendering are not connected yet. See `../docs/IMAGE_GENERATION.md`. Do not put image-provider credentials in the client or public repository.
