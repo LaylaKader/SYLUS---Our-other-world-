@@ -313,7 +313,7 @@ def get_private_image(asset_id: UUID, _: None = Depends(require_owner)):
 def generate_private_image(payload: ImageGenerateIn, _: None = Depends(require_owner)):
     if not (settings.cloudflare_account_id and settings.cloudflare_api_token):
         raise HTTPException(status_code=503, detail="Image generation is not configured. Add the Cloudflare AI credentials in the private server settings; no paid fallback will be used.")
-    prompt = f"{payload.prompt.strip()}. Visual direction: original high-quality in-game 3D character render, cinematic lighting, detailed realistic materials, refined facial anatomy, dark elegant atmosphere, restrained ruby and champagne-gold accents. Avoid chibi, anime 2D, text, watermark, UI. "
+    prompt = f"{payload.prompt.strip()}. Character direction: Sylus from Love and Deepspace, a tall adult man with silver-white hair, vivid crimson eyes, refined sharp facial features, composed confident expression, elegant dark clothing with restrained red details. Preserve his recognizable in-game 3D appearance and realistic game-render proportions. Visual direction: cinematic lighting, detailed realistic materials, natural anatomy, dark elegant atmosphere, restrained ruby and champagne-gold accents. Avoid chibi, flat 2D anime, exaggerated anatomy, text, watermark, UI. "
     try:
         response = httpx.post(
             f"https://api.cloudflare.com/client/v4/accounts/{settings.cloudflare_account_id}/ai/run/@cf/black-forest-labs/flux-1-schnell",
