@@ -43,6 +43,18 @@ class ChatTurnOut(BaseModel):
     user_message: MessageOut
     assistant_message: MessageOut
 
+class MemoryCreate(BaseModel):
+    category: str = Field(min_length=1, max_length=80)
+    content: str = Field(min_length=1, max_length=4000)
+    confidence: float = Field(default=0.9, ge=0, le=1)
+    sensitivity: Literal["normal", "sensitive"] = "normal"
+
+class MemoryUpdate(BaseModel):
+    category: str | None = Field(default=None, min_length=1, max_length=80)
+    content: str | None = Field(default=None, min_length=1, max_length=4000)
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    sensitivity: Literal["normal", "sensitive"] | None = None
+
 @app.get("/health")
 def health():
     return {"ok": True, "service": "sylus-api"}
@@ -136,5 +148,41 @@ def chat(payload: MessageIn, _: None = Depends(require_owner)):
 @app.get("/v1/memories")
 def list_memories(_: None = Depends(require_owner)):
     with connection() as conn:
-        rows = conn.execute("SELECT id, category, content, confidence, source, created_at, updated_at FROM memories WHERE archived_at IS NULL ORDER BY updated_at DESC").fetchall()
-    return [{"id": str(r[0]), "category": r[1], "content": r[2], "confidence": float(r[3]), "source": r[4], "created_at": r[5], "updated_at": r[6]} for r in rows]
+        rows = conn.execute("SELECT id, category, content, confidence, source, sensitivity, created_at, updated_at FROM memories WHERE archived_at IS NULL ORDER BY updated_at DESC").fetchall()
+    return [{"id": str(r[0]), "category": r[1], "content": r[2], "confidence": float(r[3]), "source": r[4], "sensitivity": r[5], "created_at": r[6], "updated_at": r[7]} for r in rows]
+
+@app.post("/v1/memories")
+def create_memory(payload: MemoryCreate, _: None = Depends(require_owner)):
+    with connection() as conn:
+        row = conn.execute(
+            "INSERT INTO memories (category, content, confidence, source, sensitivity) "
+            "VALUES (%s, %s, %s, 'owner_created', %s) "
+            "RETURNING id, category, content, confidence, source, sensitivity, created_at, updated_at",
+            (payload.category.strip(), payload.content.strip(), payload.confidence, payload.sensitivity),
+        ).fetchone()
+    return {"id": str(row[0]), "category": row[1], "content": row[2], "confidence": float(row[3]), "source": row[4], "sensitivity": row[5], "created_at": row[6], "updated_at": row[7]}
+
+@app.patch("/v1/memories/{memory_id}")
+def update_memory(memory_id: str, payload: MemoryUpdate, _: None = Depends(require_owner)):
+    changes = payload.model_dump(exclude_unset=True)
+    if not changes:
+        raise HTTPException(status_code=400, detail="No memory changes supplied.")
+    with connection() as conn:
+        row = conn.execute(
+            "UPDATE memories SET category = COALESCE(%s, category), content = COALESCE(%s, content), "
+            "confidence = COALESCE(%s, confidence), sensitivity = COALESCE(%s, sensitivity), updated_at = now() "
+            "WHERE id = %s AND archived_at IS NULL "
+            "RETURNING id, category, content, confidence, source, sensitivity, created_at, updated_at",
+            (changes.get("category"), changes.get("content"), changes.get("confidence"), changes.get("sensitivity"), memory_id),
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Memory not found.")
+    return {"id": str(row[0]), "category": row[1], "content": row[2], "confidence": float(row[3]), "source": row[4], "sensitivity": row[5], "created_at": row[6], "updated_at": row[7]}
+
+@app.delete("/v1/memories/{memory_id}")
+def delete_memory(memory_id: str, _: None = Depends(require_owner)):
+    with connection() as conn:
+        row = conn.execute("DELETE FROM memories WHERE id = %s RETURNING id", (memory_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Memory not found.")
+    return {"deleted": True, "id": str(row[0])}
