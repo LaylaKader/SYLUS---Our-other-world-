@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Bird, BookHeart, Camera, ChevronDown, CircleHelp, Clock3, Crown, Heart, Image, LockKeyhole, Menu, MessageCircle, MoreHorizontal, Send, Settings, ShieldCheck, Sparkles, Star, X } from 'lucide-react';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? window.location.origin : '');
 const tabs = [
   { id: 'chat', label: 'Our conversations', icon: MessageCircle },
   { id: 'bond', label: 'Bond', icon: Heart },
