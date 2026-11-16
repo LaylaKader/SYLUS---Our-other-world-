@@ -32,6 +32,14 @@ def startup():
     run_migrations()
     open_pool()
 
+@app.middleware("http")
+async def prevent_private_api_caching(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/v1/"):
+        response.headers["Cache-Control"] = "no-store, private"
+        response.headers["Pragma"] = "no-cache"
+    return response
+
 def _valid_session(value: str | None) -> bool:
     if not value or not settings.session_secret:
         return False
