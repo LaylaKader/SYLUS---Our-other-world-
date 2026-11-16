@@ -1,0 +1,3 @@
+import superjson from "superjson";
+export type OutputType={conversationId:number|null;messages:{id:number;role:string;text:string|null;createdAt:Date|string;imageUrls?:string[]}[]};
+export const getMainConversation=async(init?:RequestInit):Promise<OutputType>=>{const r=await fetch("/_api/conversations/main",{method:"GET",...init});if(!r.ok){const e=superjson.parse<{error:string}>(await r.text());throw new Error(e.error)}return superjson.parse<OutputType>(await r.text())};
