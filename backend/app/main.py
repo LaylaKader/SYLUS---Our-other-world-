@@ -1,3 +1,5 @@
+import os
+from pathlib import Path
 import secrets
 import hashlib
 import hmac
@@ -9,6 +11,7 @@ from typing import Literal
 from uuid import UUID
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from .config import settings
 from .db import connection, open_pool
@@ -99,6 +102,7 @@ class MemoryUpdate(BaseModel):
     sensitivity: Literal["normal", "sensitive"] | None = None
 
 _login_attempts: dict[str, deque[float]] = defaultdict(deque)
+_chat_attempts: dict[str, deque[float]] = defaultdict(deque)
 
 @app.post("/v1/session")
 def create_owner_session(payload: OwnerLogin, request: Request, response: Response):
@@ -199,10 +203,18 @@ def save_user_message(payload: MessageIn, _: None = Depends(require_owner)):
     return MessageOut(id=str(row[0]), role=row[1], text=row[2], created_at=row[3])
 
 @app.post("/v1/chat", response_model=ChatTurnOut)
-def chat(payload: MessageIn, _: None = Depends(require_owner)):
+def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner)):
     text = payload.text.strip()
     if not text:
         raise HTTPException(status_code=422, detail="Message cannot be blank")
+    client_ip = request.client.host if request.client else "unknown"
+    attempts = _chat_attempts[client_ip]
+    now = time()
+    while attempts and now - attempts[0] > 60:
+        attempts.popleft()
+    if len(attempts) >= 10:
+        raise HTTPException(status_code=429, detail="Too many chat requests. Wait a moment and try again.")
+    attempts.append(now)
     if not (settings.model_api_base_url and settings.model_api_key and settings.model_name):
         raise HTTPException(status_code=503, detail="Chat model is not configured on the private server. No paid or alternate provider will be selected automatically.")
     with connection() as conn:
@@ -286,3 +298,10 @@ def delete_memory(memory_id: UUID, _: None = Depends(require_owner)):
     if not row:
         raise HTTPException(status_code=404, detail="Memory not found.")
     return {"deleted": True, "id": str(row[0])}
+
+
+# In the hosted single-container deployment, serve the built PWA from FastAPI.
+# The Docker Compose setup continues to use its separate Nginx frontend.
+_frontend_dist = os.getenv("FRONTEND_DIST_DIR")
+if _frontend_dist and Path(_frontend_dist).is_dir():
+    app.mount("/", StaticFiles(directory=_frontend_dist, html=True), name="frontend")
