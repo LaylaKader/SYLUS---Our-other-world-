@@ -1,40 +1,48 @@
-# SYLUS backend (foundation)
+# SYLUS backend
 
-This is the first independently coded backend foundation. It is not yet a complete chat agent or a deployed service.
+Private single-owner FastAPI backend for the SYLUS companion. This is an early runnable integration milestone, not yet approved for public production hosting.
 
-## Run locally
+## Local setup
 
-1. Create a PostgreSQL database.
-2. Copy `.env.example` to `.env` and set `DATABASE_URL` and a long random `SYLUS_OWNER_TOKEN`.
-3. Install dependencies: `pip install -r requirements.txt`.
-4. Apply `migrations/001_initial.sql` to the database.
-5. Start: `uvicorn app.main:app --reload` from this directory.
-6. `GET /health` is public and returns service status. All `/v1/*` routes require `Authorization: Bearer <SYLUS_OWNER_TOKEN>`.
+1. Create a private PostgreSQL database.
+2. Copy `.env.example` to `.env`. Set `DATABASE_URL` and a long random `SYLUS_OWNER_TOKEN`.
+3. For replies, set a model API key in the server-side `.env`. The initial suggested configuration is Groq's OpenAI-compatible endpoint with `openai/gpt-oss-120b`. The free plan has model-specific quotas; check the exact limits in your account. Do not upgrade or add billing unless you explicitly choose to.
+4. Install dependencies: `pip install -r requirements.txt`.
+5. Apply migrations 001, 002, and 003 in numeric order.
+6. Start from this directory: `uvicorn app.main:app --reload`.
 
-## Current API
+## API
 
-- `GET /v1/messages` reads persisted messages.
-- `POST /v1/messages` stores a user message.
-- `GET /v1/memories` lists active memories.
+- `GET /health` — public process health only; contains no private data.
+- `GET /v1/time-context` — owner-protected local date/time and last user-message time.
+- `GET /v1/messages` — owner-protected full conversation history.
+- `POST /v1/messages` — legacy store-only endpoint.
+- `POST /v1/chat` — owner-protected user message + Sylus response, using the one configured model provider.
+- `GET /v1/memories` — owner-protected active non-archived memories.
 
-## Not implemented yet
+Every `/v1/*` route requires `Authorization: Bearer <SYLUS_OWNER_TOKEN>`. CORS is restricted to the exact origins in `CORS_ALLOWED_ORIGINS`. Never use a wildcard origin for the private app.
 
-The response-generation/model adapter, automatic memory extraction and retrieval, message pagination, owner-token provisioning UI, voice provider, background scheduler, Android shell, and production deployment are still pending. Do not expose this API publicly until HTTPS, secrets, database access controls, rate limits, backups, and owner-only authorization have been reviewed.
+## Provider and privacy notes
 
+The model adapter is OpenAI-compatible and replaceable. The server calls only the configured base URL/model. There is no automatic provider switching, credit purchase, or paid fallback. Provider requests contain the current message, recent chat context, persona instructions, and any retrieved non-sensitive memories. Review the provider's current data policy before using personal conversation content.
 
-## Database migrations
+Groq's current documentation says inference requests are not retained by default, while temporary logs may be created for reliability or abuse investigations for up to 30 days; exact free-plan limits vary by model and organization. See [Groq data controls](https://console.groq.com/docs/your-data) and [rate limits](https://console.groq.com/docs/rate-limits). Do not treat a free API as equivalent to local/offline processing.
 
-Apply migrations in numeric order:
+## Current limitations
 
-- `migrations/001_initial.sql` — conversations, messages, memories, initial knowledge, and contact preferences.
-- `migrations/002_emotion_contact_knowledge.sql` — persistent simulated-emotion state/events, explicit channel restrictions, queued outbound sequences with up to three ordered bubbles, source registry, and source-aware lore records.
+- Memory retrieval is basic lexical matching, not semantic/vector retrieval.
+- Automatic memory extraction is intentionally disabled until inspect/edit/delete controls are complete.
+- Emotion state currently starts from defaults per request; persistent emotion-state loading/saving is not yet wired.
+- Conversation rows are stored with a null conversation_id; multi-thread management is not yet implemented.
+- Message pagination, idempotent retry keys, provider timeout/retry policy, structured error telemetry, and secure session provisioning remain.
+- Image generation/storage, voice, proactive scheduler/push/calls, lore sync, and Android native packaging are not connected.
+- Do not expose publicly until secure owner provisioning, HTTPS, rate limiting, database backups/restore, dependency scanning, and end-to-end authorization tests are complete.
 
-Migration 002 defines storage only. Emotion transitions, scheduled message generation/delivery, call initiation, live web retrieval, and scheduled official-source synchronization still require application services and end-to-end tests. Do not interpret the presence of these tables as proof those behaviours are live.
+## Migrations
 
+Apply in numeric order:
+- `001_initial.sql` — conversations, messages, memories, knowledge and contact preferences.
+- `002_emotion_contact_knowledge.sql` — simulated-emotion and contact/knowledge persistence schema.
+- `003_time_and_media.sql` — timezone context, media metadata and activity indexes.
 
-- `migrations/003_time_and_media.sql` — owner timezone, private media attachment metadata, and message activity indexes.
-- `GET /v1/time-context` — owner-protected current local date/time, weekday, timezone, last user-message timestamp, and elapsed time since that message. Uses Asia/Dhaka by default and database UTC timestamps.
-
-## Image generation status
-
-`app/media.py` defines replaceable image-generation and private-storage interfaces. The provider, private object storage, chat attachment endpoint, and client image rendering are not connected yet. See `../docs/IMAGE_GENERATION.md`. Do not put image-provider credentials in the client or public repository.
+Migration files define schema only; they do not prove the corresponding services are implemented.
