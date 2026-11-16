@@ -33,12 +33,12 @@ Groq's current documentation says inference requests are not retained by default
 ## Current limitations
 
 - Memory retrieval is basic lexical matching, not semantic/vector retrieval.
-- Automatic memory extraction is intentionally disabled until inspect/edit/delete controls are complete.
+- Automatic memory extraction is intentionally disabled; owner-created memory CRUD is available, but a reviewable extraction queue is still needed.
 - Emotion state is loaded from and saved to the database on each successful reply. Current event detection is intentionally conservative keyword matching; it needs broader evaluation and owner controls.
 - Conversation rows are stored with a null conversation_id; multi-thread management is not yet implemented.
-- Message pagination, idempotent retry keys, provider timeout/retry policy, structured error telemetry, and secure session provisioning remain.
+- Message pagination, idempotent retry keys, provider timeout/retry policy, structured error telemetry, session revocation/password rotation, and host-level rate limiting remain.
 - Image generation/storage, voice, proactive scheduler/push/calls, lore sync, and Android native packaging are not connected.
-- Do not expose publicly until secure owner provisioning, HTTPS, rate limiting, database backups/restore, dependency scanning, and end-to-end authorization tests are complete.
+- Do not expose publicly until host-level rate limiting, database backups/restore, dependency scanning, and production authorization checks are complete.
 
 ## Migrations
 
@@ -47,4 +47,6 @@ Apply in numeric order:
 - `002_emotion_contact_knowledge.sql` — simulated-emotion and contact/knowledge persistence schema.
 - `003_time_and_media.sql` — timezone context, media metadata and activity indexes.
 
-Migration files define schema only; they do not prove the corresponding services are implemented.
+- `004_emotion_dimensions.sql` — adds happiness and disappointment to the persistent emotion state.
+
+The migration runner records applied filenames in `schema_migrations` and applies unapplied files in numeric order at startup.
