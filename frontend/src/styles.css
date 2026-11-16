@@ -2,3 +2,9 @@
 .add-memory-button{margin-top:25px}.memory-editor{margin-top:15px;padding:18px;border:1px solid rgba(189,154,171,.2);border-radius:12px;background:rgba(29,24,33,.72)}.memory-textarea{resize:vertical;min-height:80px;color:#e7dce6}.memory-main{flex:1;min-width:0}.memory-actions{display:flex;gap:13px;align-items:center;margin-top:12px}.text-action{border:0;background:transparent;padding:3px 0;color:#bca6b8;font-size:10px}.text-action:hover{color:#f1e6ef}.danger-action{color:#bc8190}.memory-card .settings-input{margin-bottom:8px}
 
 .provider-status{margin-top:8px!important;color:#b99aaa!important;font-size:10px!important}
+
+.sensitive-toggle{display:flex;align-items:flex-start;gap:10px;margin:14px 0;color:#d8c8d5;font-size:11px;line-height:1.5}
+.sensitive-toggle input{margin:2px 0 0;accent-color:#a65a77;width:14px;height:14px;flex-shrink:0}
+.sensitive-toggle span{display:grid;gap:3px}
+.sensitive-toggle strong{font-weight:600;color:#d8c8d5}
+.sensitive-toggle small{font-size:10px;color:#928595}
