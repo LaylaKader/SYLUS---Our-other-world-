@@ -44,15 +44,25 @@ def _valid_session(value: str | None) -> bool:
     if not value or not settings.session_secret:
         return False
     try:
-        timestamp_text, supplied = value.split(".", 1)
+        timestamp_text, nonce, supplied = value.split(".", 2)
         timestamp = int(timestamp_text)
     except (ValueError, TypeError):
         return False
     now = int(time())
     if timestamp > now + 60 or now - timestamp > settings.session_ttl_seconds:
         return False
-    expected = hmac.new(settings.session_secret.encode(), f"v1:{timestamp}".encode(), hashlib.sha256).hexdigest()
-    return hmac.compare_digest(supplied, expected)
+    expected = hmac.new(
+        settings.session_secret.encode(), f"v1:{timestamp}:{nonce}".encode(), hashlib.sha256
+    ).hexdigest()
+    if not hmac.compare_digest(supplied, expected):
+        return False
+    token_hash = hashlib.sha256(value.encode()).hexdigest()
+    with connection() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM owner_sessions WHERE token_hash = %s AND expires_at > now() AND revoked_at IS NULL",
+            (token_hash,),
+        ).fetchone()
+    return bool(row)
 
 def require_owner(request: Request, authorization: str | None = Header(default=None)):
     expected = f"Bearer {settings.sylus_owner_token}"
@@ -106,16 +116,39 @@ def create_owner_session(payload: OwnerLogin, request: Request, response: Respon
         raise HTTPException(status_code=401, detail="Owner password was not accepted.")
     attempts.clear()
     issued = int(now)
-    signature = hmac.new(settings.session_secret.encode(), f"v1:{issued}".encode(), hashlib.sha256).hexdigest()
+    nonce = secrets.token_urlsafe(24)
+    signature = hmac.new(
+        settings.session_secret.encode(), f"v1:{issued}:{nonce}".encode(), hashlib.sha256
+    ).hexdigest()
+    session_value = f"{issued}.{nonce}.{signature}"
+    token_hash = hashlib.sha256(session_value.encode()).hexdigest()
+    expires_at = datetime.fromtimestamp(issued + settings.session_ttl_seconds, timezone.utc)
+    with connection() as conn:
+        conn.execute("DELETE FROM owner_sessions WHERE expires_at < now() OR revoked_at IS NOT NULL")
+        conn.execute(
+            "INSERT INTO owner_sessions (token_hash, expires_at) VALUES (%s, %s)",
+            (token_hash, expires_at),
+        )
     response.set_cookie(
-        key="sylus_session", value=f"{issued}.{signature}", max_age=settings.session_ttl_seconds,
+        key="sylus_session", value=session_value, max_age=settings.session_ttl_seconds,
         httponly=True, secure=settings.app_env.lower() == "production", samesite="lax", path="/",
     )
     return {"authenticated": True, "expires_in": settings.session_ttl_seconds}
 
 @app.delete("/v1/session")
-def delete_owner_session(response: Response):
-    response.delete_cookie(key="sylus_session", path="/", httponly=True, secure=settings.app_env.lower() == "production", samesite="lax")
+def delete_owner_session(request: Request, response: Response):
+    session_value = request.cookies.get("sylus_session")
+    if session_value:
+        token_hash = hashlib.sha256(session_value.encode()).hexdigest()
+        with connection() as conn:
+            conn.execute(
+                "UPDATE owner_sessions SET revoked_at = now() WHERE token_hash = %s AND revoked_at IS NULL",
+                (token_hash,),
+            )
+    response.delete_cookie(
+        key="sylus_session", path="/", httponly=True,
+        secure=settings.app_env.lower() == "production", samesite="lax",
+    )
     return {"authenticated": False}
 
 @app.get("/health")
