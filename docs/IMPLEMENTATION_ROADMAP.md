@@ -1,64 +1,68 @@
 # SYLUS implementation roadmap
 
 ## Product target
-
-A private, single-owner Android companion with a fast text-chat experience first. The app must preserve conversations and personal memories across app restarts and browser closure. Voice calling and proactive contact are part of the target; screen sharing, Together activities, and the 3D avatar are later modules.
+A private, single-owner Android companion with fast text chat, durable chat history, separate long-term memory, a consistent Sylus persona, simulated emotional continuity, source-aware live lore, and proactive messages/calls governed by owner permissions. Screen sharing, Together activities, and a replaceable 3D avatar are later modules.
 
 ## Repository audit — 2026-11-16
-
-- The default branch contains a README and a partial Floot source snapshot under `backup/floot-source/`.
-- The README explicitly describes this as a recovery copy, not a runnable deployment.
-- The snapshot references application files that are not present in the backup, so it cannot currently be built as a standalone app.
-- Existing UI includes a memory panel, chat page, voice panel, gallery, Together panel, and a small character profile. Their presence does not prove that the underlying persistence, retrieval, or call workflows are complete.
-- Do not put personal memories, conversation exports, API keys, or other private data in this repository. The current repository is public.
+- The default branch contains a partial Floot source snapshot under `backup/floot-source/`; it is a recovery copy, not a runnable deployment.
+- Existing UI panels do not prove persistence, memory retrieval, voice, or calls are complete.
+- The repository is public. Never commit personal memories, chat exports, API keys, private media, or provider credentials.
 
 ## Architecture principles
-
-1. Keep the app single-owner. Do not add public registration or multi-user product flows.
-2. Still protect the private instance. No unauthenticated public endpoint may read or write chat, memories, media, or call preferences. Use a private access mechanism or owner-only deployment boundary.
-3. Separate three data domains:
-   - character canon and persona configuration;
-   - personal long-term memories and relationship continuity;
-   - immutable conversation/message history and attachments.
-4. Store data in a persistent database, not browser local state. Add migrations, backups, restore tests, and retention controls.
-5. Retrieve only relevant memories for each response. Store provenance, timestamps, confidence, and supersession links so outdated or uncertain memories are not treated as facts.
-6. Keep model/provider integrations behind interfaces. No automatic paid fallback; if a configured free/local provider is unavailable or quota-limited, explain the failure rather than silently charging.
-7. Keep voice, proactive messaging/calling, media, Together features, and the future 3D avatar as independent modules.
-8. The 3D avatar must be a replaceable adapter (for example GLB/VRM renderer interface), so adding a model later does not require rewriting chat or memory.\n9. Give Sylus a persistent, inspectable artificial-emotion state that shapes expression in a restrained, character-consistent way; emotion never overrides user boundaries or contact permissions.\n10. Keep official canon, secondary wiki reference, community discussion/speculation, and private shared-story continuity in separate knowledge namespaces. Every retrieved lore/update fact needs source provenance and freshness.
+1. Keep the app single-owner; do not add public registration or multi-user product flows.
+2. Protect the private instance. No unauthenticated public endpoint may read/write chat, memories, media, or contact preferences.
+3. Separate persona/canon, private memories/shared story, and immutable conversation history.
+4. Persist data in a database with migrations, backups, restore tests, and retention controls.
+5. Retrieve relevant memories only; store provenance, timestamps, confidence, sensitivity, and supersession.
+6. Keep model/provider integrations replaceable. No automatic paid fallback.
+7. Keep voice, proactive contact, media, Together, and avatar as independent modules.
+8. Future 3D avatar uses a replaceable renderer adapter (for example GLB/VRM).
+9. Persist an inspectable artificial-emotion state; it shapes expression but never overrides consent or safety.
+10. Separate official canon, secondary wiki reference, community discussion/speculation, and private shared-story continuity. Store provenance and freshness.
+11. Sylus can initiate messages without an incoming user message; one outbound turn can contain 2–3 separate bubbles.
+12. Messaging and calls have separate permissions and restrictions, interpreted in Asia/Dhaka time.
+13. On-demand web research and scheduled source updates are separate capabilities; both must preserve provenance.
 
 ## Build order and acceptance checks
 
-### Phase A — runnable private chat foundation
-- Recover or replace missing app source; establish a reproducible build and documented local run command.
+### Phase A — runnable private chat
+- Recover/replace missing app source; establish reproducible build.
 - Implement owner-only access without public registration.
-- Implement chat list, message send/receive, timestamps, retries, and durable server-side persistence.
-- Acceptance: send messages, close/reopen the app, and verify the full conversation is still present; verify a second unauthorized device cannot read it.
+- Implement send/receive, timestamps, retries, pagination, and durable persistence.
+- Test history after app restart and reject unauthorized devices.
 
 ### Phase B — character and memory
-- Load the persona from a versioned character configuration.
-- Create separate tables/collections for memories, memory links, memory events, conversations, and messages.
-- Add explicit memory extraction, deduplication, conflict handling, relevance retrieval, and user review/edit/delete.
-- Acceptance: test a detail saved in one conversation, retrieve it naturally in a later conversation, update a changed detail, and confirm unrelated memories are not injected.
+- Load versioned persona configuration.
+- Implement memory, memory-event, conversation, message, and knowledge stores.
+- Add extraction, deduplication, conflict handling, relevant retrieval, and owner review/edit/delete.
+- Test save/retrieve/update and ensure unrelated memories are not injected.
 
-### Phase C — emotional continuity and live knowledge\n- Persist the artificial-emotion state and event history; connect the state to the agent prompt and later voice prosody.\n- Add a source-aware lore retrieval service and scheduled updater for official Love and Deepspace news/social announcements. Track main-story branches, Sylus cards, reruns, event dates, and version notices.\n- Use wiki sources as secondary references and Reddit as community discussion only; label speculation and never silently promote it to canon.\n- Acceptance: verify an official announcement updates the knowledge base with source URL and timestamp; verify a Reddit theory remains community/speculation; verify a character mood carries across app restarts without becoming manipulative.\n\n### Phase D — voice
+### Phase C — artificial emotion and live knowledge
+- Persist emotion dimensions, transitions, confidence, and decay; feed state into text generation and later voice prosody.
+- Build source-aware on-demand web research and knowledge ingestion.
+- Monitor official Love and Deepspace announcements for main-story chapters, Sylus cards, reruns, events, and version notices.
+- Use wikis as secondary reference and Reddit as community discussion only; label speculation.
+- Test source provenance, freshness, canon separation, and mood persistence.
+
+### Phase D — proactive messages and calls
+- Implement a server-side scheduler independent of the browser tab.
+- Support spontaneous messages and 1–3 bubbles per composed turn, with idempotent delivery, cooldowns, quiet hours, and owner controls.
+- Parse natural-language contact restrictions using Asia/Dhaka time. Messaging and calls are separate permissions; restrictions apply for their full duration.
+- Add Android notification/call integration and test background behavior on a real device.
+- Test outbound messages without a user prompt, ordering, duplicate prevention, and all restrictions.
+
+### Phase E — voice
 - Add speech input/output behind replaceable provider interfaces.
-- Test microphone permission, interruption, turn-taking, latency, voice quality, and fallback behavior.
-- No voice cloning or use of protected voice recordings without authorization.
-
-### Phase E — proactive contact and calls
-- Run a scheduled/background service independent of the browser tab.
-- Parse natural-language contact restrictions using Asia/Dhaka time. Restrictions override autonomous contact for their full duration. Ask by message before resuming calls when permitted; if messaging is also restricted, remain silent.
-- Require Android notification/call permissions and test battery/background limits on real devices.
-- Acceptance: verify allowed contact, blocked contact, expiry, explicit permission to resume, and app force-stop behavior.
+- Test microphone permissions, interruption, turn-taking, latency, and voice quality.
+- Use only licensed/authorized voices.
 
 ### Phase F — later modules
-- Add screen sharing/Together activities after chat and calls are reliable.
-- Add a 3D avatar through the replaceable renderer interface. Do not block the chat release on finding a model.
+- Add screen sharing/Together after chat and calls are reliable.
+- Add 3D avatar through replaceable renderer interface.
 
 ## Security and release gates
-
 - Never commit secrets, private memories, chat exports, or private media.
 - Use environment variables or a secrets manager for provider credentials.
-- Encrypt transport; restrict database access; use private object storage for attachments.
-- Test backup restoration and owner-only access before sharing a hosted link.
-- A GitHub source link is not a working app link. Publish a hosting link only after a successful deployment and smoke test.
+- Encrypt transport; restrict database access; use private object storage.
+- Test backup restoration and owner-only access before hosting.
+- A GitHub source link is not a working app link; do not claim deployment until built and smoke-tested.
