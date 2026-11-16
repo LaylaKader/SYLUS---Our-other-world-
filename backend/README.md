@@ -1,8 +1,10 @@
 # SYLUS backend
 
-Private single-owner FastAPI backend for the SYLUS companion. This is an early runnable integration milestone, not yet approved for public production hosting.
+Private single-owner FastAPI backend for the SYLUS companion. This is an early runnable integration milestone with Docker Compose support, not yet approved for public production hosting.
 
 ## Local setup
+
+For a complete local stack, see the repository-root `docker-compose.yml` and `docs/DOCKER_LOCAL_SETUP.md`. Docker Compose keeps PostgreSQL and FastAPI private behind the frontend reverse proxy.
 
 1. Create a private PostgreSQL database.
 2. Copy `.env.example` to `.env`. Set `DATABASE_URL`, a long random `SYLUS_OWNER_TOKEN`, a unique `SYLUS_OWNER_PASSWORD`, and a separate random `SESSION_SECRET`. Never reuse the model API key as either secret.
@@ -18,6 +20,7 @@ Private single-owner FastAPI backend for the SYLUS companion. This is an early r
 - `POST /v1/messages` — legacy store-only endpoint.
 - `POST /v1/chat` — owner-protected user message + Sylus response, using the one configured model provider.
 - `GET /v1/memories` — owner-protected active non-archived memories.
+- `POST /v1/memories`, `PATCH /v1/memories/{id}`, `DELETE /v1/memories/{id}` — owner-managed memory CRUD.
 
 Every `/v1/*` route requires an owner session cookie or the server-side bootstrap bearer token. The Settings screen signs in with the owner password and receives an HttpOnly, Secure-in-production, SameSite=Lax cookie. The recommended reverse-proxy setup serves frontend and API on one origin. The password is not stored in the browser. CORS is restricted to exact origins and credentials are enabled only for those origins. Never use a wildcard origin for the private app. The built-in in-memory login throttle is a single-process safeguard, not a replacement for host-level rate limiting.
 
