@@ -38,3 +38,5 @@
 
 .read-aloud-button{display:inline-block;margin:5px 0 0 3px;color:#c9a875!important}
 .message-audio{display:block;width:min(100%,300px);height:34px;margin-top:9px;filter:sepia(.2) saturate(.7)}
+
+.license-link{display:inline-block;color:#c6a5ba;font-size:10px;text-decoration:underline;text-underline-offset:3px;margin:8px 0 12px}
