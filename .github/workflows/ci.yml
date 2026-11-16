@@ -36,3 +36,16 @@ jobs:
           cache-dependency-path: backend/requirements.txt
       - run: pip install -r requirements.txt pytest
       - run: pytest -q
+
+  containers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Compose configuration
+        run: |
+          cp .env.compose.example .env
+          docker compose config --quiet
+      - name: Build private backend image
+        run: docker build -f backend/Dockerfile -t sylus-backend:ci .
+      - name: Build frontend image
+        run: docker build -f frontend/Dockerfile -t sylus-frontend:ci .
