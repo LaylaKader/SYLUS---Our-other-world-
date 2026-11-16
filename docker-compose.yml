@@ -1,0 +1,54 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sylus
+      POSTGRES_USER: sylus
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - sylus_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sylus -d sylus"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [sylus-private]
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://sylus:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/sylus
+      SYLUS_OWNER_TOKEN: ${SYLUS_OWNER_TOKEN:?Set SYLUS_OWNER_TOKEN in .env}
+      SYLUS_OWNER_PASSWORD: ${SYLUS_OWNER_PASSWORD:?Set SYLUS_OWNER_PASSWORD in .env}
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
+      SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-1209600}
+      APP_ENV: ${APP_ENV:-development}
+      MODEL_API_BASE_URL: ${MODEL_API_BASE_URL:-https://api.groq.com/openai/v1}
+      MODEL_API_KEY: ${MODEL_API_KEY:-}
+      MODEL_NAME: ${MODEL_NAME:-openai/gpt-oss-120b}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8080}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [sylus-private]
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${SYLUS_PORT:-8080}:80"
+    depends_on: [backend]
+    networks: [sylus-private]
+
+volumes:
+  sylus_pgdata:
+
+networks:
+  sylus-private:
+    driver: bridge
