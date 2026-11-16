@@ -206,6 +206,8 @@ def time_context(_: None = Depends(require_owner)):
         "local_time": now_local.strftime("%H:%M:%S"),
         "chat_ready": bool(settings.model_api_base_url and settings.model_api_key and settings.model_name),
         "chat_model": settings.model_name if settings.model_api_key else None,
+        "image_generation_ready": bool(settings.cloudflare_account_id and settings.cloudflare_api_token),
+        "voice_ready": bool(settings.elevenlabs_api_key and settings.elevenlabs_voice_id),
         "last_user_message_utc": last_utc.isoformat() if last_utc else None,
         "last_user_message_local": last_local.isoformat() if last_local else None,
         "seconds_since_last_user_message": elapsed_seconds,
