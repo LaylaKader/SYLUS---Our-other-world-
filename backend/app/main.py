@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from typing import Literal
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from .config import settings
 from .db import connection, open_pool
@@ -10,6 +11,15 @@ from .chat_service import generate_reply, ProviderNotConfigured, ProviderRequest
 
 app = FastAPI(title="SYLUS private companion API", version="0.3.0")
 DEFAULT_TIMEZONE = "Asia/Dhaka"
+
+_origins = [item.strip() for item in settings.cors_allowed_origins.split(",") if item.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_origins,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+)
 
 @app.on_event("startup")
 def startup():
