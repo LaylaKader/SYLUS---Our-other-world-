@@ -34,3 +34,16 @@ class EmotionStateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+    def test_success_can_raise_happiness_and_pride(self):
+        state = EmotionState().apply("shared_success", 1.0)
+        self.assertGreater(state.happiness, 0.18)
+        self.assertGreater(state.pride, 0.10)
+
+    def test_disappointment_is_tracked_and_decays(self):
+        state = EmotionState().apply("disappointment", 1.0)
+        self.assertGreater(state.disappointment, 0)
+        before = state.disappointment
+        state.decay()
+        self.assertLess(state.disappointment, before)
