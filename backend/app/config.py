@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     model_api_base_url: str = ""
     model_api_key: str = ""
     model_name: str = "openai/gpt-oss-120b"
+    cloudflare_account_id: str = ""
+    cloudflare_api_token: str = ""
     cors_allowed_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     sylus_owner_password: str = ""
     session_secret: str = ""
