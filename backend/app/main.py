@@ -90,6 +90,9 @@ class OwnerLogin(BaseModel):
 class MessageIn(BaseModel):
     text: str = Field(min_length=1, max_length=12000)
 
+class MessageEdit(BaseModel):
+    text: str = Field(min_length=1, max_length=12000)
+
 class MessageOut(BaseModel):
     id: str
     role: Literal["user", "assistant"]
@@ -174,7 +177,7 @@ def health():
 def time_context(_: None = Depends(require_owner)):
     """Return current Dhaka-local time and the last time the owner messaged."""
     with connection() as conn:
-        row = conn.execute("SELECT created_at FROM messages WHERE role = 'user' ORDER BY created_at DESC LIMIT 1").fetchone()
+        row = conn.execute("SELECT created_at FROM messages WHERE role = 'user' AND archived_at IS NULL ORDER BY created_at DESC LIMIT 1").fetchone()
         tz_row = conn.execute("SELECT timezone FROM owner_runtime_context WHERE id = 1").fetchone()
     tz_name = tz_row[0] if tz_row else DEFAULT_TIMEZONE
     try:
@@ -201,7 +204,7 @@ def time_context(_: None = Depends(require_owner)):
 @app.get("/v1/messages", response_model=list[MessageOut])
 def list_messages(_: None = Depends(require_owner)):
     with connection() as conn:
-        rows = conn.execute("SELECT id, role, body, created_at FROM messages WHERE role IN ('user','assistant') ORDER BY created_at ASC").fetchall()
+        rows = conn.execute("SELECT id, role, body, created_at FROM messages WHERE role IN ('user','assistant') AND archived_at IS NULL ORDER BY created_at ASC").fetchall()
     return [MessageOut(id=str(r[0]), role=r[1], text=r[2], created_at=r[3]) for r in rows]
 
 @app.post("/v1/messages", response_model=MessageOut)
@@ -212,6 +215,62 @@ def save_user_message(payload: MessageIn, _: None = Depends(require_owner)):
     with connection() as conn:
         row = conn.execute("INSERT INTO messages (role, body) VALUES ('user', %s) RETURNING id, role, body, created_at", (text,)).fetchone()
     return MessageOut(id=str(row[0]), role=row[1], text=row[2], created_at=row[3])
+
+@app.patch("/v1/messages/{message_id}", response_model=MessageOut)
+def edit_user_message(message_id: UUID, payload: MessageEdit, _: None = Depends(require_owner)):
+    text = payload.text.strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="Message cannot be blank")
+    with connection() as conn:
+        row = conn.execute(
+            "SELECT id, body, created_at FROM messages WHERE id = %s AND role = 'user' AND archived_at IS NULL",
+            (message_id,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Your message was not found.")
+        conn.execute(
+            "INSERT INTO message_revisions (message_id, previous_body, reason) VALUES (%s, %s, 'edited')",
+            (message_id, row[1]),
+        )
+        conn.execute("UPDATE messages SET body = %s, edited_at = now() WHERE id = %s", (text, message_id))
+        conn.execute(
+            "UPDATE messages SET archived_at = now(), archive_reason = 'superseded_by_edit' "
+            "WHERE archived_at IS NULL AND created_at > %s", (row[2],)
+        )
+        updated = conn.execute(
+            "SELECT id, role, body, created_at FROM messages WHERE id = %s", (message_id,)
+        ).fetchone()
+    return MessageOut(id=str(updated[0]), role=updated[1], text=updated[2], created_at=updated[3])
+
+@app.delete("/v1/messages/{message_id}")
+def delete_user_message(message_id: UUID, _: None = Depends(require_owner)):
+    with connection() as conn:
+        row = conn.execute(
+            "SELECT created_at FROM messages WHERE id = %s AND role = 'user' AND archived_at IS NULL",
+            (message_id,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Your message was not found.")
+        conn.execute(
+            "UPDATE messages SET archived_at = now(), archive_reason = 'deleted_by_owner' "
+            "WHERE archived_at IS NULL AND created_at >= %s", (row[0],)
+        )
+    return {"deleted": True, "rewound": True}
+
+@app.post("/v1/messages/{message_id}/rewind")
+def rewind_to_message(message_id: UUID, _: None = Depends(require_owner)):
+    with connection() as conn:
+        row = conn.execute(
+            "SELECT created_at FROM messages WHERE id = %s AND role IN ('user','assistant') AND archived_at IS NULL",
+            (message_id,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="That point in the conversation was not found.")
+        archived = conn.execute(
+            "UPDATE messages SET archived_at = now(), archive_reason = 'rewound_by_owner' "
+            "WHERE archived_at IS NULL AND created_at > %s RETURNING id", (row[0],)
+        ).fetchall()
+    return {"rewound_to": message_id, "archived_count": len(archived)}
 
 @app.post("/v1/chat", response_model=ChatTurnOut)
 def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner)):
@@ -229,11 +288,11 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
     if not (settings.model_api_base_url and settings.model_api_key and settings.model_name):
         raise HTTPException(status_code=503, detail="Chat model is not configured on the private server. No paid or alternate provider will be selected automatically.")
     with connection() as conn:
-        previous = conn.execute("SELECT created_at FROM messages WHERE role = 'user' ORDER BY created_at DESC LIMIT 1").fetchone()
+        previous = conn.execute("SELECT created_at FROM messages WHERE role = 'user' AND archived_at IS NULL ORDER BY created_at DESC LIMIT 1").fetchone()
         tz_row = conn.execute("SELECT timezone FROM owner_runtime_context WHERE id = 1").fetchone()
         user_row = conn.execute("INSERT INTO messages (role, body) VALUES ('user', %s) RETURNING id, role, body, created_at", (text,)).fetchone()
         history_rows = conn.execute(
-            "SELECT role, body, created_at FROM messages WHERE id <> %s AND role IN ('user','assistant') ORDER BY created_at DESC LIMIT 12",
+            "SELECT role, body, created_at FROM messages WHERE id <> %s AND role IN ('user','assistant') AND archived_at IS NULL ORDER BY created_at DESC LIMIT 12",
             (user_row[0],),
         ).fetchall()
     tz_name = tz_row[0] if tz_row else DEFAULT_TIMEZONE
