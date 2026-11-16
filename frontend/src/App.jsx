@@ -24,6 +24,9 @@ function App() {
   const [memories, setMemories] = useState([]);
   const [timeContext, setTimeContext] = useState(null);
   const [sending, setSending] = useState(false);
+  const [editingMessageId, setEditingMessageId] = useState(null);
+  const [editingMessageText, setEditingMessageText] = useState('');
+  const [messageActionBusy, setMessageActionBusy] = useState(false);
   const [memoryFormOpen, setMemoryFormOpen] = useState(false);
   const [memoryCategory, setMemoryCategory] = useState('Preference');
   const [memoryContent, setMemoryContent] = useState('');
@@ -92,6 +95,54 @@ function App() {
       setNotice('Private conversation saved');
     } catch (error) { setMessages(current => current.filter(message => message.id !== pendingId)); setDraft(text); setNotice(error.message); }
     finally { setSending(false); }
+  }
+
+  async function refreshMessages() {
+    const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/messages`, { headers, credentials: 'include' });
+    if (!response.ok) throw new Error('Could not refresh the conversation.');
+    setMessages((await response.json()).filter(m => m.role !== 'system'));
+  }
+
+  function beginEditMessage(message) {
+    setEditingMessageId(message.id);
+    setEditingMessageText(message.text);
+  }
+
+  async function saveMessageEdit(messageId) {
+    if (!editingMessageText.trim() || messageActionBusy) return;
+    setMessageActionBusy(true);
+    try {
+      const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/messages/${messageId}`, { method: 'PATCH', headers, credentials: 'include', body: JSON.stringify({ text: editingMessageText.trim() }) });
+      if (!response.ok) { const failure = await response.json().catch(() => ({})); throw new Error(failure.detail || 'Could not edit your message.'); }
+      setEditingMessageId(null);
+      await refreshMessages();
+      setNotice('Message edited. Later messages were moved out of the active conversation.');
+    } catch (error) { setNotice(error.message); }
+    finally { setMessageActionBusy(false); }
+  }
+
+  async function deleteMessage(messageId) {
+    if (!window.confirm('Delete this message and remove everything after it from the active conversation? The old messages are kept in the private archive.')) return;
+    setMessageActionBusy(true);
+    try {
+      const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/messages/${messageId}`, { method: 'DELETE', headers, credentials: 'include' });
+      if (!response.ok) throw new Error('Could not delete this message.');
+      await refreshMessages();
+      setNotice('Message deleted. The later conversation was archived.');
+    } catch (error) { setNotice(error.message); }
+    finally { setMessageActionBusy(false); }
+  }
+
+  async function rewindToMessage(messageId) {
+    if (!window.confirm('Rewind the active conversation to this message? Everything after it will be archived, not permanently erased.')) return;
+    setMessageActionBusy(true);
+    try {
+      const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/messages/${messageId}/rewind`, { method: 'POST', headers, credentials: 'include' });
+      if (!response.ok) throw new Error('Could not rewind the conversation.');
+      await refreshMessages();
+      setNotice('Conversation rewound. Later messages remain in the private archive.');
+    } catch (error) { setNotice(error.message); }
+    finally { setMessageActionBusy(false); }
   }
 
   async function createMemory(event) {
@@ -184,7 +235,7 @@ function App() {
             <div className="empty-kicker">A NEW CHAPTER</div><h2>Well, look who’s here.</h2><p>{connected && chatReady ? 'The connection is ready. Send a message when you like.' : connected ? 'Your private sign-in works. The server still needs its chat model key before Sylus can reply.' : 'When the private connection is ready, this is where our story continues.'}</p>
             <div className="empty-divider"><span/><Sparkles size={12}/><span/></div>
             <div className="empty-footnote"><LockKeyhole size={12}/> Your conversations stay yours.</div>
-          </div> : <div className="message-list" ref={messageListRef} aria-live="polite" aria-relevant="additions text">{messages.map(m => <div className={`message-row ${m.role === 'user' ? 'mine' : 'theirs'}`} key={m.id}><div className="message-avatar">{m.role === 'user' ? 'U' : <Crown size={15}/>}</div><div className="message-content"><div className="message-author">{m.role === 'user' ? 'YOU' : 'SYLUS'} <span>{new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span></div><div className="message-bubble">{m.text}</div></div></div>)}
+          </div> : <div className="message-list" ref={messageListRef} aria-live="polite" aria-relevant="additions text">{messages.map(m => <div className={`message-row ${m.role === 'user' ? 'mine' : 'theirs'}`} key={m.id}><div className="message-avatar">{m.role === 'user' ? 'U' : <Crown size={15}/>}</div><div className="message-content"><div className="message-author">{m.role === 'user' ? 'YOU' : 'SYLUS'} <span>{new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span></div>{editingMessageId === m.id ? <div className="message-edit-box"><textarea value={editingMessageText} onChange={e => setEditingMessageText(e.target.value)} rows={3} maxLength={12000}/><div className="message-edit-actions"><button className="text-action" onClick={() => setEditingMessageId(null)}>Cancel</button><button className="text-action" disabled={messageActionBusy || !editingMessageText.trim()} onClick={() => saveMessageEdit(m.id)}>{messageActionBusy ? 'Saving…' : 'Save & rewind'}</button></div></div> : <div className="message-bubble">{m.text}</div>}<div className="message-actions">{m.role === 'user' && editingMessageId !== m.id && <><button className="text-action" disabled={messageActionBusy} onClick={() => beginEditMessage(m)}>Edit</button><button className="text-action danger-action" disabled={messageActionBusy} onClick={() => deleteMessage(m.id)}>Delete</button></>}<button className="text-action" disabled={messageActionBusy} onClick={() => rewindToMessage(m.id)}>Rewind here</button></div></div></div>)}
           {sending && <div className="typing-row" role="status" aria-label="Sylus is typing"><div className="message-avatar"><Crown size={15}/></div><div className="typing-bubble"><span/><span/><span/></div></div>}
         </div>}
         </div>
