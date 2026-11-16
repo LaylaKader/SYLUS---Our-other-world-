@@ -266,10 +266,11 @@ def delete_user_message(message_id: UUID, _: None = Depends(require_owner)):
         if not row:
             raise HTTPException(status_code=404, detail="Your message was not found.")
         conn.execute(
-            "UPDATE messages SET archived_at = now(), archive_reason = 'deleted_by_owner' "
-            "WHERE archived_at IS NULL AND created_at >= %s", (row[0],)
+            "UPDATE messages SET archived_at = now(), archive_reason = 'after_deleted_message' "
+            "WHERE archived_at IS NULL AND (created_at > %s OR created_at = %s)", (row[0], row[0])
         )
-    return {"deleted": True, "rewound": True}
+        conn.execute("DELETE FROM messages WHERE id = %s", (message_id,))
+    return {"deleted": True, "later_messages_archived": True}
 
 @app.post("/v1/messages/{message_id}/rewind")
 def rewind_to_message(message_id: UUID, _: None = Depends(require_owner)):
