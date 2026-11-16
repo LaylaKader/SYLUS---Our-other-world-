@@ -14,7 +14,9 @@ For a normal chat reply, the server sends the current message, up to 16 recent u
 Sensitive memories are excluded from retrieval, but sensitive content written in ordinary chat history may still be included in the recent-message context. This is a known limitation; a future per-conversation privacy filter should be added.
 
 ## Current provider documentation checked 2026-11-16
-- Groq says inference requests are not retained by default. It may temporarily log inputs and outputs for reliability troubleshooting or abuse investigations for up to 30 days; its Data Controls page describes an opt-out for that storage: https://console.groq.com/docs/your-data
+- Groq says inference requests are not retained by default. It may temporarily log inputs and outputs for reliability troubleshooting or abuse investigations for up to 30 days; its Data Controls page describes Zero Data Retention (ZDR), which disables this temporary customer-data storage: https://console.groq.com/docs/your-data
+- Groq's services agreement says it does not use customer inputs or outputs to train or fine-tune models unless the customer explicitly permits or instructs it: https://console.groq.com/docs/legal/services-agreement
+- Groq states retained customer data is stored in GCP buckets in the United States. Review its current terms and data controls before using it: https://console.groq.com/docs/your-data
 - Free-tier quotas are model- and organization-specific and may change. The official rate-limit page is authoritative for the account's current quotas: https://console.groq.com/docs/rate-limits
 - The current rate-limit table lists `openai/gpt-oss-120b` with 30 requests/minute, 1,000 requests/day, 8,000 tokens/minute, and 200,000 tokens/day as the published Free-plan limits. Check the Groq Console before relying on these figures.
 
