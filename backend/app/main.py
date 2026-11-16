@@ -106,6 +106,9 @@ class ChatTurnOut(BaseModel):
     user_message: MessageOut
     assistant_message: MessageOut
 
+class SpeechIn(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
+
 class ImageGenerateIn(BaseModel):
     prompt: str = Field(min_length=1, max_length=1800)
     caption: str = Field(default='A picture for you.', max_length=300)
@@ -278,6 +281,22 @@ def rewind_to_message(message_id: UUID, _: None = Depends(require_owner)):
             "WHERE archived_at IS NULL AND created_at > %s RETURNING id", (row[0],)
         ).fetchall()
     return {"rewound_to": message_id, "archived_count": len(archived)}
+
+@app.post("/v1/voice/speech")
+def create_speech(payload: SpeechIn, _: None = Depends(require_owner)):
+    if not (settings.elevenlabs_api_key and settings.elevenlabs_voice_id):
+        raise HTTPException(status_code=503, detail="Voice playback is not configured. Add an ElevenLabs API key and your designed voice ID in the private server settings.")
+    try:
+        response = httpx.post(
+            f"https://api.elevenlabs.io/v1/text-to-speech/{settings.elevenlabs_voice_id}?output_format=mp3_44100_128",
+            headers={"xi-api-key": settings.elevenlabs_api_key, "Content-Type": "application/json", "Accept": "audio/mpeg"},
+            json={"text": payload.text, "model_id": "eleven_multilingual_v2", "voice_settings": {"stability": 0.55, "similarity_boost": 0.72, "style": 0.25, "use_speaker_boost": True}},
+            timeout=60.0,
+        )
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="The voice provider could not generate audio. Check the private voice configuration and usage allowance.") from exc
+    return Response(content=response.content, media_type="audio/mpeg", headers={"Cache-Control": "no-store, private", "Content-Disposition": "inline; filename=sylus-message.mp3"})
 
 @app.post("/v1/media/upload", response_model=MessageOut)
 def upload_image(file: UploadFile = File(...), _: None = Depends(require_owner)):
