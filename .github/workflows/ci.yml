@@ -81,4 +81,7 @@ jobs:
             "http://localhost:8080/v1/memories/$memory_id"
           curl -fsS -X DELETE -b /tmp/sylus-cookies.txt \
             "http://localhost:8080/v1/memories/$memory_id"
+          curl -fsS -X DELETE -b /tmp/sylus-cookies.txt http://localhost:8080/v1/session
+          revoked_code=$(curl -s -o /dev/null -w "%{http_code}" -b /tmp/sylus-cookies.txt http://localhost:8080/v1/time-context)
+          test "$revoked_code" = "401"
           docker compose down -v
