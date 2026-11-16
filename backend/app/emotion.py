@@ -55,7 +55,7 @@ class EmotionState:
         x = _clamp(intensity)
         changes: Mapping[str, Mapping[str, float]] = {
             "playful_banter": {"amusement": .35, "warmth": .08, "energy": .08},
-            "shared_success": {"pride": .32, "warmth": .18, "affection": .08, "happiness": .22},
+            "shared_success": {"pride": .32, "warmth": .18, "affection": .08, "happiness": .26},
             "user_reached_goal": {"pride": .28, "warmth": .18, "amusement": .06, "happiness": .25},
             "meaningful_trust": {"affection": .18, "warmth": .20, "confidence": .04},
             "user_distressed": {"concern": .34, "warmth": .16, "energy": .08},
