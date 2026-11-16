@@ -22,7 +22,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
 
@@ -99,13 +99,13 @@ def create_owner_session(payload: OwnerLogin, request: Request, response: Respon
     signature = hmac.new(settings.session_secret.encode(), f"v1:{issued}".encode(), hashlib.sha256).hexdigest()
     response.set_cookie(
         key="sylus_session", value=f"{issued}.{signature}", max_age=settings.session_ttl_seconds,
-        httponly=True, secure=settings.app_env.lower() == "production", samesite="lax", path="/",
+        httponly=True, secure=settings.app_env.lower() == "production", samesite="none" if settings.app_env.lower() == "production" else "lax", path="/",
     )
     return {"authenticated": True, "expires_in": settings.session_ttl_seconds}
 
 @app.delete("/v1/session")
 def delete_owner_session(response: Response):
-    response.delete_cookie(key="sylus_session", path="/", httponly=True, secure=settings.app_env.lower() == "production", samesite="lax")
+    response.delete_cookie(key="sylus_session", path="/", httponly=True, secure=settings.app_env.lower() == "production", samesite="none" if settings.app_env.lower() == "production" else "lax")
     return {"authenticated": False}
 
 @app.get("/health")
