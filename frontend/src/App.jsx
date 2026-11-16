@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bird, BookHeart, Camera, ChevronDown, CircleHelp, Clock3, Crown, Heart, Image, LockKeyhole, Menu, MessageCircle, MoreHorizontal, Send, Settings, ShieldCheck, Sparkles, Star, X } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? window.location.origin : '');
@@ -33,6 +33,13 @@ function App() {
   const [editMemoryContent, setEditMemoryContent] = useState('');
   const [editMemorySensitivity, setEditMemorySensitivity] = useState('normal');
   const [memoryBusy, setMemoryBusy] = useState(false);
+  const messageListRef = useRef(null);
+
+  useEffect(() => {
+    if (active === 'chat' && messageListRef.current) {
+      messageListRef.current.scrollTo({ top: messageListRef.current.scrollHeight, behavior: 'smooth' });
+    }
+  }, [messages, sending, active]);
 
   const headers = useMemo(() => ({ 'Content-Type': 'application/json' }), []);
 
@@ -71,6 +78,9 @@ function App() {
     if (!text || !connected || sending) return;
     setSending(true);
     setDraft('');
+    const pendingId = `pending-${Date.now()}`;
+    const optimisticMessage = { id: pendingId, role: 'user', text, created_at: new Date().toISOString() };
+    setMessages(current => [...current, optimisticMessage]);
     try {
       const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/chat`, { method: 'POST', headers, credentials: 'include', body: JSON.stringify({ text }) });
       if (!response.ok) {
@@ -78,9 +88,9 @@ function App() {
         throw new Error(failure.detail || 'Message could not be sent.');
       }
       const turn = await response.json();
-      setMessages(current => [...current, turn.user_message, turn.assistant_message]);
+      setMessages(current => [...current.filter(message => message.id !== pendingId), turn.user_message, turn.assistant_message]);
       setNotice('Private conversation saved');
-    } catch (error) { setDraft(text); setNotice(error.message); }
+    } catch (error) { setMessages(current => current.filter(message => message.id !== pendingId)); setDraft(text); setNotice(error.message); }
     finally { setSending(false); }
   }
 
@@ -174,7 +184,9 @@ function App() {
             <div className="empty-kicker">A NEW CHAPTER</div><h2>Well, look who’s here.</h2><p>{connected && chatReady ? 'The connection is ready. Send a message when you like.' : connected ? 'Your private sign-in works. The server still needs its chat model key before Sylus can reply.' : 'When the private connection is ready, this is where our story continues.'}</p>
             <div className="empty-divider"><span/><Sparkles size={12}/><span/></div>
             <div className="empty-footnote"><LockKeyhole size={12}/> Your conversations stay yours.</div>
-          </div> : <div className="message-list">{messages.map(m => <div className={`message-row ${m.role === 'user' ? 'mine' : 'theirs'}`} key={m.id}><div className="message-avatar">{m.role === 'user' ? 'U' : <Crown size={15}/>}</div><div className="message-content"><div className="message-author">{m.role === 'user' ? 'YOU' : 'SYLUS'} <span>{new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span></div><div className="message-bubble">{m.text}</div></div></div>)}</div>}
+          </div> : <div className="message-list" ref={messageListRef}>{messages.map(m => <div className={`message-row ${m.role === 'user' ? 'mine' : 'theirs'}`} key={m.id}><div className="message-avatar">{m.role === 'user' ? 'U' : <Crown size={15}/>}</div><div className="message-content"><div className="message-author">{m.role === 'user' ? 'YOU' : 'SYLUS'} <span>{new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span></div><div className="message-bubble">{m.text}</div></div></div>)}
+          {sending && <div className="typing-row"><div className="message-avatar"><Crown size={15}/></div><div className="typing-bubble"><span/><span/><span/></div></div>}
+        </div>}
         </div>
         <div className="composer-wrap"><form className="composer" onSubmit={sendMessage}><button type="button" className="composer-tool" title="Image generation will be connected later" disabled aria-label="Image generation coming later"><Camera size={18}/></button><textarea value={draft} onChange={e => setDraft(e.target.value)} placeholder={connected ? (chatReady ? 'Say something…' : 'Chat model not configured yet…') : 'Connect your private instance to begin…'} rows={1} disabled={!connected || !chatReady || sending} onKeyDown={e => {if(e.key === 'Enter' && !e.shiftKey){e.preventDefault();sendMessage(e);}}}/><div className="composer-actions"><span className="composer-hint">↵ to send</span><button className="send-button" type="submit" disabled={!connected || !chatReady || !draft.trim() || sending} aria-label="Send message"><Send size={16}/></button></div></form><div className="composer-caption"><span>SYLUS IS A PRIVATE, PERSONAL COMPANION</span><span>✦</span><span>YOUR WORLD, YOUR RULES</span></div></div>
       </section>}
