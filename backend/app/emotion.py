@@ -66,7 +66,7 @@ class EmotionState:
             "reassurance_received": {"concern": -.18, "warmth": .12, "happiness": .15},
             "conflict_resolved": {"anger": -.24, "irritation": -.22, "disappointment": -.16, "warmth": .10},
             "quiet_companionship": {"warmth": .12, "affection": .08, "happiness": .08, "energy": -.04},
-            "disappointment": {"warmth": -.08, "irritation": .16, "disappointment": .28, "energy": -.08},
+            "disappointment": {"warmth": -.08, "irritation": .16, "disappointment": .40, "energy": -.08},
         }
         for key, delta in changes.get(event, {}).items():
             setattr(self, key, getattr(self, key) + delta * x)
