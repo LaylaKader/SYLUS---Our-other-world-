@@ -71,6 +71,11 @@ jobs:
           curl -fsS http://localhost:18080/sw.js | grep -q "CACHE_NAME"
           hosted_api_code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:18080/v1/messages)
           test "$hosted_api_code" = "401"
+          curl -fsS -c /tmp/sylus-hosted-cookies.txt \
+            -H "Content-Type: application/json" \
+            -d '{"password":"replace-with-a-unique-owner-password"}' \
+            http://localhost:18080/v1/session
+          curl -fsS -b /tmp/sylus-hosted-cookies.txt http://localhost:18080/v1/time-context
           code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/v1/messages)
           test "$code" = "401"
           curl -fsS -c /tmp/sylus-cookies.txt \
