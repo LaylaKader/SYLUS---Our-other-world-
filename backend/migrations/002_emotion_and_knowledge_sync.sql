@@ -64,3 +64,14 @@ ALTER TABLE character_knowledge
       CHECK (confidence >= 0 AND confidence <= 1);
 CREATE INDEX IF NOT EXISTS idx_character_knowledge_source_tier
     ON character_knowledge(source_tier);
+
+-- Seed trusted starting points. Community sources remain lower-trust by design.
+INSERT INTO knowledge_sources (name, base_url, source_tier, poll_interval_minutes)
+VALUES
+  ('Love and Deepspace official English news', 'https://loveanddeepspace.infoldgames.com/en-EN/news', 'official', 60),
+  ('Love and Deepspace official YouTube', 'https://www.youtube.com/@LoveandDeepspace', 'official', 180),
+  ('Love and Deepspace official X', 'https://x.com/Love_Deepspace', 'official', 60),
+  ('Love and Deepspace wiki.gg', 'https://loveanddeepspace.wiki.gg/wiki/Love_and_Deepspace_Wiki', 'secondary', 720),
+  ('Love and Deepspace Fandom wiki', 'https://loveanddeepspace.fandom.com/wiki/Love_and_Deepspace_Wiki', 'secondary', 720),
+  ('Love and Deepspace Reddit', 'https://www.reddit.com/r/LoveAndDeepspace/', 'community', 180)
+ON CONFLICT (base_url) DO NOTHING;
