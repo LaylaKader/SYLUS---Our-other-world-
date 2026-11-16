@@ -1,18 +1,26 @@
-# SYLUS — source backup
+# SYLUS — A world of our own
 
-This repository contains a source snapshot of the SYLUS Floot project.
+Private, single-owner companion app project.
 
-- Main builder: Floot project `c8585fd6-f2d8-406a-8516-0fa641894c89`
-- Snapshot date: 2026-11-16
-- Main app: unpublished; preview only
-- This backup is a recovery copy, not a separate running deployment.
-- Secrets and environment variable values are intentionally excluded.
-- Database schema snapshots are included; personal conversation rows are not exported.
+## Current source layout
+- `frontend/` — responsive React/Vite PWA interface.
+- `backend/` — FastAPI owner-session API, chat provider adapter, persistent emotion state, and migrations.
+- `character/` — versioned persona and canon reference notes.
+- `docs/` — implementation, security, and hosting notes.
 
-The snapshot is stored under `backup/floot-source/`. New implementation changes should be copied here after each coherent milestone. The Floot checkpoint is also named **Pre-expansion backup**; a later checkpoint will capture the new voice, media and Together features.
+## Run with Docker Compose
+1. Copy `.env.compose.example` to `.env`.
+2. Replace every placeholder with private values. Generate independent random values for `SYLUS_OWNER_TOKEN`, `SYLUS_OWNER_PASSWORD`, and `SESSION_SECRET`.
+3. Set `MODEL_API_KEY` only if you choose to use the configured external provider. The sample uses Groq's free-plan endpoint/model and has no paid fallback.
+4. Run `docker compose up --build`.
+5. Open `http://localhost:8080`. Sign in under Settings using the owner password.
 
-## Current integration notes
+PostgreSQL is internal to the Compose network and has a persistent named volume. The API is not directly published; Nginx serves the frontend and proxies `/v1/*` to FastAPI on the private network. The backend applies idempotent SQL migrations at startup.
 
-- Cloudflare Workers AI credentials are requested through Floot's secure connection flow; no secret belongs in this repository.
-- Voice currently uses browser speech APIs as a no-cost prototype.
-- Full incoming/background calls, multi-account isolation, protected-streaming integrations, and native Android support still require additional implementation and testing.
+## Run without Docker
+See `frontend/README.md` and `backend/README.md`.
+
+## Important
+This is still an early private beta. Before public hosting, set `APP_ENV=production`, use HTTPS, configure the exact public origin, use a persistent private database, set strong secrets in the host's secret manager, and complete backup/restore and authorization checks. Never commit `.env`, API keys, chat exports, private images, or personal memory records. The GitHub repository is public, so only source code and placeholder configuration belong here.
+
+The UI is not a completed native Android app. It has a PWA manifest; Android push notifications, proactive calls, voice, image generation, Together, and the 3D avatar are later modules.
