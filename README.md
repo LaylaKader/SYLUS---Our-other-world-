@@ -26,4 +26,4 @@ See `frontend/README.md` and `backend/README.md`.
 ## Important
 This is still an early private beta. Before public hosting, set `APP_ENV=production`, use HTTPS, configure the exact public origin, use a persistent private database, set strong secrets in the host's secret manager, and complete backup/restore and authorization checks. Never commit `.env`, API keys, chat exports, private images, or personal memory records. The GitHub repository is public, so only source code and placeholder configuration belong here.
 
-The UI is not a completed native Android app. It has a PWA manifest; Android push notifications, proactive calls, voice, image generation, Together, and the 3D avatar are later modules.
+The UI is not a completed native Android app. It has a PWA manifest and service worker; Android push notifications, proactive calls, voice, image generation, Together, and the 3D avatar are later modules.
