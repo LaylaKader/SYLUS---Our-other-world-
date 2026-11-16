@@ -45,7 +45,7 @@ class OpenAICompatibleChatModel(ChatModel):
             response = httpx.post(
                 settings.model_api_base_url.rstrip("/") + "/chat/completions",
                 headers={"Authorization": f"Bearer {settings.model_api_key}", "Content-Type": "application/json"},
-                json={"model": settings.model_name, "messages": messages, "temperature": 0.78},
+                json={"model": settings.model_name, "messages": messages, "temperature": 0.78, "max_tokens": 800},
                 timeout=45.0,
             )
             response.raise_for_status()
@@ -89,7 +89,7 @@ class PostgresMemoryRetriever:
     """Conservative lexical retrieval with stop-word filtering and relevance ranking."""
 
     def retrieve(self, *, query: str, limit: int = 8) -> list[RetrievedMemory]:
-        terms = extract_memory_terms(query)
+        terms = extract_memory_terms(query, limit=8)
         if not terms:
             return []
         clauses = " OR ".join("(content ILIKE %s OR category ILIKE %s)" for _ in terms)
@@ -107,7 +107,7 @@ class PostgresMemoryRetriever:
                 params,
             ).fetchall()
         return [
-            RetrievedMemory(category=r[0], content=r[1], confidence=float(r[2]), source=r[3])
+            RetrievedMemory(category=r[0], content=r[1][:1000], confidence=float(r[2]), source=r[3])
             for r in rows
         ]
 
