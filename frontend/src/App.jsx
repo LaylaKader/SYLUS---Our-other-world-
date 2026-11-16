@@ -58,6 +58,7 @@ function App() {
       if (memoryResponse.ok) setMemories(await memoryResponse.json());
     } catch (error) {
       setConnected(false);
+      setChatReady(false);
       setNotice(error.message || 'Could not connect. Check the server and try again.');
     } finally { setChecking(false); }
   }
