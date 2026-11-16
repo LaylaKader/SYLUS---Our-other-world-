@@ -190,6 +190,8 @@ def chat(payload: MessageIn, _: None = Depends(require_owner)):
     except ProviderNotConfigured as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ProviderRequestFailed as exc:
+        with connection() as conn:
+            conn.execute("DELETE FROM messages WHERE id = %s AND role = 'user'", (user_row[0],))
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     with connection() as conn:
         assistant_row = conn.execute("INSERT INTO messages (role, body) VALUES ('assistant', %s) RETURNING id, role, body, created_at", (answer,)).fetchone()
