@@ -48,5 +48,6 @@ Apply in numeric order:
 - `003_time_and_media.sql` — timezone context, media metadata and activity indexes.
 
 - `004_emotion_dimensions.sql` — adds happiness and disappointment to the persistent emotion state.
+- `005_owner_sessions.sql` — registers unique owner sessions and supports server-side logout revocation.
 
 The migration runner records applied filenames in `schema_migrations` and applies unapplied files in numeric order at startup.
