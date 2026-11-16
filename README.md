@@ -17,6 +17,9 @@ Private, single-owner companion app project.
 
 PostgreSQL is internal to the Compose network and has a persistent named volume. The API is not directly published; Nginx serves the frontend and proxies `/v1/*` to FastAPI on the private network. The backend applies idempotent SQL migrations at startup.
 
+## Hosted preview
+A Render Blueprint and single-container Dockerfile are included. See `docs/RENDER_PREVIEW.md` before applying it. The preview uses Neon Postgres rather than Render Free Postgres because Render's free database expires after 30 days. Do not apply the Blueprint until you have reviewed its resources and are comfortable with the free-tier limitations.
+
 ## Run without Docker
 See `frontend/README.md` and `backend/README.md`.
 
