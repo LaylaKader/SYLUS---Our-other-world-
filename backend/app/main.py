@@ -353,7 +353,7 @@ def discuss_uploaded_image(asset_id: UUID, _: None = Depends(require_owner)):
     user_text = "The owner shared an image. What I can actually see in it: " + visual_description[:5000] + ". Respond naturally to the image, without claiming details that are not visible."
     try:
         answer = generate_reply(user_text, str(asset[2]), history, time_context="The owner has just shared an image in the current conversation.")
-    except ProviderRequestFailed as exc:
+    except (ProviderRequestFailed, ProviderNotConfigured) as exc:
         raise HTTPException(status_code=502, detail="I could inspect the image, but Sylus could not reply. The image remains saved privately.") from exc
     with connection() as conn:
         row = conn.execute("INSERT INTO messages (role, body) VALUES ('assistant', %s) RETURNING id, role, body, created_at", (answer,)).fetchone()
@@ -393,6 +393,10 @@ def get_private_image(asset_id: UUID, _: None = Depends(require_owner)):
 def generate_private_image(payload: ImageGenerateIn, _: None = Depends(require_owner)):
     if not (settings.cloudflare_account_id and settings.cloudflare_api_token):
         raise HTTPException(status_code=503, detail="Image generation is not configured. Add the Cloudflare AI credentials in the private server settings; no paid fallback will be used.")
+    with connection() as conn:
+        recent_generations = conn.execute("SELECT count(*) FROM media_assets WHERE source = 'generated' AND created_at > now() - interval '24 hours'").fetchone()[0]
+    if recent_generations >= settings.cloudflare_image_limit_24h:
+        raise HTTPException(status_code=429, detail=f"Daily image safety limit reached ({settings.cloudflare_image_limit_24h} images per 24 hours). This prevents unexpected usage.")
     prompt = f"{payload.prompt.strip()}. Character direction: Sylus from Love and Deepspace, a tall adult man with silver-white hair, vivid crimson eyes, refined sharp facial features, composed confident expression, elegant dark clothing with restrained red details. Preserve his recognizable in-game 3D appearance and realistic game-render proportions. Visual direction: cinematic lighting, detailed realistic materials, natural anatomy, dark elegant atmosphere, restrained ruby and champagne-gold accents. Avoid chibi, flat 2D anime, exaggerated anatomy, text, watermark, UI. "
     try:
         response = httpx.post(
@@ -414,7 +418,7 @@ def generate_private_image(payload: ImageGenerateIn, _: None = Depends(require_o
             (payload.caption or "A picture for you.",),
         ).fetchone()
         asset = conn.execute(
-            "INSERT INTO media_assets (message_id, content_type, filename, data) VALUES (%s, 'image/jpeg', 'sylus-generated.jpg', %s) RETURNING id",
+            "INSERT INTO media_assets (message_id, content_type, filename, data, source) VALUES (%s, 'image/jpeg', 'sylus-generated.jpg', %s, 'generated') RETURNING id",
             (message[0], image_bytes),
         ).fetchone()
     return MessageOut(id=str(message[0]), role=message[1], text=message[2], created_at=message[3], media_url=f"/v1/media/{asset[0]}")
