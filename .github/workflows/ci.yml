@@ -68,4 +68,17 @@ jobs:
             http://localhost:8080/v1/session
           curl -fsS -b /tmp/sylus-cookies.txt http://localhost:8080/v1/time-context
           curl -fsS -b /tmp/sylus-cookies.txt http://localhost:8080/v1/memories
+          chat_code=$(curl -s -o /dev/null -w "%{http_code}" -b /tmp/sylus-cookies.txt \
+            -H "Content-Type: application/json" -d '{"text":"CI should not use an unconfigured or paid fallback"}' \
+            http://localhost:8080/v1/chat)
+          test "$chat_code" = "503"
+          curl -fsS -b /tmp/sylus-cookies.txt -H "Content-Type: application/json" \
+            -d '{"category":"CI smoke test","content":"Temporary memory record"}' \
+            http://localhost:8080/v1/memories > /tmp/sylus-memory.json
+          memory_id=$(python3 -c 'import json; print(json.load(open("/tmp/sylus-memory.json"))["id"])')
+          curl -fsS -X PATCH -b /tmp/sylus-cookies.txt -H "Content-Type: application/json" \
+            -d '{"content":"Updated temporary memory record"}' \
+            "http://localhost:8080/v1/memories/$memory_id"
+          curl -fsS -X DELETE -b /tmp/sylus-cookies.txt \
+            "http://localhost:8080/v1/memories/$memory_id"
           docker compose down -v
