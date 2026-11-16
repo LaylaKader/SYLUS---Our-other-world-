@@ -49,3 +49,23 @@ jobs:
         run: docker build -f backend/Dockerfile -t sylus-backend:ci .
       - name: Build frontend image
         run: docker build -f frontend/Dockerfile -t sylus-frontend:ci .
+      - name: Smoke-test private stack and database migrations
+        run: |
+          cp .env.compose.example .env
+          docker compose up --build -d
+          for attempt in $(seq 1 40); do
+            if curl -fsS http://localhost:8080/health >/dev/null; then
+              break
+            fi
+            sleep 2
+          done
+          curl -fsS http://localhost:8080/health
+          code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/v1/messages)
+          test "$code" = "401"
+          curl -fsS -c /tmp/sylus-cookies.txt \
+            -H "Content-Type: application/json" \
+            -d '{"password":"replace-with-a-unique-owner-password"}' \
+            http://localhost:8080/v1/session
+          curl -fsS -b /tmp/sylus-cookies.txt http://localhost:8080/v1/time-context
+          curl -fsS -b /tmp/sylus-cookies.txt http://localhost:8080/v1/memories
+          docker compose down -v
