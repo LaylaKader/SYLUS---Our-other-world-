@@ -18,3 +18,6 @@ def test_success_and_trust_signals_are_distinct():
 
 def test_neutral_message_does_not_force_an_emotion():
     assert classify_explicit_event("Can you explain this code?") == (None, 0.0)
+
+def test_explicit_disappointment_has_its_own_signal():
+    assert classify_explicit_event("I'm disappointed") == ("disappointment", 0.75)
