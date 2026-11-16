@@ -69,8 +69,10 @@ jobs:
           curl -fsS http://localhost:8080/health
           hosted_code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:18080/health)
           test "$hosted_code" = "200"
-          curl -fsS http://localhost:18080/ | grep -q "SYLUS"
-          curl -fsS http://localhost:18080/sw.js | grep -q "CACHE_NAME"
+          curl -fsS -o /tmp/sylus-hosted-index.html http://localhost:18080/
+          grep -qi "SYLUS" /tmp/sylus-hosted-index.html
+          curl -fsS -o /tmp/sylus-hosted-sw.js http://localhost:18080/sw.js
+          grep -q "CACHE_NAME" /tmp/sylus-hosted-sw.js
           hosted_api_code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:18080/v1/messages)
           test "$hosted_api_code" = "401"
           curl -fsS -c /tmp/sylus-hosted-cookies.txt \
