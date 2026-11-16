@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     model_name: str = "openai/gpt-oss-120b"
     cloudflare_account_id: str = ""
     cloudflare_api_token: str = ""
+    elevenlabs_api_key: str = ""
+    elevenlabs_voice_id: str = ""
     cors_allowed_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     sylus_owner_password: str = ""
     session_secret: str = ""
