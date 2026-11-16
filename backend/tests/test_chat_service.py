@@ -21,3 +21,18 @@ def test_neutral_message_does_not_force_an_emotion():
 
 def test_explicit_disappointment_has_its_own_signal():
     assert classify_explicit_event("I'm disappointed") == ("disappointment", 0.75)
+
+
+def test_memory_terms_remove_filler_and_deduplicate():
+    from app.chat_service import extract_memory_terms
+    assert extract_memory_terms("Can you tell me about my research and my research goals?") == ["tell", "research", "goals"]
+
+
+def test_memory_terms_keep_unicode_words():
+    from app.chat_service import extract_memory_terms
+    assert extract_memory_terms("আমার research preference") == ["আমার", "research", "preference"]
+
+
+def test_memory_terms_ignore_short_or_empty_queries():
+    from app.chat_service import extract_memory_terms
+    assert extract_memory_terms("I am in it") == []
