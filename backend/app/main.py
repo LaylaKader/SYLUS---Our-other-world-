@@ -135,6 +135,8 @@ def time_context(_: None = Depends(require_owner)):
         "timezone": tz_name, "now_utc": now_utc.isoformat(), "now_local": now_local.isoformat(),
         "local_date": now_local.date().isoformat(), "weekday": now_local.strftime("%A"),
         "local_time": now_local.strftime("%H:%M:%S"),
+        "chat_ready": bool(settings.model_api_base_url and settings.model_api_key and settings.model_name),
+        "chat_model": settings.model_name if settings.model_api_key else None,
         "last_user_message_utc": last_utc.isoformat() if last_utc else None,
         "last_user_message_local": last_local.isoformat() if last_local else None,
         "seconds_since_last_user_message": elapsed_seconds,
