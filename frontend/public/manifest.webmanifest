@@ -1,0 +1,15 @@
+{
+  "id": "/",
+  "name": "SYLUS — A world of our own",
+  "short_name": "SYLUS",
+  "description": "A private world of our own.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#100e13",
+  "theme_color": "#100e13",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
