@@ -71,17 +71,29 @@ MEMORY_STOP_WORDS = {
 
 
 def extract_memory_terms(query: str, limit: int = 10) -> list[str]:
-    """Keep meaningful, unique terms; discard conversational filler."""
-    import re
+    """Keep meaningful, unique terms; preserve Unicode combining marks."""
+    import unicodedata
     terms = []
     seen = set()
-    for match in re.findall(r"[^\W_]{3,}", query.lower(), flags=re.UNICODE):
-        if match in MEMORY_STOP_WORDS or match in seen:
-            continue
-        seen.add(match)
-        terms.append(match)
-        if len(terms) >= limit:
-            break
+    current = []
+
+    def keep_token():
+        token = "".join(current)
+        current.clear()
+        if len(token) >= 3 and token not in MEMORY_STOP_WORDS and token not in seen:
+            seen.add(token)
+            terms.append(token)
+
+    for char in query.lower():
+        category = unicodedata.category(char)
+        if category[0] in {"L", "N", "M"}:
+            current.append(char)
+        elif current:
+            keep_token()
+            if len(terms) >= limit:
+                break
+    if current and len(terms) < limit:
+        keep_token()
     return terms
 
 
