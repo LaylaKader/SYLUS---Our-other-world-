@@ -75,7 +75,7 @@ def extract_memory_terms(query: str, limit: int = 10) -> list[str]:
     import re
     terms = []
     seen = set()
-    for match in re.findall(r"[^\\W_]{3,}", query.lower(), flags=re.UNICODE):
+    for match in re.findall(r"[^\W_]{3,}", query.lower(), flags=re.UNICODE):
         if match in MEMORY_STOP_WORDS or match in seen:
             continue
         seen.add(match)
