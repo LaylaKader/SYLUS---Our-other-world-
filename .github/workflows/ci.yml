@@ -57,6 +57,7 @@ jobs:
         run: |
           cp .env.compose.example .env
           docker compose up --build -d
+          docker compose --profile hosted-smoke up --build -d hosted
           for attempt in $(seq 1 40); do
             if curl -fsS http://localhost:8080/health >/dev/null; then
               break
@@ -64,6 +65,12 @@ jobs:
             sleep 2
           done
           curl -fsS http://localhost:8080/health
+          hosted_code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:18080/health)
+          test "$hosted_code" = "200"
+          curl -fsS http://localhost:18080/ | grep -q "SYLUS"
+          curl -fsS http://localhost:18080/sw.js | grep -q "CACHE_NAME"
+          hosted_api_code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:18080/v1/messages)
+          test "$hosted_api_code" = "401"
           code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/v1/messages)
           test "$code" = "401"
           curl -fsS -c /tmp/sylus-cookies.txt \
