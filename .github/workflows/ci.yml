@@ -45,6 +45,10 @@ jobs:
         run: |
           cp .env.compose.example .env
           docker compose config --quiet
+      - name: Validate Render Blueprint YAML
+        run: ruby -e 'require "yaml"; YAML.load_file("render.yaml")'
+      - name: Build hosted single-container image
+        run: docker build -f Dockerfile -t sylus-hosted:ci .
       - name: Build private backend image
         run: docker build -f backend/Dockerfile -t sylus-backend:ci .
       - name: Build frontend image
