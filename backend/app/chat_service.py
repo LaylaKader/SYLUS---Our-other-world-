@@ -94,12 +94,12 @@ def load_persona() -> str:
     return path.read_text(encoding="utf-8")
 
 
-def generate_reply(user_text: str, source_message_id: str, history: list[dict]) -> str:
+def generate_reply(user_text: str, source_message_id: str, history: list[dict], time_context: str = "") -> str:
     agent = SylusAgent(
         model=OpenAICompatibleChatModel(),
         retriever=PostgresMemoryRetriever(),
         writer=ExplicitOnlyMemoryWriter(),
-        persona=load_persona(),
+        persona=load_persona() + ("\n\n" + time_context if time_context else ""),
         emotion=EmotionState(),
     )
     return agent.reply(user_text=user_text, recent_history=history, source_message_id=source_message_id)
