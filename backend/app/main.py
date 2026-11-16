@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from .config import settings
 from .db import connection, open_pool
+from .migrate import run_migrations
 from .chat_service import generate_reply, ProviderNotConfigured, ProviderRequestFailed
 
 app = FastAPI(title="SYLUS private companion API", version="0.3.0")
@@ -28,6 +29,7 @@ app.add_middleware(
 
 @app.on_event("startup")
 def startup():
+    run_migrations()
     open_pool()
 
 def _valid_session(value: str | None) -> bool:
