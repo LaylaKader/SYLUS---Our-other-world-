@@ -300,7 +300,7 @@ def create_speech(payload: SpeechIn, _: None = Depends(require_owner)):
 
 @app.post("/v1/media/upload", response_model=MessageOut)
 def upload_image(file: UploadFile = File(...), _: None = Depends(require_owner)):
-    allowed = {"image/jpeg": ("jpg", b"\\xff\\xd8\\xff"), "image/png": ("png", b"\\x89PNG\\r\\n\\x1a\\n"), "image/webp": ("webp", b"RIFF")}
+    allowed = {"image/jpeg": ("jpg", b"\xff\xd8\xff"), "image/png": ("png", b"\x89PNG\r\n\x1a\n"), "image/webp": ("webp", b"RIFF")}
     if file.content_type not in allowed:
         raise HTTPException(status_code=415, detail="Please upload a JPG, PNG, or WebP image.")
     data = file.file.read(8 * 1024 * 1024 + 1)
