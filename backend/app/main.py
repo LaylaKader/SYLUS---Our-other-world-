@@ -115,7 +115,7 @@ def create_owner_session(payload: OwnerLogin, request: Request, response: Respon
 
 @app.delete("/v1/session")
 def delete_owner_session(response: Response):
-    response.delete_cookie(key="sylus_session", path="/", httponly=True, secure=settings.app_env.lower() == "production", samesite="none" if settings.app_env.lower() == "production" else "lax")
+    response.delete_cookie(key="sylus_session", path="/", httponly=True, secure=settings.app_env.lower() == "production", samesite="lax")
     return {"authenticated": False}
 
 @app.get("/health")
