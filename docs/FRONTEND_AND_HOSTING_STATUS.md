@@ -16,7 +16,8 @@ The interface uses a near-black/charcoal base, muted ruby and burgundy, violet/l
 - Owner sessions use unique signed tokens registered server-side; logout revokes the session record.
 - Database migrations run automatically at backend startup and are tracked in `schema_migrations`.
 - Docker Compose runs frontend, private API, and PostgreSQL. Only the Nginx frontend port is published; API and database stay on the private Compose network. Nginx applies separate rate limits to owner login, chat, and general API routes.
-- GitHub Actions checks frontend build, backend tests, Docker Compose configuration, container builds, migrations, owner login/logout, protected API access, and memory CRUD.
+- Hosted single-container image serves the PWA from FastAPI for Render; server-side chat rate limiting and security headers also apply when Nginx is not in front.
+- GitHub Actions checks frontend build, backend tests, Render Blueprint YAML, both hosted and Compose container builds, migrations, owner login/logout, protected API access, and memory CRUD.
 
 ## Not implemented yet
 - Automatic memory extraction with an owner review/approval queue (intentionally disabled until that workflow exists).
