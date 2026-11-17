@@ -28,7 +28,7 @@ def chat_provider_configured() -> bool:
     """True when at least one explicitly configured free-tier provider is available."""
     return any((
         settings.gemini_api_key, settings.groq_api_key, settings.openrouter_api_key,
-        settings.mistral_api_key, settings.cohere_api_key,
+        settings.mistral_api_key, settings.aion_api_key, settings.cohere_api_key,
         settings.model_api_key,
     )) or bool(settings.cloudflare_account_id and settings.cloudflare_api_token)
 
