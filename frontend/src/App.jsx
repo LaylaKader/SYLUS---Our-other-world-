@@ -324,8 +324,8 @@ function App() {
       if (!response.ok) { const failure = await response.json().catch(() => ({})); throw new Error(failure.detail || 'Image upload failed.'); }
       const message = await response.json();
       setMessages(current => [...current, message]);
-      setNotice('Image saved privately in our conversation');
-      if (timeContext?.vision_ready) await discussImage(message);
+      setNotice('Image saved privately. Sylus is checking what is visible…');
+      await discussImage(message);
     } catch (error) { setNotice(error.message); }
     finally { setUploadingImage(false); if (imageInputRef.current) imageInputRef.current.value = ''; }
   }
