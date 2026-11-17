@@ -50,7 +50,7 @@ class SylusAgent:
             for item in recent_history[-8:]
             if item.get("role") == "user"
         )
-        memories = self.retriever.retrieve(query=(continuity + " " + user_text).strip(), limit=8)
+        memories = self.retriever.retrieve(query=(user_text + " " + continuity).strip(), limit=8)
         emotional_context = (
             "\n\nCurrent simulated emotional state (internal style guidance): "
             f"{self.emotion.dominant_mood()}. {self.emotion.style_directive()} "
