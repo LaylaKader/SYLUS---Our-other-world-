@@ -302,7 +302,7 @@ def generate_proactive_bubbles(history: list[dict], time_context: str = "") -> l
     )
     instruction = (
         "Decide whether to initiate a conversation now. Return strict JSON only as "
-        "{\"messages\":[\"first text\",\"second text\"]} or {\"messages\":[]} if there is no natural reason."
+        "{\"messages\":[\"first text\"]} with 0-10 bubbles, or {\"messages\":[]} when there is no natural reason to text."
     )
     raw = OpenAICompatibleChatModel().respond(
         persona=persona,
