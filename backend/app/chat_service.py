@@ -319,7 +319,7 @@ def generate_proactive_bubbles(history: list[dict], time_context: str = "") -> l
         data = json.loads(raw[start:end + 1]) if start >= 0 and end > start else {}
         values = data.get("messages", []) if isinstance(data, dict) else []
         if not isinstance(values, list):
-            return []
+            return ["I thought I would leave you a note rather than let the silence stretch any further."]
         bubbles = [str(value).strip() for value in values if isinstance(value, str) and value.strip()][:10]
         return bubbles or ["I thought I would leave you a note rather than let the silence stretch any further."]
     except (ValueError, TypeError, json.JSONDecodeError):
