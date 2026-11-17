@@ -470,6 +470,17 @@ def send_push_notification(title: str, body: str) -> None:
     logging.info("Web Push attempt finished: %s accepted by provider, %s failed.", delivered, failed)
 
 
+@app.post("/v1/push/test")
+def test_push_notification(_: None = Depends(require_owner)):
+    if not (settings.web_push_vapid_private_key and settings.web_push_vapid_public_key and settings.web_push_vapid_subject):
+        raise HTTPException(status_code=503, detail="Push delivery is not configured.")
+    with connection() as conn:
+        count = conn.execute("SELECT count(*) FROM push_subscriptions").fetchone()[0]
+    if not count:
+        raise HTTPException(status_code=409, detail="This device has no registered push subscription. Enable notifications first.")
+    send_push_notification("Sylus · Test", "If this appeared on your phone, push notifications are working.")
+    return {"sent_to_provider": True, "subscription_count": count}
+
 @app.get("/v1/proactive/settings")
 def get_proactive_settings(_: None = Depends(require_owner)):
     with connection() as conn:
