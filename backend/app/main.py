@@ -230,11 +230,13 @@ def save_user_message(payload: MessageIn, _: None = Depends(require_owner)):
         row = conn.execute("INSERT INTO messages (role, body) VALUES ('user', %s) RETURNING id, role, body, created_at", (text,)).fetchone()
     return MessageOut(id=str(row[0]), role=row[1], text=row[2], created_at=row[3])
 
-@app.patch("/v1/messages/{message_id}", response_model=MessageOut)
-def edit_user_message(message_id: UUID, payload: MessageEdit, _: None = Depends(require_owner)):
+@app.patch("/v1/messages/{message_id}", response_model=ChatTurnOut)
+def edit_user_message(message_id: UUID, payload: MessageEdit, request: Request, _: None = Depends(require_owner)):
     text = payload.text.strip()
     if not text:
         raise HTTPException(status_code=422, detail="Message cannot be blank")
+    if not (settings.model_api_base_url and settings.model_api_key and settings.model_name):
+        raise HTTPException(status_code=503, detail="Chat model is not configured on the private server.")
     with connection() as conn:
         row = conn.execute(
             "SELECT id, body, created_at FROM messages WHERE id = %s AND role = 'user' AND archived_at IS NULL",
@@ -251,10 +253,44 @@ def edit_user_message(message_id: UUID, payload: MessageEdit, _: None = Depends(
             "UPDATE messages SET archived_at = now(), archive_reason = 'superseded_by_edit' "
             "WHERE archived_at IS NULL AND created_at > %s", (row[2],)
         )
-        updated = conn.execute(
+        user_row = conn.execute(
             "SELECT id, role, body, created_at FROM messages WHERE id = %s", (message_id,)
         ).fetchone()
-    return MessageOut(id=str(updated[0]), role=updated[1], text=updated[2], created_at=updated[3])
+        history_rows = conn.execute(
+            "SELECT role, body, created_at FROM messages WHERE id <> %s AND role IN ('user','assistant') "
+            "AND archived_at IS NULL AND created_at < %s ORDER BY created_at DESC LIMIT 18",
+            (message_id, row[2]),
+        ).fetchall()
+        tz_row = conn.execute("SELECT timezone FROM owner_runtime_context WHERE id = 1").fetchone()
+    tz_name = tz_row[0] if tz_row else DEFAULT_TIMEZONE
+    try:
+        local_zone = ZoneInfo(tz_name)
+    except Exception:
+        local_zone = ZoneInfo(DEFAULT_TIMEZONE)
+        tz_name = DEFAULT_TIMEZONE
+    now_utc = datetime.now(timezone.utc)
+    now_local = now_utc.astimezone(local_zone)
+    time_note = (
+        f"Current owner-local time: {now_local.strftime('%A, %Y-%m-%d %H:%M:%S')} ({tz_name}). "
+        "The owner edited an earlier message and is continuing the conversation from that point. "
+        "Respond directly to the revised message as the next turn."
+    )
+    history = [{"role": r[0], "body": r[1][:2400], "created_at": r[2].isoformat()} for r in reversed(history_rows)]
+    try:
+        answer = generate_reply(text, str(user_row[0]), history, time_context=time_note)
+    except ProviderNotConfigured as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ProviderRequestFailed as exc:
+        raise HTTPException(status_code=502, detail="Your edit was saved, but Sylus could not generate a reply. You can send another message to try again.") from exc
+    with connection() as conn:
+        assistant_row = conn.execute(
+            "INSERT INTO messages (role, body) VALUES ('assistant', %s) RETURNING id, role, body, created_at",
+            (answer,),
+        ).fetchone()
+    return ChatTurnOut(
+        user_message=MessageOut(id=str(user_row[0]), role=user_row[1], text=user_row[2], created_at=user_row[3]),
+        assistant_message=MessageOut(id=str(assistant_row[0]), role=assistant_row[1], text=assistant_row[2], created_at=assistant_row[3]),
+    )
 
 @app.delete("/v1/messages/{message_id}")
 def delete_user_message(message_id: UUID, _: None = Depends(require_owner)):
