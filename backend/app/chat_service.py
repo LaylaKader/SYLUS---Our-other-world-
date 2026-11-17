@@ -189,10 +189,14 @@ class ExplicitOnlyMemoryWriter:
             candidates = data.get("memories", []) if isinstance(data, dict) else []
             with connection() as conn:
                 for item in candidates[:3]:
+                    if not isinstance(item, dict):
+                        continue
                     category = str(item.get("category", "Important detail"))[:80]
                     content = str(item.get("content", "")).strip()[:1000]
                     confidence = float(item.get("confidence", 0))
-                    if not content or confidence < 0.75:
+                    if not content or not 0.75 <= confidence <= 1.0:
+                        continue
+                    if any(marker in content.lower() for marker in sensitive_markers):
                         continue
                     duplicate = conn.execute(
                         "SELECT id FROM memories WHERE archived_at IS NULL AND lower(content) = lower(%s) LIMIT 1",
