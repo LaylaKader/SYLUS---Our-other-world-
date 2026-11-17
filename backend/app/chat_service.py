@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 import json
 import httpx
+from datetime import datetime, timezone
 
 from .agent import ChatModel, RetrievedMemory, SylusAgent
 from .config import settings
@@ -321,12 +322,22 @@ def generate_proactive_bubbles(history: list[dict], time_context: str = "") -> l
 
 def load_emotion_state() -> EmotionState:
     with connection() as conn:
-        row = conn.execute("SELECT dimensions FROM emotion_states WHERE id = 1").fetchone()
+        row = conn.execute("SELECT dimensions, updated_at FROM emotion_states WHERE id = 1").fetchone()
     if not row or not isinstance(row[0], dict):
         return EmotionState()
     allowed = EmotionState.__dataclass_fields__.keys()
     values = {key: float(value) for key, value in row[0].items() if key in allowed}
-    return EmotionState(**values).normalize()
+    state = EmotionState(**values).normalize()
+    # Let transient reactions soften with real elapsed time as well as conversation turns.
+    # A 36-hour half-life keeps meaningful feelings present without freezing them indefinitely.
+    updated_at = row[1]
+    if updated_at:
+        if updated_at.tzinfo is None:
+            updated_at = updated_at.replace(tzinfo=timezone.utc)
+        elapsed_seconds = max(0.0, (datetime.now(timezone.utc) - updated_at).total_seconds())
+        factor = 0.5 ** (elapsed_seconds / (36 * 60 * 60))
+        state.decay(factor=factor)
+    return state
 
 
 def classify_explicit_event(text: str) -> tuple[str | None, float]:
