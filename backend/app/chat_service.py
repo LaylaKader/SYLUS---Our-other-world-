@@ -38,6 +38,13 @@ class OpenAICompatibleChatModel(ChatModel):
             "IDENTITY CHECK: If asked whether you are literally the physical Sylus from the game, be honest in one brief sentence that you are a digital portrayal, not the fictional character himself. Do not describe yourself as 'the version crafted to converse with you', do not append a generic question, and return naturally to the conversation. "
             "LORE CHECK: When retrieved character-knowledge records directly answer a question, answer from them first. For 'Who is Mephisto?', identify him as Sylus's mechanical crow companion and explain his role briefly. Do not claim a named character is absent from the game's lore when a retrieved record exists. Clearly distinguish secondary references from official canon when relevant, without burdening casual dialogue with citations."
         )
+        system_prompt += (
+            "\\n\\nMESSAGE FORMAT: Return one JSON object only: {\\"messages\\":[\\"bubble one\\",\\"bubble two\\"]}. "
+            "Use 1 to 4 separate message bubbles. Most simple exchanges need 1; casual or emotionally rich moments may naturally take 2-4. "
+            "Each bubble must read like a separate text sent by Sylus, not paragraphs from an essay. Keep them short and conversational. "
+            "When the owner asks several questions, answer them in distinct bubbles when that feels natural. Never pad the count, never label bubbles, "
+            "and never add generic assistant questions or service language. If JSON output is impossible, return plain text."
+        )
         messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
         for item in recent_history[-16:]:
             role = item.get("role")
@@ -129,10 +136,83 @@ class PostgresMemoryRetriever:
 
 
 class ExplicitOnlyMemoryWriter:
-    """Automatic extraction is disabled until owner review/edit/delete controls exist."""
+    """Extract only durable, explicitly stated, non-sensitive owner facts."""
 
     def extract_and_store(self, *, user_text: str, assistant_text: str, source_message_id: str) -> None:
-        return None
+        if len(user_text.strip()) < 18 or not settings.model_api_key:
+            return
+        lowered = user_text.lower()
+        sensitive_markers = (
+            "diagnosed", "medication", "medicine", "medical", "my health", "my illness",
+            "my religion", "i am muslim", "i am christian", "my salary", "my bank",
+            "my password", "my political", "sexual", "pregnant", "pregnancy",
+        )
+        if any(marker in lowered for marker in sensitive_markers):
+            return
+        prompt = (
+            "Extract up to 3 durable facts explicitly stated by the USER in this message. "
+            "Do not infer, embellish, or use the assistant reply as evidence. Store preferences, ongoing projects, "
+            "important relationships (e.g. the user has a sister), stable goals, and explicit promises/decisions. "
+            "Do not store transient questions, one-off requests, sensitive personal data, health, religion, politics, "
+            "finances, sexuality, passwords, or guesses. If nothing qualifies, return {\\"memories\\":[]}. "
+            "Return strict JSON: {\\"memories\\":[{\\"category\\":\\"Relationship|Preference|Goal|Project|Important detail|Promise\\","
+            "\\"content\\":\\"short standalone fact\\",\\"confidence\\":0.0}]}. "
+            "Confidence must be 0.75-1.0 and reflect explicitness."
+        )
+        try:
+            response = httpx.post(
+                settings.model_api_base_url.rstrip("/") + "/chat/completions",
+                headers={"Authorization": f"Bearer {settings.model_api_key}", "Content-Type": "application/json"},
+                json={"model": settings.model_name, "messages": [
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": user_text[:4000]},
+                ], "temperature": 0.1, "max_tokens": 350},
+                timeout=25.0,
+            )
+            response.raise_for_status()
+            raw = response.json()["choices"][0]["message"]["content"]
+            data = json.loads(raw[raw.find("{"):raw.rfind("}") + 1])
+            candidates = data.get("memories", []) if isinstance(data, dict) else []
+            with connection() as conn:
+                for item in candidates[:3]:
+                    category = str(item.get("category", "Important detail"))[:80]
+                    content = str(item.get("content", "")).strip()[:1000]
+                    confidence = float(item.get("confidence", 0))
+                    if not content or confidence < 0.75:
+                        continue
+                    duplicate = conn.execute(
+                        "SELECT id FROM memories WHERE archived_at IS NULL AND lower(content) = lower(%s) LIMIT 1",
+                        (content,),
+                    ).fetchone()
+                    if duplicate:
+                        conn.execute(
+                            "UPDATE memories SET source_message_id = COALESCE(source_message_id, %s), "
+                            "confidence = GREATEST(confidence, %s), updated_at = now() WHERE id = %s",
+                            (source_message_id, min(confidence, 1.0), duplicate[0]),
+                        )
+                    else:
+                        conn.execute(
+                            "INSERT INTO memories (category, content, confidence, source, source_message_id, sensitivity) "
+                            "VALUES (%s, %s, %s, 'conversation_auto', %s, 'normal')",
+                            (category, content, min(confidence, 1.0), source_message_id),
+                        )
+        except (httpx.HTTPError, KeyError, IndexError, ValueError, TypeError, json.JSONDecodeError):
+            # Memory extraction must never break an otherwise successful conversation.
+            return
+
+
+def split_reply_bubbles(answer: str) -> list[str]:
+    """Parse structured chat bubbles, safely falling back to one ordinary reply."""
+    try:
+        start, end = answer.find("{"), answer.rfind("}")
+        payload = json.loads(answer[start:end + 1]) if start >= 0 and end > start else {}
+        messages = payload.get("messages", []) if isinstance(payload, dict) else []
+        bubbles = [str(item).strip() for item in messages if isinstance(item, str) and item.strip()]
+        if bubbles:
+            return bubbles[:4]
+    except (ValueError, TypeError, json.JSONDecodeError):
+        pass
+    return [answer.strip()]
 
 
 def retrieve_character_knowledge(query: str, limit: int = 8) -> str:
