@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 import json
+import logging
 import httpx
 from datetime import datetime, timezone
 
@@ -86,18 +87,34 @@ class OpenAICompatibleChatModel(ChatModel):
             }
             response = httpx.post(endpoint, headers=headers, json=payload, timeout=45.0)
             if response.status_code in (400, 422):
-                # Some OpenAI-compatible providers/models do not implement JSON mode.
-                # Fall back to the explicit prompt contract rather than breaking chat.
                 fallback_payload = {key: value for key, value in payload.items() if key != "response_format"}
                 response = httpx.post(endpoint, headers=headers, json=fallback_payload, timeout=45.0)
+            if response.status_code in (429, 500, 502, 503, 504):
+                retry_after = response.headers.get("retry-after", "")
+                try:
+                    wait_seconds = min(3.0, max(0.5, float(retry_after)))
+                except (TypeError, ValueError):
+                    wait_seconds = 1.0
+                import time
+                logging.warning("Chat provider returned HTTP %s; retrying once after %.1fs.", response.status_code, wait_seconds)
+                time.sleep(wait_seconds)
+                response = httpx.post(endpoint, headers=headers, json=payload, timeout=45.0)
+                if response.status_code in (400, 422):
+                    fallback_payload = {key: value for key, value in payload.items() if key != "response_format"}
+                    response = httpx.post(endpoint, headers=headers, json=fallback_payload, timeout=45.0)
             response.raise_for_status()
             data: dict[str, Any] = response.json()
             answer = data["choices"][0]["message"]["content"]
             if not isinstance(answer, str) or not answer.strip():
                 raise ValueError("Provider returned an empty response.")
             return answer.strip()
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            logging.error("Chat provider failed after retry (HTTP %s): %s", status, exc.response.text[:500])
+            raise ProviderRequestFailed(f"Chat provider is temporarily unavailable (HTTP {status}). Your message is still in the composer; try again shortly.") from exc
         except (httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
-            raise ProviderRequestFailed(f"Chat provider request failed: {exc}") from exc
+            logging.error("Chat provider request failed (%s): %s", type(exc).__name__, str(exc)[:300])
+            raise ProviderRequestFailed(f"Chat provider request failed ({type(exc).__name__}). Your message is still in the composer; try again shortly.") from exc
 
 
 MEMORY_STOP_WORDS = {
