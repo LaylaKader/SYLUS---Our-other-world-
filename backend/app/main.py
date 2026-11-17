@@ -105,7 +105,7 @@ class MessageOut(BaseModel):
 
 class ChatTurnOut(BaseModel):
     user_message: MessageOut
-    assistant_message: MessageOut
+    assistant_message: MessageOut | None = None
     assistant_messages: list[MessageOut] = Field(default_factory=list)
 
 class SpeechIn(BaseModel):
@@ -309,7 +309,7 @@ def edit_user_message(message_id: UUID, payload: MessageEdit, request: Request, 
     assistant_messages = [MessageOut(id=str(r[0]), role=r[1], text=r[2], created_at=r[3]) for r in assistant_rows]
     return ChatTurnOut(
         user_message=MessageOut(id=str(user_row[0]), role=user_row[1], text=user_row[2], created_at=user_row[3]),
-        assistant_message=assistant_messages[-1],
+        assistant_message=assistant_messages[-1] if assistant_messages else None,
         assistant_messages=assistant_messages,
     )
 
@@ -379,9 +379,10 @@ def rewind_to_message(message_id: UUID, _: None = Depends(require_owner)):
                 for bubble in bubbles
             ]
         assistant_messages = [MessageOut(id=str(r[0]), role=r[1], text=r[2], created_at=r[3]) for r in created_rows]
-        assistant_message = assistant_messages[-1]
+        assistant_message = assistant_messages[-1] if assistant_messages else None
     else:
         assistant_messages = []
+        assistant_message = None
     return {"rewound_to": str(message_id), "archived_count": len(archived), "assistant_message": assistant_message, "assistant_messages": assistant_messages}
 
 @app.get("/v1/push/status")
