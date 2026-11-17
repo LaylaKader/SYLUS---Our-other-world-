@@ -112,7 +112,7 @@ class OpenAICompatibleChatModel(ChatModel):
             r"kiss|kissing|touch me|desire|aroused|turn me on|undress|undressing)\b",
             re.IGNORECASE,
         )
-        is_mature = bool(mature_terms.search(user_text + " " + recent_owner_context) or re.search(r"(?<!\\w)18\\s*\\+(?!\\w)", user_text + " " + recent_owner_context))
+        is_mature = bool(mature_terms.search(user_text + " " + recent_owner_context) or re.search(r"(?<!\w)18\s*\+(?!\w)", user_text + " " + recent_owner_context))
         providers = []
         legacy_key = settings.model_api_key
         legacy_base = settings.model_api_base_url.rstrip("/")
@@ -322,7 +322,7 @@ class ExplicitOnlyMemoryWriter:
             "menstrual", "my weight", "my income", "my salary", "my bank", "loan", "debt",
             "credit card", "account number", "criminal record", "arrested", "sexuality",
         )
-        if any(marker in lowered for marker in sensitive_markers) or re.search(r"\b(sex|sexual|erotic|nsfw|adult|explicit|nude|intimate|sensual|orgasm|foreplay|serious|important|urgent)\b", lowered):
+        if any(marker in lowered for marker in sensitive_markers) or re.search(r"\b(sex|sexual|erotic|nsfw|adult|explicit|nude|intimate|sensual|orgasm|foreplay|serious|important|urgent)\b", lowered) or re.search(r"(?<!\w)18\s*\+(?!\w)", lowered):
             return
         prompt = (
             'Extract up to 3 durable facts explicitly stated by Umi in this message. '
