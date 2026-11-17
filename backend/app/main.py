@@ -572,7 +572,8 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
             (now_utc,),
         )
         history_rows = conn.execute(
-            "SELECT role, body, created_at FROM messages WHERE role IN ('user','assistant') "
+            "SELECT role, body, created_at, metadata->>'image_context' "
+            "FROM messages WHERE role IN ('user','assistant') "
             "AND archived_at IS NULL ORDER BY created_at DESC LIMIT 18"
         ).fetchall()
     history = [
@@ -600,8 +601,12 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
             for bubble in bubbles
         ]
     messages = [MessageOut(id=str(r[0]), role=r[1], text=r[2], created_at=r[3]) for r in created_rows]
-    send_push_notification("Sylus", bubbles[0])
-    return {"sent": True, "messages": messages}
+    push_result = send_push_notification("Sylus", bubbles[0])
+    logging.info(
+        "Proactive message saved; push provider accepted=%s failed=%s.",
+        push_result.get("accepted", 0), push_result.get("failed", 0),
+    )
+    return {"sent": True, "messages": messages, "push": push_result}
 
 
 @app.post("/internal/proactive/run")
