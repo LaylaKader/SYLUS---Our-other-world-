@@ -334,7 +334,7 @@ def discuss_uploaded_image(asset_id: UUID, _: None = Depends(require_owner)):
             raise HTTPException(status_code=404, detail="Image not found.")
         history_rows = conn.execute(
             "SELECT role, body, created_at FROM messages WHERE id <> %s AND role IN ('user','assistant') "
-            "AND archived_at IS NULL ORDER BY created_at DESC LIMIT 12", (asset[2],),
+            "AND archived_at IS NULL ORDER BY created_at DESC LIMIT 18", (asset[2],),
         ).fetchall()
     image_data = "data:" + asset[1] + ";base64," + base64.b64encode(bytes(asset[0])).decode("ascii")
     try:
