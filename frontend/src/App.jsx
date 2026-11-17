@@ -22,6 +22,7 @@ function App() {
   const [notice, setNotice] = useState('Preview mode · private connection not configured');
   const [apiUrl, setApiUrl] = useState(API_BASE);
   const [memories, setMemories] = useState([]);
+  const [proactiveSettings, setProactiveSettings] = useState(null);
   const [timeContext, setTimeContext] = useState(null);
   const [sending, setSending] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState(null);
@@ -53,6 +54,28 @@ function App() {
 
   const headers = useMemo(() => ({ 'Content-Type': 'application/json' }), []);
 
+  useEffect(() => {
+    if (!connected || !proactiveSettings?.messages_enabled) return undefined;
+    let stopped = false;
+    const poll = async () => {
+      try {
+        const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/proactive/poll`, { method: 'POST', headers, credentials: 'include' });
+        if (!response.ok) return;
+        const result = await response.json();
+        if (!stopped && result.sent && result.messages?.length) {
+          setMessages(current => {
+            const known = new Set(current.map(message => message.id));
+            return [...current, ...result.messages.filter(message => !known.has(message.id))];
+          });
+          setNotice('Sylus sent you a message.');
+        }
+      } catch { /* A missed poll is harmless; the next interval retries. */ }
+    };
+    poll();
+    const interval = window.setInterval(poll, 60000);
+    return () => { stopped = true; window.clearInterval(interval); };
+  }, [connected, proactiveSettings?.messages_enabled, apiUrl, headers]);
+
   async function connect(login = true) {
     if (!apiUrl.trim()) { setNotice('Add your private API address first.'); return; }
     setChecking(true);
@@ -75,6 +98,8 @@ function App() {
       setNotice('Private owner session verified');
       const memoryResponse = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/memories`, { headers, credentials: 'include' });
       if (memoryResponse.ok) setMemories(await memoryResponse.json());
+      const proactiveResponse = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/proactive/settings`, { headers, credentials: 'include' });
+      if (proactiveResponse.ok) setProactiveSettings(await proactiveResponse.json());
     } catch (error) {
       setConnected(false);
       setChatReady(false);
@@ -105,6 +130,20 @@ function App() {
       if (memoryResponse.ok) setMemories(await memoryResponse.json());
     } catch (error) { setMessages(current => current.filter(message => message.id !== pendingId)); setDraft(text); setNotice(error.message); }
     finally { setSending(false); }
+  }
+
+  async function toggleProactiveMessages() {
+    if (!connected || !proactiveSettings) return;
+    const enabled = !proactiveSettings.messages_enabled;
+    try {
+      const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/proactive/settings`, {
+        method: 'PATCH', headers, credentials: 'include',
+        body: JSON.stringify({ messages_enabled: enabled })
+      });
+      if (!response.ok) throw new Error('Could not update proactive messaging.');
+      setProactiveSettings(await response.json());
+      setNotice(enabled ? 'Sylus may now text first when the timing is right.' : 'Proactive messages paused.');
+    } catch (error) { setNotice(error.message); }
   }
 
   async function acceptVisionLicense() {
@@ -348,7 +387,7 @@ function App() {
 
       {active === 'gallery' && <section className="content-view"><div className="eyebrow"><span className="eyebrow-line"/> MOMENTS IN FRAME</div><h1>Gallery<span className="heading-period">.</span></h1><p className="subheading">A private collection, made one moment at a time.</p><form className="image-generator-card" onSubmit={generateImage}><label className="field-label">CREATE A SCENE</label><textarea className="settings-input image-prompt" value={imagePrompt} onChange={e => setImagePrompt(e.target.value)} rows={3} maxLength={1800} placeholder="Describe the scene you want Sylus to appear in…"/><button className="primary-button" type="submit" disabled={!connected || !timeContext?.image_generation_ready || !imagePrompt.trim() || generatingImage}>{generatingImage ? 'Creating…' : 'Generate image'}</button><p className="field-help">Uses the private server's configured image provider. No paid provider is selected automatically.</p></form><div className="gallery-grid">{messages.filter(m => m.media_url).map(m => <figure className="gallery-image-card" key={m.id}><img src={m.media_url} alt="Private conversation image" loading="lazy"/><figcaption>{m.text}</figcaption></figure>)}</div>{messages.every(m => !m.media_url) && <div className="gallery-empty"><div className="gallery-ornament"><Camera size={27}/><span>✧</span></div><h2>Room for a thousand scenes.</h2><p>Images you upload or generate will appear here and stay in your private conversation storage.</p></div>}</section>}
 
-      {active === 'settings' && <section className="content-view"><div className="eyebrow"><span className="eyebrow-line"/> YOUR BOUNDARIES, YOUR CHOICE</div><h1>Settings<span className="heading-period">.</span></h1><p className="subheading">A private space should answer to you.</p><div className="settings-card"><div className="settings-title"><div><span className="card-kicker">PRIVATE CONNECTION</span><h2>Owner access</h2></div><span className={`status-pill ${connected ? 'status-good' : ''}`}>{connected ? 'CONNECTED' : 'NOT CONNECTED'}</span></div><label className="field-label">API ADDRESS</label><input className="settings-input" value={apiUrl} onChange={e => setApiUrl(e.target.value)} placeholder="https://your-private-api.example.com"/><label className="field-label">OWNER PASSWORD</label><input className="settings-input" type="password" value={ownerPassword} onChange={e => setOwnerPassword(e.target.value)} placeholder="Your private owner password" autoComplete="current-password"/><p className="field-help">Your password is sent only to your private server. The server returns an HttpOnly session cookie; the password is not stored in this browser.</p><div className="settings-actions"><button className="primary-button" onClick={() => connect(true)} disabled={checking}>{checking ? 'Checking…' : connected ? 'Refresh connection' : 'Sign in privately'}</button>{connected && <button className="secondary-button" onClick={disconnect}>Disconnect</button>}</div><div className="connection-notice"><span className={`connection-dot ${connected ? 'online' : ''}`}/>{notice}</div></div><div className="settings-card muted-card"><div className="settings-title"><div><span className="card-kicker">LOCAL TIME</span><h2>Dhaka time awareness</h2></div><Clock3 size={19}/></div><p>{timeContext ? `${timeContext.weekday}, ${timeContext.local_date} · ${timeContext.local_time}` : 'Will be read from the private server when connected.'}</p><p className="provider-status">{connected ? (chatReady ? `Chat model ready · ${timeContext?.chat_model || 'configured'}` : 'Chat model key is not configured on the private server.') : 'Sign in to check chat provider status.'}</p></div><div className="settings-card muted-card"><div className="settings-title"><div><span className="card-kicker">MEDIA & VOICE</span><h2>Images and read-aloud</h2></div><Camera size={19}/></div><p>Private image uploads: {connected ? 'available' : 'sign in to enable'}.</p><p>Image generation: {timeContext?.image_generation_ready ? 'provider configured' : 'waiting for Cloudflare credentials'}.</p><a className="license-link" href="https://developers.cloudflare.com/workers-ai/models/flux-1-schnell/" target="_blank" rel="noreferrer">Cloudflare FLUX image model and setup</a><p className="field-help">Add CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN in Render to enable generation and image understanding.</p><p>Image understanding: {timeContext?.vision_ready ? 'enabled' : 'not enabled'}.</p><a className="license-link" href="https://www.llama.com/llama3_2/license/" target="_blank" rel="noreferrer">Review Meta’s Llama 3.2 license and acceptable-use policy</a>{connected && !timeContext?.vision_ready && <button className="secondary-button" onClick={acceptVisionLicense} disabled={visionBusy || !timeContext?.image_generation_ready}>{visionBusy ? 'Enabling…' : 'I accept — enable image understanding'}</button>}<p>Read aloud: {timeContext?.voice_ready ? 'voice provider configured' : 'waiting for a designed voice and ElevenLabs credentials'}.</p><a className="license-link" href="https://elevenlabs.io/voice-design" target="_blank" rel="noreferrer">Design an original Sylus-inspired voice</a><p className="field-help">To enable it, add ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID in the Render service environment. Do not paste secrets into this chat.</p><p className="field-help">The app sends only the selected message text to the voice provider when you press Read aloud. No voice call feature is active yet.</p></div><div className="settings-card muted-card"><div className="settings-title"><div><span className="card-kicker">COMING LATER</span><h2>Contact permissions</h2></div><ShieldCheck size={19}/></div><p>Separate message and call permissions, quiet hours, and natural-language restrictions will be added before proactive contact is enabled.</p></div></section>}
+      {active === 'settings' && <section className="content-view"><div className="eyebrow"><span className="eyebrow-line"/> YOUR BOUNDARIES, YOUR CHOICE</div><h1>Settings<span className="heading-period">.</span></h1><p className="subheading">A private space should answer to you.</p><div className="settings-card"><div className="settings-title"><div><span className="card-kicker">PRIVATE CONNECTION</span><h2>Owner access</h2></div><span className={`status-pill ${connected ? 'status-good' : ''}`}>{connected ? 'CONNECTED' : 'NOT CONNECTED'}</span></div><label className="field-label">API ADDRESS</label><input className="settings-input" value={apiUrl} onChange={e => setApiUrl(e.target.value)} placeholder="https://your-private-api.example.com"/><label className="field-label">OWNER PASSWORD</label><input className="settings-input" type="password" value={ownerPassword} onChange={e => setOwnerPassword(e.target.value)} placeholder="Your private owner password" autoComplete="current-password"/><p className="field-help">Your password is sent only to your private server. The server returns an HttpOnly session cookie; the password is not stored in this browser.</p><div className="settings-actions"><button className="primary-button" onClick={() => connect(true)} disabled={checking}>{checking ? 'Checking…' : connected ? 'Refresh connection' : 'Sign in privately'}</button>{connected && <button className="secondary-button" onClick={disconnect}>Disconnect</button>}</div><div className="connection-notice"><span className={`connection-dot ${connected ? 'online' : ''}`}/>{notice}</div></div><div className="settings-card muted-card"><div className="settings-title"><div><span className="card-kicker">LOCAL TIME</span><h2>Dhaka time awareness</h2></div><Clock3 size={19}/></div><p>{timeContext ? `${timeContext.weekday}, ${timeContext.local_date} · ${timeContext.local_time}` : 'Will be read from the private server when connected.'}</p><p className="provider-status">{connected ? (chatReady ? `Chat model ready · ${timeContext?.chat_model || 'configured'}` : 'Chat model key is not configured on the private server.') : 'Sign in to check chat provider status.'}</p></div><div className="settings-card muted-card"><div className="settings-title"><div><span className="card-kicker">MEDIA & VOICE</span><h2>Images and read-aloud</h2></div><Camera size={19}/></div><p>Private image uploads: {connected ? 'available' : 'sign in to enable'}.</p><p>Image generation: {timeContext?.image_generation_ready ? 'provider configured' : 'waiting for Cloudflare credentials'}.</p><a className="license-link" href="https://developers.cloudflare.com/workers-ai/models/flux-1-schnell/" target="_blank" rel="noreferrer">Cloudflare FLUX image model and setup</a><p className="field-help">Add CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN in Render to enable generation and image understanding.</p><p>Image understanding: {timeContext?.vision_ready ? 'enabled' : 'not enabled'}.</p><a className="license-link" href="https://www.llama.com/llama3_2/license/" target="_blank" rel="noreferrer">Review Meta’s Llama 3.2 license and acceptable-use policy</a>{connected && !timeContext?.vision_ready && <button className="secondary-button" onClick={acceptVisionLicense} disabled={visionBusy || !timeContext?.image_generation_ready}>{visionBusy ? 'Enabling…' : 'I accept — enable image understanding'}</button>}<p>Read aloud: {timeContext?.voice_ready ? 'voice provider configured' : 'waiting for a designed voice and ElevenLabs credentials'}.</p><a className="license-link" href="https://elevenlabs.io/voice-design" target="_blank" rel="noreferrer">Design an original Sylus-inspired voice</a><p className="field-help">To enable it, add ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID in the Render service environment. Do not paste secrets into this chat.</p><p className="field-help">The app sends only the selected message text to the voice provider when you press Read aloud. No voice call feature is active yet.</p></div><div className="settings-card muted-card"><div className="settings-title"><div><span className="card-kicker">HIS INITIATIVE</span><h2>Proactive messages</h2></div><ShieldCheck size={19}/></div><p>{proactiveSettings ? (proactiveSettings.messages_enabled ? 'Enabled · he can start a conversation after a quiet stretch.' : 'Paused · Sylus will wait for you to message first.') : 'Sign in to configure spontaneous messages.'}</p><p className="field-help">Current safeguards: at least 90 minutes since your last message, no more than one proactive turn every 4 hours, and quiet hours from 11 PM to 8 AM Dhaka time. The app must currently be open for these checks; background push delivery while it is closed is a separate next step.</p>{connected && proactiveSettings && <button className="secondary-button" onClick={toggleProactiveMessages}>{proactiveSettings.messages_enabled ? 'Pause proactive messages' : 'Allow Sylus to text first'}</button>}<p className="field-help">Calls remain disabled. Messaging and calling permissions will stay separate.</p></div></section>}
 
       <footer className="page-footer"><span>SYLUS <i>·</i> A WORLD OF OUR OWN</span><span>BUILT FOR ONE, KEPT PRIVATE <span className="footer-star">✦</span></span></footer>
     </main>
