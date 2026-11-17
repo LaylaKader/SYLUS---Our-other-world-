@@ -72,3 +72,27 @@
 .sticker-option:hover{border-color:rgba(201,168,117,.42);background:rgba(139,53,78,.13);}
 .sticker-option .sticker-art{width:66px;height:56px;background-size:300% 500%;}
 .message-sticker .sticker-art{width:92px;height:78px;background-size:300% 500%;}
+
+
+/* Stable app chrome and independent conversation/composer panes */
+html,body,#root{height:100%;overflow:hidden}
+.app-shell{height:100dvh;min-height:0;overflow:hidden}
+.main-panel{height:100dvh;min-height:0;overflow:hidden}
+.topbar{position:sticky;top:0;z-index:12;flex:0 0 72px;background:rgba(16,14,19,.96);backdrop-filter:blur(16px)}
+.chat-view{height:calc(100dvh - 72px);min-height:0;overflow:hidden;padding-top:25px;padding-bottom:15px;gap:14px}
+.chat-heading{flex:0 0 auto}
+.chat-stage{flex:1 1 auto;min-height:0;overflow:hidden;align-items:stretch}
+.message-list{height:100%;max-height:none;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:rgba(180,142,164,.35) transparent;padding:18px 12px}
+.empty-state{align-self:center;margin:auto}
+.composer-wrap{flex:0 0 auto;background:rgba(24,20,29,.96);border:1px solid rgba(189,154,171,.17);border-radius:16px;padding:12px 13px 8px;box-shadow:0 -12px 36px rgba(0,0,0,.16)}
+.composer{background:rgba(35,29,40,.92)}
+.reset-chat-button{color:#c5a7b7}
+.reset-chat-button:disabled{opacity:.35;cursor:not-allowed}
+@media(max-width:620px){
+ .topbar{flex-basis:60px;height:60px}
+ .chat-view{height:calc(100dvh - 60px);padding:18px 12px 10px;gap:10px}
+ .chat-stage{min-height:0}
+ .message-list{padding:12px 3px}
+ .composer-wrap{padding:9px 9px 6px;border-radius:13px}
+ .composer-caption{margin-top:8px}
+}
