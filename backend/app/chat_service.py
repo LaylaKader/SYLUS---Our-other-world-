@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 import json
 import logging
+import re
 import httpx
 from datetime import datetime, timezone
 
@@ -20,6 +21,32 @@ class ProviderNotConfigured(RuntimeError):
 
 class ProviderRequestFailed(RuntimeError):
     pass
+
+
+class MultiProviderMemoryCall:
+    """Use the same no-cost provider pool for background memory extraction."""
+    def complete(self, prompt: str, text: str) -> str:
+        candidates = []
+        if settings.gemini_api_key:
+            candidates.append(("Gemini", "https://generativelanguage.googleapis.com/v1beta/openai", settings.gemini_api_key, settings.gemini_model))
+        key = settings.groq_api_key or (settings.model_api_key if "groq.com" in settings.model_api_base_url else "")
+        if key:
+            candidates.append(("Groq", "https://api.groq.com/openai/v1", key, settings.groq_model))
+        if settings.openrouter_api_key:
+            candidates.append(("OpenRouter", "https://openrouter.ai/api/v1", settings.openrouter_api_key, settings.openrouter_model))
+        for name, base, api_key, model in candidates:
+            try:
+                response = httpx.post(
+                    base.rstrip("/") + "/chat/completions",
+                    headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                    json={"model": model, "messages": [{"role": "system", "content": prompt}, {"role": "user", "content": text}], "temperature": 0.1, "max_tokens": 350},
+                    timeout=25.0,
+                )
+                response.raise_for_status()
+                return response.json()["choices"][0]["message"]["content"]
+            except (httpx.HTTPError, KeyError, IndexError, ValueError, TypeError):
+                logging.warning("Memory extraction provider failed: %s", name)
+        raise ProviderRequestFailed("No configured provider available for memory extraction.")
 
 
 class OpenAICompatibleChatModel(ChatModel):
@@ -75,39 +102,99 @@ class OpenAICompatibleChatModel(ChatModel):
                         "content": "PRIVATE VISUAL CONTEXT FROM AN IMAGE Umi previously shared (use only when relevant; do not recite as a caption): " + str(image_context)[:3500]
                     })
         messages.append({"role": "user", "content": user_text})
-        try:
-            endpoint = settings.model_api_base_url.rstrip("/") + "/chat/completions"
-            headers = {"Authorization": f"Bearer {settings.model_api_key}", "Content-Type": "application/json"}
+        # Route ordinary chat to Gemini first. Mature/romantic-intimate turns go to
+        # Groq first; Gemini is deliberately excluded from that route.
+        mature_terms = re.compile(
+            r"\\b(sex|sexual|sexually|erotic|erotica|nsfw|18\\s*\\+|adult content|explicit|nude|nudity|orgasm|"
+            r"foreplay|intercourse|intimate|intimacy|sensual|seduce|seduction|bedroom|make love|"
+            r"kiss|kissing|touch me|desire|aroused|turn me on|undress|undressing)\\b",
+            re.IGNORECASE,
+        )
+        is_mature = bool(mature_terms.search(user_text))
+        providers = []
+        legacy_key = settings.model_api_key
+        legacy_base = settings.model_api_base_url.rstrip("/")
+        legacy_model = settings.model_name
+        groq_key = settings.groq_api_key or (legacy_key if "groq.com" in legacy_base else "")
+        groq_model = settings.groq_model or (legacy_model if groq_key and "groq.com" in legacy_base else "openai/gpt-oss-120b")
+
+        def add_provider(name, base, key, model):
+            if key and base and model:
+                providers.append((name, base.rstrip("/"), key, model))
+
+        if is_mature:
+            add_provider("Groq", "https://api.groq.com/openai/v1", groq_key, groq_model)
+            # These are optional, user-configured fallbacks. Their own model/provider
+            # terms still apply; this router does not override or bypass safeguards.
+            add_provider("Mistral", "https://api.mistral.ai/v1", settings.mistral_api_key, settings.mistral_model)
+            add_provider("OpenRouter-mature", "https://openrouter.ai/api/v1", settings.openrouter_api_key, settings.openrouter_mature_model)
+        else:
+            add_provider("Gemini", "https://generativelanguage.googleapis.com/v1beta/openai", settings.gemini_api_key, settings.gemini_model)
+            add_provider("Groq", "https://api.groq.com/openai/v1", groq_key, groq_model)
+            add_provider("OpenRouter-free", "https://openrouter.ai/api/v1", settings.openrouter_api_key, settings.openrouter_model)
+            add_provider("Mistral", "https://api.mistral.ai/v1", settings.mistral_api_key, settings.mistral_model)
+            if settings.cloudflare_account_id and settings.cloudflare_api_token:
+                add_provider(
+                    "Cloudflare Workers AI",
+                    f"https://api.cloudflare.com/client/v4/accounts/{settings.cloudflare_account_id}/ai/v1",
+                    settings.cloudflare_api_token,
+                    settings.cloudflare_chat_model,
+                )
+            add_provider("SambaNova", "https://api.sambanova.ai/v1", settings.sambanova_api_key, settings.sambanova_model)
+            add_provider("Cohere-trial", "https://api.cohere.com/compatibility/v1", settings.cohere_api_key, settings.cohere_model)
+
+        # Backward compatibility: existing deployment variables continue to work
+        # when they point to a non-Groq OpenAI-compatible endpoint.
+        if not providers and legacy_key and legacy_base and legacy_model:
+            providers.append(("Legacy configured provider", legacy_base, legacy_key, legacy_model))
+        if not providers:
+            raise ProviderNotConfigured(
+                "No free chat provider is configured. Add at least one eligible provider API key in the private server settings."
+            )
+
+        failures = []
+        for provider_name, base_url, api_key, model_name in providers:
+            endpoint = base_url + "/chat/completions"
+            headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
             payload = {
-                "model": settings.model_name,
+                "model": model_name,
                 "messages": messages,
                 "temperature": 0.78,
                 "max_tokens": 800,
                 "response_format": {"type": "json_object"},
             }
-            response = httpx.post(endpoint, headers=headers, json=payload, timeout=45.0)
-            if response.status_code in (400, 422):
-                fallback_payload = {key: value for key, value in payload.items() if key != "response_format"}
-                response = httpx.post(endpoint, headers=headers, json=fallback_payload, timeout=45.0)
-            if response.status_code in (429, 500, 502, 503, 504):
-                retry_after = response.headers.get("retry-after", "")
-                try:
-                    wait_seconds = min(3.0, max(0.5, float(retry_after)))
-                except (TypeError, ValueError):
-                    wait_seconds = 1.0
-                import time
-                logging.warning("Chat provider returned HTTP %s; retrying once after %.1fs.", response.status_code, wait_seconds)
-                time.sleep(wait_seconds)
+            try:
                 response = httpx.post(endpoint, headers=headers, json=payload, timeout=45.0)
                 if response.status_code in (400, 422):
                     fallback_payload = {key: value for key, value in payload.items() if key != "response_format"}
                     response = httpx.post(endpoint, headers=headers, json=fallback_payload, timeout=45.0)
-            response.raise_for_status()
-            data: dict[str, Any] = response.json()
-            answer = data["choices"][0]["message"]["content"]
-            if not isinstance(answer, str) or not answer.strip():
-                raise ValueError("Provider returned an empty response.")
-            return answer.strip()
+                response.raise_for_status()
+                data: dict[str, Any] = response.json()
+                answer = data["choices"][0]["message"]["content"]
+                if not isinstance(answer, str) or not answer.strip():
+                    raise ValueError("Provider returned an empty response.")
+                logging.info("Sylus chat completed with provider=%s model=%s mature_route=%s", provider_name, model_name, is_mature)
+                return answer.strip()
+            except httpx.HTTPStatusError as exc:
+                status = exc.response.status_code
+                detail = exc.response.text[:350]
+                failures.append(f"{provider_name}: HTTP {status}")
+                # A 429 is not retried: it may represent a daily quota. Move on
+                # immediately rather than burning more requests against an exhausted provider.
+                logging.warning(
+                    "Sylus provider unavailable provider=%s status=%s mature_route=%s detail=%s",
+                    provider_name, status, is_mature, detail,
+                )
+                continue
+            except (httpx.HTTPError, KeyError, IndexError, ValueError, TypeError) as exc:
+                failures.append(f"{provider_name}: {type(exc).__name__}")
+                logging.warning("Sylus provider request failed provider=%s error=%s", provider_name, type(exc).__name__)
+                continue
+
+        logging.error("All eligible free chat providers failed. mature_route=%s failures=%s", is_mature, failures)
+        raise ProviderRequestFailed(
+            "All configured free chat providers are temporarily unavailable or out of quota. Your message is still in the composer; please try again later."
+        )
         except httpx.HTTPStatusError as exc:
             status = exc.response.status_code
             logging.error("Chat provider failed after retry (HTTP %s): %s", status, exc.response.text[:500])
@@ -197,7 +284,7 @@ class ExplicitOnlyMemoryWriter:
     """Extract only durable, explicitly stated, non-sensitive owner facts."""
 
     def extract_and_store(self, *, user_text: str, assistant_text: str, source_message_id: str) -> None:
-        if len(user_text.strip()) < 8 or not settings.model_api_key:
+        if len(user_text.strip()) < 8 or not any((settings.gemini_api_key, settings.groq_api_key, settings.model_api_key)):
             return
         lowered = user_text.lower()
         if not any(marker in lowered for marker in (
@@ -228,17 +315,7 @@ class ExplicitOnlyMemoryWriter:
             'Confidence must be 0.75-1.0 and reflect explicitness.'
         )
         try:
-            response = httpx.post(
-                settings.model_api_base_url.rstrip("/") + "/chat/completions",
-                headers={"Authorization": f"Bearer {settings.model_api_key}", "Content-Type": "application/json"},
-                json={"model": settings.model_name, "messages": [
-                    {"role": "system", "content": prompt},
-                    {"role": "user", "content": user_text[:4000]},
-                ], "temperature": 0.1, "max_tokens": 350},
-                timeout=25.0,
-            )
-            response.raise_for_status()
-            raw = response.json()["choices"][0]["message"]["content"]
+            raw = MultiProviderMemoryCall().complete(prompt, user_text[:4000])
             data = json.loads(raw[raw.find("{"):raw.rfind("}") + 1])
             candidates = data.get("memories", []) if isinstance(data, dict) else []
             with connection() as conn:
