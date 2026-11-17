@@ -128,8 +128,7 @@ class OpenAICompatibleChatModel(ChatModel):
                 return
             # Hard guards: never let an environment typo select a paid model.
             if name.startswith("Gemini") and model not in {
-                "gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash",
-                "gemini-3.5-flash-lite", "gemini-2.5-flash", "gemini-2.5-flash-lite",
+                "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-2.5-flash", "gemini-2.5-flash-lite",
             }:
                 logging.warning("Skipping Gemini model not approved for free tier: %s", model)
                 return
@@ -162,7 +161,6 @@ class OpenAICompatibleChatModel(ChatModel):
             add_provider("Aion Labs RP", "https://api.aionlabs.ai/v1", settings.aion_api_key, settings.aion_model)
             # These are optional, user-configured fallbacks. Their own model/provider
             # terms still apply; this router does not override or bypass safeguards.
-            add_provider("Mistral", "https://api.mistral.ai/v1", settings.mistral_api_key, settings.mistral_model)
             add_provider("OpenRouter-mature", "https://openrouter.ai/api/v1", settings.openrouter_api_key, settings.openrouter_mature_model)
         else:
             add_provider("Gemini", "https://generativelanguage.googleapis.com/v1beta/openai", settings.gemini_api_key, settings.gemini_model)
