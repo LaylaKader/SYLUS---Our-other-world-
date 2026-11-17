@@ -505,7 +505,8 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
         local_now = now_utc.astimezone(local_zone)
         local_clock = local_now.time().replace(tzinfo=None)
         quiet_start, quiet_end = row[1], row[2]
-        quiet = (
+        # Equal start/end times explicitly mean no quiet hours.
+        quiet = False if quiet_start == quiet_end else (
             quiet_start <= local_clock < quiet_end
             if quiet_start < quiet_end
             else local_clock >= quiet_start or local_clock < quiet_end
