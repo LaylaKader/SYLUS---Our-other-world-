@@ -67,6 +67,12 @@ class OpenAICompatibleChatModel(ChatModel):
                 ):
                     continue
                 messages.append({"role": role, "content": text})
+                image_context = item.get("image_context")
+                if image_context:
+                    messages.append({
+                        "role": "system",
+                        "content": "PRIVATE VISUAL CONTEXT FROM AN IMAGE Umi previously shared (use only when relevant; do not recite as a caption): " + str(image_context)[:3500]
+                    })
         messages.append({"role": "user", "content": user_text})
         try:
             endpoint = settings.model_api_base_url.rstrip("/") + "/chat/completions"
@@ -138,26 +144,36 @@ class PostgresMemoryRetriever:
 
     def retrieve(self, *, query: str, limit: int = 8) -> list[RetrievedMemory]:
         terms = extract_memory_terms(query, limit=8)
-        if not terms:
-            return []
-        clauses = " OR ".join("(content ILIKE %s OR category ILIKE %s)" for _ in terms)
+        clauses = " OR ".join("(content ILIKE %s OR category ILIKE %s)" for _ in terms) if terms else "FALSE"
         rank_terms = ", ".join(
             "CASE WHEN content ILIKE %s OR category ILIKE %s THEN 1 ELSE 0 END"
             for _ in terms
         )
         patterns = [f"%{term}%" for term in terms]
-        params = patterns * 2 + patterns * 2 + [max(1, min(limit, 20))]
+        params = patterns * 2 + patterns * 2 + [max(1, min(limit, 20))] if terms else [max(1, min(limit, 20))]
         with connection() as conn:
-            rows = conn.execute(
-                f"SELECT category, content, confidence, source, ({rank_terms}) AS relevance "
+            matched = conn.execute(
+                f"SELECT category, content, confidence, source, ({rank_terms if terms else '0'}) AS relevance "
                 f"FROM memories WHERE archived_at IS NULL AND sensitivity = 'normal' AND ({clauses}) "
                 "ORDER BY relevance DESC, confidence DESC, updated_at DESC LIMIT %s",
                 params,
             ).fetchall()
-        return [
-            RetrievedMemory(category=r[0], content=r[1][:1000], confidence=float(r[2]), source=r[3])
-            for r in rows
-        ]
+            recent = conn.execute(
+                "SELECT category, content, confidence, source, 0 AS relevance FROM memories "
+                "WHERE archived_at IS NULL AND sensitivity = 'normal' "
+                "AND category IN ('Relationship','Preference','Goal','Project','Important detail','Promise') "
+                "ORDER BY updated_at DESC LIMIT 5"
+            ).fetchall()
+        combined, seen = [], set()
+        for row in list(matched) + list(recent):
+            key = str(row[1]).strip().casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            combined.append(RetrievedMemory(category=row[0], content=row[1][:1000], confidence=float(row[2]), source=row[3]))
+            if len(combined) >= max(1, min(limit, 20)):
+                break
+        return combined
 
 
 class ExplicitOnlyMemoryWriter:
@@ -358,6 +374,11 @@ def classify_explicit_event(text: str) -> tuple[str | None, float]:
     )):
         return "user_reached_goal", 0.8
     if any(phrase in value for phrase in (
+        "i wish i was there", "i wish i could be there", "wish you were here",
+        "i miss you", "missed you", "i wish we weren't apart", "i wish we were together",
+    )):
+        return "distance_longing", 0.8
+    if any(phrase in value for phrase in (
         "i'm sad", "i am sad", "i feel hopeless", "i'm scared", "i am scared",
         "i feel overwhelmed", "i'm overwhelmed", "i am overwhelmed",
         "i'm upset", "i am upset", "i'm lonely", "i feel lonely",
@@ -372,14 +393,16 @@ def classify_explicit_event(text: str) -> tuple[str | None, float]:
         return "frustrating_obstacle", 0.75
     if any(phrase in value for phrase in ("i trust you", "i feel safe with you", "i love you")):
         return "meaningful_trust", 0.65
-    if any(phrase in value for phrase in ("i feel better", "that helped", "i'm feeling better", "im feeling better")):
-        return "reassurance_received", 0.6
     if any(phrase in value for phrase in ("that's interesting", "thats interesting", "that's fascinating", "i discovered", "i found out")):
         return "interesting_discovery", 0.6
-    if any(phrase in value for phrase in ("haha", "hehe", "lmao", "you're funny", "you are funny", "nice try")):
+    if any(phrase in value for phrase in ("😜", "😏", "🫣", "🤭", "😂", "🤣", "booo", "sneaky", "mephi-chan", "mistress", "robe")):
+        return "flirtatious_banter", 0.65
+    if any(phrase in value for phrase in ("haha", "hehe", "lmao", "you're funny", "you are funny", "nice try", "wink")):
         return "playful_banter", 0.5
-    if any(phrase in value for phrase in ("good morning", "good night", "missed you", "i missed you", "i'm back", "im back")):
+    if any(phrase in value for phrase in ("good morning", "good night", "i'm back", "im back")):
         return "quiet_companionship", 0.5
+    if any(phrase in value for phrase in ("i'm feeling better", "im feeling better", "i feel better", "that helped")):
+        return "reassurance_received", 0.6
     return None, 0.0
 
 def save_emotion_state(state: EmotionState, previous: dict[str, float], event: str | None, source_message_id: str) -> None:
