@@ -295,7 +295,7 @@ class ExplicitOnlyMemoryWriter:
             "menstrual", "my weight", "my income", "my salary", "my bank", "loan", "debt",
             "credit card", "account number", "criminal record", "arrested", "sexuality",
         )
-        if any(marker in lowered for marker in sensitive_markers) or re.search(r"\\b(sex|sexual|erotic|nsfw|adult|explicit|nude|intimate|sensual|orgasm|foreplay)\\b", lowered):
+        if any(marker in lowered for marker in sensitive_markers) or re.search(r"\b(sex|sexual|erotic|nsfw|adult|explicit|nude|intimate|sensual|orgasm|foreplay)\b", lowered):
             return
         prompt = (
             'Extract up to 3 durable facts explicitly stated by Umi in this message. '
