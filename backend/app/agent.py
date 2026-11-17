@@ -52,7 +52,7 @@ class SylusAgent:
         )
         memories = self.retriever.retrieve(query=(continuity + " " + user_text).strip(), limit=8)
         emotional_context = (
-            "\\n\\nCurrent simulated emotional state (internal style guidance): "
+            "\n\nCurrent simulated emotional state (internal style guidance): "
             f"{self.emotion.dominant_mood()}. {self.emotion.style_directive()} "
             "Express this subtly and consistently with Sylus. Do not describe the state "
             "as a diagnostic readout or claim human subjective experience."
