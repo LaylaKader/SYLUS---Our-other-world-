@@ -198,7 +198,7 @@ function App() {
       if (!response.ok) { const failure = await response.json().catch(() => ({})); throw new Error(failure.detail || 'Could not edit your message.'); }
       const turn = await response.json();
       setEditingMessageId(null);
-      setMessages(current => [...current.filter(message => message.id !== turn.user_message.id && message.id !== turn.assistant_message.id), turn.user_message, turn.assistant_message]);
+      setMessages(current => [...current.filter(message => new Date(message.created_at) < new Date(turn.user_message.created_at) && !message.id.startsWith('pending-')), turn.user_message, turn.assistant_message]);
       setNotice('Message revised. Sylus has replied from this point.');
     } catch (error) { await refreshMessages(); setNotice(error.message); }
     finally { setMessageActionBusy(false); }
