@@ -159,7 +159,11 @@ class ExplicitOnlyMemoryWriter:
         sensitive_markers = (
             "diagnosed", "medication", "medicine", "medical", "my health", "my illness",
             "my religion", "i am muslim", "i am christian", "my salary", "my bank",
-            "my password", "my political", "sexual", "pregnant", "pregnancy",
+            "my password", "my political", "political party", "sexual", "pregnant", "pregnancy",
+            "depression", "anxiety", "adhd", "autism", "disorder", "diagnosis", "therapy",
+            "therapist", "doctor", "symptom", "illness", "disease", "blood test", "period",
+            "menstrual", "my weight", "my income", "my salary", "my bank", "loan", "debt",
+            "credit card", "account number", "criminal record", "arrested", "sexuality",
         )
         if any(marker in lowered for marker in sensitive_markers):
             return
