@@ -253,6 +253,50 @@ def retrieve_character_knowledge(query: str, limit: int = 8) -> str:
     return "\n".join(lines)
 
 
+def generate_proactive_bubbles(history: list[dict], time_context: str = "") -> list[str]:
+    """Generate a low-pressure, context-aware message without requiring a new user turn."""
+    recent_owner_text = " ".join(
+        str(item.get("body") or item.get("text") or "")[:500]
+        for item in history[-10:] if item.get("role") == "user"
+    ).strip()
+    if not recent_owner_text:
+        return []
+    emotion = load_emotion_state()
+    memories = PostgresMemoryRetriever().retrieve(query=recent_owner_text, limit=8)
+    persona = load_persona() + "\n\n" + time_context
+    persona += (
+        "\n\nPROACTIVE INITIATIVE: You are choosing whether to text first. There is no question to answer. "
+        "Use recent conversation and saved memories to find a genuinely relevant reason to reach out: continue an unfinished topic, "
+        "share a thought, tease gently, check on something the owner explicitly mentioned, or bring up a detail you remembered. "
+        "Do not send generic 'how are you' check-ins, fake events, invented observations, or repeated reminders. "
+        "If nothing genuinely worth saying comes to mind, return exactly {\"messages\":[]}. "
+        "If you do reach out, use 1-3 short separate chat bubbles, natural and unmistakably Sylus. Never demand a reply."
+    )
+    persona += (
+        f"\n\nCurrent emotional tone: {emotion.dominant_mood()}. {emotion.style_directive()} "
+        "Let it subtly influence the wording without naming the emotion."
+    )
+    instruction = (
+        "Decide whether to initiate a conversation now. Return strict JSON only as "
+        "{\"messages\":[\"first text\",\"second text\"]} or {\"messages\":[]} if there is no natural reason."
+    )
+    raw = OpenAICompatibleChatModel().respond(
+        persona=persona,
+        recent_history=history,
+        memories=memories,
+        user_text=instruction,
+    )
+    try:
+        start, end = raw.find("{"), raw.rfind("}")
+        data = json.loads(raw[start:end + 1]) if start >= 0 and end > start else {}
+        values = data.get("messages", []) if isinstance(data, dict) else []
+        if not isinstance(values, list):
+            return []
+        return [str(value).strip() for value in values if isinstance(value, str) and value.strip()][:3]
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return []
+
+
 def load_emotion_state() -> EmotionState:
     with connection() as conn:
         row = conn.execute("SELECT dimensions FROM emotion_states WHERE id = 1").fetchone()
