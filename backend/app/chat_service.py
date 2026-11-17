@@ -145,9 +145,6 @@ class OpenAICompatibleChatModel(ChatModel):
             if name == "Cohere-trial" and model != "command-a-03-2025":
                 logging.warning("Skipping Cohere model outside the trial allowlist: %s", model)
                 return
-            if name == "LLM7-experimental-free" and model != "default":
-                logging.warning("Skipping LLM7 model outside the free-token route: %s", model)
-                return
             if name == "OpenRouter-free" and model != "openrouter/free" and not model.endswith(":free"):
                 logging.warning("Skipping OpenRouter model that is not explicitly free: %s", model)
                 return
@@ -180,7 +177,6 @@ class OpenAICompatibleChatModel(ChatModel):
                     settings.cloudflare_chat_model,
                 )
             add_provider("Cohere-trial", "https://api.cohere.com/compatibility/v1", settings.cohere_api_key, settings.cohere_model)
-            add_provider("LLM7-experimental-free", "https://api.llm7.io/v1", settings.llm7_api_key, settings.llm7_model)
 
         if not providers:
             raise ProviderNotConfigured(
@@ -312,7 +308,7 @@ class ExplicitOnlyMemoryWriter:
     """Extract only durable, explicitly stated, non-sensitive owner facts."""
 
     def extract_and_store(self, *, user_text: str, assistant_text: str, source_message_id: str) -> None:
-        if len(user_text.strip()) < 8 or not any((settings.gemini_api_key, settings.groq_api_key, settings.openrouter_api_key, settings.mistral_api_key, settings.aion_api_key, settings.cohere_api_key, settings.llm7_api_key, settings.model_api_key)):
+        if len(user_text.strip()) < 8 or not any((settings.gemini_api_key, settings.groq_api_key, settings.openrouter_api_key, settings.mistral_api_key, settings.aion_api_key, settings.cohere_api_key, settings.model_api_key)):
             return
         lowered = user_text.lower()
         if not any(marker in lowered for marker in (
