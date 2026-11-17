@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     mistral_model: str = "mistral-small-latest"
     cohere_api_key: str = ""
     cohere_model: str = "command-a-03-2025"
+    llm7_api_key: str = ""
+    llm7_model: str = "default"
     cloudflare_chat_model: str = "@cf/meta/llama-3.1-8b-instruct"
     cloudflare_account_id: str = ""
     cloudflare_api_token: str = ""
