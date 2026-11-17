@@ -135,7 +135,7 @@ function App() {
         throw new Error(failure.detail || 'Message could not be sent.');
       }
       const turn = await response.json();
-      const sylusBubbles = turn.assistant_messages?.length ? turn.assistant_messages : [turn.assistant_message];
+      const sylusBubbles = turn.assistant_messages?.length ? turn.assistant_messages : (turn.assistant_message ? [turn.assistant_message] : []);
       setMessages(current => [...current.filter(message => message.id !== pendingId), turn.user_message, ...sylusBubbles]);
       setNotice('Private conversation saved');
       const memoryResponse = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/memories`, { headers, credentials: 'include' });
