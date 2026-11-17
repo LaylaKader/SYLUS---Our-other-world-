@@ -41,10 +41,11 @@ class OpenAICompatibleChatModel(ChatModel):
         )
         system_prompt += (
             'MESSAGE FORMAT: Return one JSON object only: {"messages":["bubble one","bubble two"]}. '
-            "Use 1 to 4 separate message bubbles. Most simple exchanges need 1; casual or emotionally rich moments may naturally take 2-4. "
-            "Each bubble must read like a separate text sent by Sylus, not paragraphs from an essay. Keep them short and conversational. "
-            "When the owner asks several questions, answer them in distinct bubbles when that feels natural. Never pad the count, never label bubbles, "
-            "and never add generic assistant questions or service language. If JSON output is impossible, return plain text."
+            "Choose the number of bubbles freely from 0 to 10. Zero means deliberately say nothing; use it rarely and only when silence genuinely fits Sylus's mood, priorities, or the moment—not as punishment, manipulation, or a response to ordinary harmless messages. "
+            "One bubble is normal for a concise reply. Use multiple bubbles only when he would naturally send separate thoughts, reactions, or follow-ups; ten is an upper limit, not a target. Avoid splitting one coherent sentence or answer just to create bubbles. "
+            "He may be busy, distracted, irritated, dry, amused, affectionate, or simply finished speaking. He need not always ask a question or keep the conversation alive. He can disagree, tease, set a boundary, or leave a conversation resting. "
+            "Never use silence, irritation, or delayed replies to guilt, frighten, or control the owner. No fabricated emergencies, jealousy, threats, or emotional blackmail. "
+            "Each bubble must read like a separate text, not paragraphs from an essay. When the owner asks several questions, separate answers only when that feels natural. Never pad the count or add generic assistant service language. If JSON output is impossible, return plain text."
         )
         messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
         for item in recent_history[-16:]:
@@ -239,9 +240,9 @@ def split_reply_bubbles(answer: str) -> list[str]:
         start, end = answer.find("{"), answer.rfind("}")
         payload = json.loads(answer[start:end + 1]) if start >= 0 and end > start else {}
         messages = payload.get("messages", []) if isinstance(payload, dict) else []
-        bubbles = [str(item).strip() for item in messages if isinstance(item, str) and item.strip()]
-        if bubbles:
-            return bubbles[:4]
+        if isinstance(payload, dict) and isinstance(messages, list):
+            bubbles = [str(item).strip() for item in messages if isinstance(item, str) and item.strip()]
+            return bubbles[:10]
     except (ValueError, TypeError, json.JSONDecodeError):
         pass
     return [answer.strip()]
@@ -293,7 +294,7 @@ def generate_proactive_bubbles(history: list[dict], time_context: str = "") -> l
         "share a thought, tease gently, check on something the owner explicitly mentioned, or bring up a detail you remembered. "
         "Do not send generic 'how are you' check-ins, fake events, invented observations, or repeated reminders. "
         "If nothing genuinely worth saying comes to mind, return exactly {\"messages\":[]}. "
-        "If you do reach out, use 1-4 short separate chat bubbles, natural and unmistakably Sylus. Never demand a reply."
+        "If you do reach out, choose 1-10 separate bubbles only if the moment genuinely calls for them; one is usually enough. Zero is always valid. Never demand a reply."
     )
     persona += (
         f"\n\nCurrent emotional tone: {emotion.dominant_mood()}. {emotion.style_directive()} "
