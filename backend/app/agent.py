@@ -45,7 +45,12 @@ class SylusAgent:
         self.emotion.apply(event, intensity)
 
     def reply(self, *, user_text: str, recent_history: list[dict], source_message_id: str) -> str:
-        memories = self.retriever.retrieve(query=user_text, limit=5)
+        continuity = " ".join(
+            str(item.get("body") or item.get("text") or "")[:500]
+            for item in recent_history[-8:]
+            if item.get("role") == "user"
+        )
+        memories = self.retriever.retrieve(query=(continuity + " " + user_text).strip(), limit=8)
         emotional_context = (
             "\\n\\nCurrent simulated emotional state (internal style guidance): "
             f"{self.emotion.dominant_mood()}. {self.emotion.style_directive()} "
