@@ -23,7 +23,8 @@ function App() {
   const [apiUrl, setApiUrl] = useState(API_BASE);
   const [memories, setMemories] = useState([]);
   const [proactiveSettings, setProactiveSettings] = useState(null);
-  const [pushStatus, setPushStatus] = useState(null);\n  const [pushBusy, setPushBusy] = useState(false);
+  const [pushStatus, setPushStatus] = useState(null);
+  const [pushBusy, setPushBusy] = useState(false);
   const [timeContext, setTimeContext] = useState(null);
   const [sending, setSending] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState(null);
