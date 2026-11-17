@@ -261,8 +261,14 @@ def classify_explicit_event(text: str) -> tuple[str | None, float]:
         return "user_reached_goal", 0.75
     if any(phrase in value for phrase in ("i'm sad", "i am sad", "i feel hopeless", "i'm scared", "i am scared", "i feel overwhelmed", "i'm overwhelmed", "i am overwhelmed", "i'm upset", "i am upset")):
         return "user_distressed", 0.65
-    if any(phrase in value for phrase in ("i'm disappointed", "i am disappointed")):
+    if any(phrase in value for phrase in ("i'm disappointed", "i am disappointed", "that was frustrating", "this is frustrating")):
         return "disappointment", 0.75
+    if any(phrase in value for phrase in ("i'm angry", "i am angry", "i'm annoyed", "i am annoyed", "i'm frustrated", "i am frustrated")):
+        return "frustrating_obstacle", 0.7
+    if any(phrase in value for phrase in ("that's interesting", "that's fascinating", "i discovered", "i found out")):
+        return "interesting_discovery", 0.55
+    if any(phrase in value for phrase in ("good morning", "good night", "missed you", "i missed you", "i'm back", "im back")):
+        return "quiet_companionship", 0.45
     if any(phrase in value for phrase in ("i trust you", "i feel safe with you")):
         return "meaningful_trust", 0.6
     if any(phrase in value for phrase in ("i feel better", "that helped", "i'm feeling better")):
