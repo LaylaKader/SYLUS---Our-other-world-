@@ -138,9 +138,6 @@ class OpenAICompatibleChatModel(ChatModel):
             if name == "Aion Labs RP" and model != "aion-labs/aion-rp-llama-3.1-8b":
                 logging.warning("Skipping Aion model outside the selected free RP tier: %s", model)
                 return
-            if name == "Mistral" and model != "mistral-small-latest":
-                logging.warning("Skipping Mistral model outside the configured free-mode allowlist: %s", model)
-                return
             if name == "Cloudflare Workers AI" and model != "@cf/meta/llama-3.1-8b-instruct-fp8-fast":
                 logging.warning("Skipping Cloudflare model not approved for Workers Free: %s", model)
                 return
@@ -169,7 +166,6 @@ class OpenAICompatibleChatModel(ChatModel):
             add_provider("Groq GPT-OSS 20B", "https://api.groq.com/openai/v1", groq_key, settings.groq_fallback_model)
             add_provider("Aion Labs RP", "https://api.aionlabs.ai/v1", settings.aion_api_key, settings.aion_model)
             add_provider("OpenRouter-free", "https://openrouter.ai/api/v1", settings.openrouter_api_key, settings.openrouter_model)
-            add_provider("Mistral", "https://api.mistral.ai/v1", settings.mistral_api_key, settings.mistral_model)
             if settings.cloudflare_account_id and settings.cloudflare_api_token:
                 add_provider(
                     "Cloudflare Workers AI",
@@ -324,7 +320,7 @@ class ExplicitOnlyMemoryWriter:
     """Extract only durable, explicitly stated, non-sensitive owner facts."""
 
     def extract_and_store(self, *, user_text: str, assistant_text: str, source_message_id: str) -> None:
-        if len(user_text.strip()) < 8 or not any((settings.gemini_api_key, settings.groq_api_key, settings.openrouter_api_key, settings.mistral_api_key, settings.aion_api_key, settings.cohere_api_key, settings.model_api_key)):
+        if len(user_text.strip()) < 8 or not any((settings.gemini_api_key, settings.groq_api_key, settings.openrouter_api_key, settings.aion_api_key, settings.cohere_api_key, settings.model_api_key)):
             return
         lowered = user_text.lower()
         if not any(marker in lowered for marker in (
