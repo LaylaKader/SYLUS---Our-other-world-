@@ -231,7 +231,7 @@ def time_context(_: None = Depends(require_owner)):
         "local_date": now_local.date().isoformat(), "weekday": now_local.strftime("%A"),
         "local_time": now_local.strftime("%H:%M:%S"),
         "chat_ready": chat_provider_configured(),
-        "chat_model": ("Gemini (primary)" if settings.gemini_api_key else "Groq / configured free fallback" if chat_provider_configured() else None),
+        "chat_model": ("Gemini-first free provider pool" if settings.gemini_api_key else "Configured free provider pool" if chat_provider_configured() else None),
         "image_generation_ready": bool(settings.cloudflare_account_id and settings.cloudflare_api_token),
         "voice_ready": bool(settings.elevenlabs_api_key and settings.elevenlabs_voice_id),
         "vision_ready": bool(settings.cloudflare_account_id and settings.cloudflare_api_token and vision_row),
