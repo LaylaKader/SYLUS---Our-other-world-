@@ -369,8 +369,8 @@ def rewind_to_message(message_id: UUID, _: None = Depends(require_owner)):
         tz_row = conn.execute("SELECT timezone FROM owner_runtime_context WHERE id = 1").fetchone()
     assistant_message = None
     if row[0] == "user":
-        if not (settings.model_api_base_url and settings.model_api_key and settings.model_name):
-            raise HTTPException(status_code=503, detail="Chat model is not configured on the private server.")
+        if not chat_provider_configured():
+            raise HTTPException(status_code=503, detail="No eligible free chat provider is configured on the private server.")
         tz_name = tz_row[0] if tz_row else DEFAULT_TIMEZONE
         try:
             local_zone = ZoneInfo(tz_name)
@@ -847,7 +847,7 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
     if len(attempts) >= 10:
         raise HTTPException(status_code=429, detail="Too many chat requests. Wait a moment and try again.")
     attempts.append(now)
-    if not (settings.model_api_base_url and settings.model_api_key and settings.model_name):
+    if not chat_provider_configured():
         raise HTTPException(status_code=503, detail="No eligible free chat provider is configured on the private server.")
     with connection() as conn:
         previous = conn.execute("SELECT created_at FROM messages WHERE role = 'user' AND archived_at IS NULL ORDER BY created_at DESC LIMIT 1").fetchone()
