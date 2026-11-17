@@ -112,7 +112,7 @@ class OpenAICompatibleChatModel(ChatModel):
             r"kiss|kissing|touch me|desire|aroused|turn me on|undress|undressing)\b",
             re.IGNORECASE,
         )
-        is_mature = bool(mature_terms.search(user_text + " " + recent_owner_context))
+        is_mature = bool(mature_terms.search(user_text + " " + recent_owner_context) or re.search(r"(?<!\\w)18\\s*\\+(?!\\w)", user_text + " " + recent_owner_context))
         providers = []
         legacy_key = settings.model_api_key
         legacy_base = settings.model_api_base_url.rstrip("/")
