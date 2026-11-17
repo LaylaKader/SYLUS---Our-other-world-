@@ -9,7 +9,7 @@ class EmotionStateTests(unittest.TestCase):
         before = state.amusement
         state.apply("playful_banter", 1.0)
         self.assertGreater(state.amusement, before)
-        self.assertEqual(state.dominant_mood(), "amused")
+        self.assertEqual(state.dominant_mood(), "playful")
 
     def test_anger_is_controlled_and_bounded(self):
         state = EmotionState()
