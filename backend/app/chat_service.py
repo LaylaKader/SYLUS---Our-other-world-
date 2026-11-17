@@ -142,6 +142,9 @@ class OpenAICompatibleChatModel(ChatModel):
             if name == "Cloudflare Workers AI" and model != "@cf/meta/llama-3.1-8b-instruct":
                 logging.warning("Skipping Cloudflare model not approved for Workers Free: %s", model)
                 return
+            if name == "Cohere-trial" and model != "command-a-03-2025":
+                logging.warning("Skipping Cohere model outside the trial allowlist: %s", model)
+                return
             if name == "OpenRouter-free" and model != "openrouter/free" and not model.endswith(":free"):
                 logging.warning("Skipping OpenRouter model that is not explicitly free: %s", model)
                 return
