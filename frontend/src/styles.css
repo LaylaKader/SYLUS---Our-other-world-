@@ -40,3 +40,28 @@
 .message-audio{display:block;width:min(100%,300px);height:34px;margin-top:9px;filter:sepia(.2) saturate(.7)}
 
 .license-link{display:inline-block;color:#c6a5ba;font-size:10px;text-decoration:underline;text-underline-offset:3px;margin:8px 0 12px}
+
+
+/* Private sticker collection */
+.composer-wrap { position: relative; }
+.sticker-toggle { flex: 0 0 auto; }
+.sticker-picker {
+  margin: 0 0 10px;
+  padding: 12px;
+  border: 1px solid rgba(190, 157, 105, .28);
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(24, 16, 22, .98), rgba(12, 12, 18, .98));
+  box-shadow: 0 14px 36px rgba(0,0,0,.28);
+}
+.sticker-picker-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px; color:#c9ad7a; font-size:9px; letter-spacing:.18em; }
+.sticker-picker-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:8px; max-height:230px; overflow-y:auto; }
+.sticker-option { min-width:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; padding:7px 3px; border:1px solid rgba(205,177,137,.13); border-radius:11px; background:rgba(255,255,255,.025); color:#e7d9c8; cursor:pointer; font:inherit; font-size:9px; }
+.sticker-option:active { transform:scale(.96); }
+.sticker-art { display:block; width:58px; height:50px; flex:0 0 auto; background-image:url('/stickers/sylus-stickers.svg'); background-repeat:no-repeat; background-size:300% 500%; }
+.message-sticker { display:inline-flex; vertical-align:middle; flex-direction:column; align-items:center; justify-content:center; margin:3px 4px; min-width:64px; }
+.message-sticker .sticker-art { width:78px; height:66px; }
+.sticker-caption { color:#cbb48e; font-size:9px; line-height:1.1; opacity:.8; }
+@media (max-width: 520px) {
+  .sticker-picker-grid { grid-template-columns:repeat(4,minmax(0,1fr)); }
+  .sticker-option .sticker-art { width:52px; height:46px; }
+}
