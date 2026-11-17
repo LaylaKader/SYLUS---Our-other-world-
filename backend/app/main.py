@@ -20,7 +20,7 @@ import httpx
 from .config import settings
 from .db import connection, open_pool
 from .migrate import run_migrations
-from .chat_service import generate_reply, generate_proactive_bubbles, split_reply_bubbles, ProviderNotConfigured, ProviderRequestFailed
+from .chat_service import generate_reply, generate_proactive_bubbles, split_reply_bubbles, load_emotion_state, ProviderNotConfigured, ProviderRequestFailed
 
 app = FastAPI(title="SYLUS private companion API", version="0.3.0")
 DEFAULT_TIMEZONE = "Asia/Dhaka"
@@ -619,11 +619,23 @@ def scheduled_proactive_messages(authorization: str | None = Header(default=None
 def create_speech(payload: SpeechIn, _: None = Depends(require_owner)):
     if not (settings.elevenlabs_api_key and settings.elevenlabs_voice_id):
         raise HTTPException(status_code=503, detail="Voice playback is not configured. Add an ElevenLabs API key and your designed voice ID in the private server settings.")
+    emotion = load_emotion_state()
+    # Let the persisted simulated affect gently colour the voice without caricature.
+    stability = 0.55
+    style = 0.22
+    if emotion.playfulness >= 0.30 or emotion.amusement >= 0.35 or emotion.surprise >= 0.35:
+        stability, style = 0.43, 0.38
+    if emotion.affection >= 0.38 or emotion.longing >= 0.30:
+        stability, style = 0.48, max(style, 0.30)
+    if emotion.concern >= 0.38:
+        stability, style = 0.58, 0.18
+    if emotion.anger >= 0.35 or emotion.irritation >= 0.45:
+        stability, style = 0.68, 0.12
     try:
         response = httpx.post(
             f"https://api.elevenlabs.io/v1/text-to-speech/{settings.elevenlabs_voice_id}?output_format=mp3_44100_128",
             headers={"xi-api-key": settings.elevenlabs_api_key, "Content-Type": "application/json", "Accept": "audio/mpeg"},
-            json={"text": payload.text, "model_id": "eleven_multilingual_v2", "voice_settings": {"stability": 0.55, "similarity_boost": 0.72, "style": 0.25, "use_speaker_boost": True}},
+            json={"text": payload.text, "model_id": "eleven_multilingual_v2", "voice_settings": {"stability": stability, "similarity_boost": 0.72, "style": style, "use_speaker_boost": True}},
             timeout=60.0,
         )
         response.raise_for_status()
