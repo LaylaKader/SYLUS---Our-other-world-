@@ -433,17 +433,17 @@ def unsubscribe_push(payload: PushUnsubscribeIn, _: None = Depends(require_owner
     return {"subscribed": False}
 
 
-def send_push_notification(title: str, body: str) -> None:
+def send_push_notification(title: str, body: str) -> dict[str, int]:
     configured = bool(settings.web_push_vapid_private_key and settings.web_push_vapid_public_key and settings.web_push_vapid_subject)
     if not configured:
         logging.error("Push delivery skipped: VAPID configuration is incomplete.")
-        return
+        return {"accepted": 0, "failed": 0}
     from pywebpush import webpush, WebPushException
     with connection() as conn:
         subscriptions = conn.execute("SELECT endpoint, p256dh, auth FROM push_subscriptions").fetchall()
     if not subscriptions:
         logging.warning("Push delivery skipped: no registered subscriptions.")
-        return
+        return {"accepted": 0, "failed": 0}
     delivered = 0
     failed = 0
     for endpoint, p256dh, auth in subscriptions:
@@ -452,7 +452,7 @@ def send_push_notification(title: str, body: str) -> None:
             webpush(
                 subscription_info=subscription,
                 data=json.dumps({"title": title, "body": body[:180], "url": "/"}),
-                vapid_private_key=settings.web_push_vapid_private_key.encode("utf-8"),
+                vapid_private_key=settings.web_push_vapid_private_key,
                 vapid_claims={"sub": settings.web_push_vapid_subject},
                 ttl=60 * 60 * 12,
             )
@@ -468,6 +468,7 @@ def send_push_notification(title: str, body: str) -> None:
             failed += 1
             logging.exception("Web Push delivery failed (%s).", type(exc).__name__)
     logging.info("Web Push attempt finished: %s accepted by provider, %s failed.", delivered, failed)
+    return {"accepted": delivered, "failed": failed}
 
 
 @app.post("/v1/push/test")
@@ -478,8 +479,10 @@ def test_push_notification(_: None = Depends(require_owner)):
         count = conn.execute("SELECT count(*) FROM push_subscriptions").fetchone()[0]
     if not count:
         raise HTTPException(status_code=409, detail="This device has no registered push subscription. Enable notifications first.")
-    send_push_notification("Sylus · Test", "If this appeared on your phone, push notifications are working.")
-    return {"sent_to_provider": True, "subscription_count": count}
+    result = send_push_notification("Sylus · Test", "If this appeared on your phone, push notifications are working.")
+    if result["accepted"] == 0:
+        raise HTTPException(status_code=502, detail="The push provider rejected delivery. Check the server logs; no notification was accepted.")
+    return {"sent_to_provider": True, "subscription_count": count, **result}
 
 @app.get("/v1/proactive/settings")
 def get_proactive_settings(_: None = Depends(require_owner)):
