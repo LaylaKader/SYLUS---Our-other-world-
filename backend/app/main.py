@@ -418,7 +418,11 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
             "SELECT id, created_at FROM messages WHERE role = 'user' AND archived_at IS NULL "
             "ORDER BY created_at DESC LIMIT 1"
         ).fetchone()
-        if not last_user:
+        last_activity = conn.execute(
+            "SELECT created_at FROM messages WHERE role IN ('user','assistant') AND archived_at IS NULL "
+            "ORDER BY created_at DESC LIMIT 1"
+        ).fetchone()
+        if not last_user or not last_activity:
             return {"sent": False, "reason": "no_conversation", "messages": []}
         tz_name = row[5] or DEFAULT_TIMEZONE
         try:
@@ -436,7 +440,7 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
         )
         if quiet:
             return {"sent": False, "reason": "quiet_hours", "messages": []}
-        idle_minutes = (now_utc - last_user[1]).total_seconds() / 60
+        idle_minutes = (now_utc - last_activity[0]).total_seconds() / 60
         if idle_minutes < row[3]:
             return {"sent": False, "reason": "owner_recently_active", "messages": []}
         last_proactive = row[6]
@@ -460,18 +464,8 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
     try:
         bubbles = generate_proactive_bubbles(history, time_context=time_note)
     except (ProviderNotConfigured, ProviderRequestFailed):
-        with connection() as conn:
-            conn.execute(
-                "UPDATE proactive_contact_settings SET last_proactive_at = %s WHERE id = 1",
-                (previous_proactive,),
-            )
         return {"sent": False, "reason": "generation_unavailable", "messages": []}
     if not bubbles:
-        with connection() as conn:
-            conn.execute(
-                "UPDATE proactive_contact_settings SET last_proactive_at = %s WHERE id = 1",
-                (previous_proactive,),
-            )
         return {"sent": False, "reason": "nothing_natural_to_say", "messages": []}
     with connection() as conn:
         created_rows = [
