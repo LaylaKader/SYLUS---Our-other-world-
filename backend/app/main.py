@@ -4,6 +4,7 @@ from pathlib import Path
 import secrets
 import hashlib
 import hmac
+import logging
 from collections import defaultdict, deque
 from time import time
 from datetime import datetime, timezone
@@ -433,11 +434,18 @@ def unsubscribe_push(payload: PushUnsubscribeIn, _: None = Depends(require_owner
 
 
 def send_push_notification(title: str, body: str) -> None:
-    if not (settings.web_push_vapid_private_key and settings.web_push_vapid_public_key and settings.web_push_vapid_subject):
+    configured = bool(settings.web_push_vapid_private_key and settings.web_push_vapid_public_key and settings.web_push_vapid_subject)
+    if not configured:
+        logging.error("Push delivery skipped: VAPID configuration is incomplete.")
         return
     from pywebpush import webpush, WebPushException
     with connection() as conn:
         subscriptions = conn.execute("SELECT endpoint, p256dh, auth FROM push_subscriptions").fetchall()
+    if not subscriptions:
+        logging.warning("Push delivery skipped: no registered subscriptions.")
+        return
+    delivered = 0
+    failed = 0
     for endpoint, p256dh, auth in subscriptions:
         subscription = {"endpoint": endpoint, "keys": {"p256dh": p256dh, "auth": auth}}
         try:
@@ -448,14 +456,18 @@ def send_push_notification(title: str, body: str) -> None:
                 vapid_claims={"sub": settings.web_push_vapid_subject},
                 ttl=60 * 60 * 12,
             )
+            delivered += 1
         except WebPushException as exc:
+            failed += 1
             status = getattr(getattr(exc, "response", None), "status_code", None)
+            logging.error("Web Push provider rejected a notification (HTTP %s).", status or "unknown")
             if status in (404, 410):
                 with connection() as conn:
                     conn.execute("DELETE FROM push_subscriptions WHERE endpoint = %s", (endpoint,))
-        except Exception:
-            # Push delivery is best-effort; it must never interrupt chat or message persistence.
-            continue
+        except Exception as exc:
+            failed += 1
+            logging.exception("Web Push delivery failed (%s).", type(exc).__name__)
+    logging.info("Web Push attempt finished: %s accepted by provider, %s failed.", delivered, failed)
 
 
 @app.get("/v1/proactive/settings")
