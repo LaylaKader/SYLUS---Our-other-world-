@@ -196,10 +196,11 @@ function App() {
     try {
       const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/messages/${messageId}`, { method: 'PATCH', headers, credentials: 'include', body: JSON.stringify({ text: editingMessageText.trim() }) });
       if (!response.ok) { const failure = await response.json().catch(() => ({})); throw new Error(failure.detail || 'Could not edit your message.'); }
+      const turn = await response.json();
       setEditingMessageId(null);
-      await refreshMessages();
-      setNotice('Message edited. Later messages were moved out of the active conversation.');
-    } catch (error) { setNotice(error.message); }
+      setMessages(current => [...current.filter(message => message.id !== turn.user_message.id && message.id !== turn.assistant_message.id), turn.user_message, turn.assistant_message]);
+      setNotice('Message revised. Sylus has replied from this point.');
+    } catch (error) { await refreshMessages(); setNotice(error.message); }
     finally { setMessageActionBusy(false); }
   }
 
