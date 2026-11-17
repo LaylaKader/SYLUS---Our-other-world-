@@ -151,6 +151,11 @@ class ExplicitOnlyMemoryWriter:
         if len(user_text.strip()) < 18 or not settings.model_api_key:
             return
         lowered = user_text.lower()
+        if not any(marker in lowered for marker in (
+            "i ", "i'm", "i am", "i have", "i like", "i love", "i prefer",
+            "i want", "i need", "my ", "mine", "our ",
+        )):
+            return
         sensitive_markers = (
             "diagnosed", "medication", "medicine", "medical", "my health", "my illness",
             "my religion", "i am muslim", "i am christian", "my salary", "my bank",
