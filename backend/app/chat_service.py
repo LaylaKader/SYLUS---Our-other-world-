@@ -102,13 +102,17 @@ class OpenAICompatibleChatModel(ChatModel):
         messages.append({"role": "user", "content": user_text})
         # Route ordinary chat to Gemini first. Mature/romantic-intimate turns go to
         # Groq first; Gemini is deliberately excluded from that route.
+        recent_owner_context = " ".join(
+            str(item.get("body") or item.get("text") or "")
+            for item in recent_history[-4:] if item.get("role") == "user"
+        )
         mature_terms = re.compile(
-            r"\b(sex|sexual|sexually|erotic|erotica|nsfw|18\s*\+|adult content|explicit|nude|nudity|orgasm|"
+            r"\b(sex|sexual|sexually|erotic|erotica|nsfw|adult|mature|spicy|18\s*\+|explicit|nude|nudity|orgasm|"
             r"foreplay|intercourse|intimate|intimacy|sensual|seduce|seduction|bedroom|make love|"
             r"kiss|kissing|touch me|desire|aroused|turn me on|undress|undressing)\b",
             re.IGNORECASE,
         )
-        is_mature = bool(mature_terms.search(user_text))
+        is_mature = bool(mature_terms.search(user_text + " " + recent_owner_context))
         providers = []
         legacy_key = settings.model_api_key
         legacy_base = settings.model_api_base_url.rstrip("/")
@@ -138,7 +142,6 @@ class OpenAICompatibleChatModel(ChatModel):
                     settings.cloudflare_api_token,
                     settings.cloudflare_chat_model,
                 )
-            add_provider("SambaNova", "https://api.sambanova.ai/v1", settings.sambanova_api_key, settings.sambanova_model)
             add_provider("Cohere-trial", "https://api.cohere.com/compatibility/v1", settings.cohere_api_key, settings.cohere_model)
 
         # Backward compatibility: existing deployment variables continue to work
@@ -275,7 +278,7 @@ class ExplicitOnlyMemoryWriter:
     """Extract only durable, explicitly stated, non-sensitive owner facts."""
 
     def extract_and_store(self, *, user_text: str, assistant_text: str, source_message_id: str) -> None:
-        if len(user_text.strip()) < 8 or not any((settings.gemini_api_key, settings.groq_api_key, settings.openrouter_api_key, settings.mistral_api_key, settings.sambanova_api_key, settings.cohere_api_key, settings.model_api_key)):
+        if len(user_text.strip()) < 8 or not any((settings.gemini_api_key, settings.groq_api_key, settings.openrouter_api_key, settings.mistral_api_key, settings.cohere_api_key, settings.model_api_key)):
             return
         lowered = user_text.lower()
         if not any(marker in lowered for marker in (
@@ -292,7 +295,7 @@ class ExplicitOnlyMemoryWriter:
             "menstrual", "my weight", "my income", "my salary", "my bank", "loan", "debt",
             "credit card", "account number", "criminal record", "arrested", "sexuality",
         )
-        if any(marker in lowered for marker in sensitive_markers):
+        if any(marker in lowered for marker in sensitive_markers) or re.search(r"\\b(sex|sexual|erotic|nsfw|adult|explicit|nude|intimate|sensual|orgasm|foreplay)\\b", lowered):
             return
         prompt = (
             'Extract up to 3 durable facts explicitly stated by Umi in this message. '
