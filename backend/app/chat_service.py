@@ -126,6 +126,7 @@ class OpenAICompatibleChatModel(ChatModel):
 
         if is_mature:
             add_provider("Groq", "https://api.groq.com/openai/v1", groq_key, groq_model)
+            add_provider("Aion Labs RP", "https://api.aionlabs.ai/v1", settings.aion_api_key, settings.aion_model)
             # These are optional, user-configured fallbacks. Their own model/provider
             # terms still apply; this router does not override or bypass safeguards.
             add_provider("Mistral", "https://api.mistral.ai/v1", settings.mistral_api_key, settings.mistral_model)
@@ -133,6 +134,7 @@ class OpenAICompatibleChatModel(ChatModel):
         else:
             add_provider("Gemini", "https://generativelanguage.googleapis.com/v1beta/openai", settings.gemini_api_key, settings.gemini_model)
             add_provider("Groq", "https://api.groq.com/openai/v1", groq_key, groq_model)
+            add_provider("Aion Labs RP", "https://api.aionlabs.ai/v1", settings.aion_api_key, settings.aion_model)
             add_provider("OpenRouter-free", "https://openrouter.ai/api/v1", settings.openrouter_api_key, settings.openrouter_model)
             add_provider("Mistral", "https://api.mistral.ai/v1", settings.mistral_api_key, settings.mistral_model)
             if settings.cloudflare_account_id and settings.cloudflare_api_token:
@@ -278,7 +280,7 @@ class ExplicitOnlyMemoryWriter:
     """Extract only durable, explicitly stated, non-sensitive owner facts."""
 
     def extract_and_store(self, *, user_text: str, assistant_text: str, source_message_id: str) -> None:
-        if len(user_text.strip()) < 8 or not any((settings.gemini_api_key, settings.groq_api_key, settings.openrouter_api_key, settings.mistral_api_key, settings.cohere_api_key, settings.model_api_key)):
+        if len(user_text.strip()) < 8 or not any((settings.gemini_api_key, settings.groq_api_key, settings.openrouter_api_key, settings.mistral_api_key, settings.aion_api_key, settings.cohere_api_key, settings.model_api_key)):
             return
         lowered = user_text.lower()
         if not any(marker in lowered for marker in (
