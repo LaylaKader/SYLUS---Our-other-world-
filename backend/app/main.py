@@ -18,7 +18,7 @@ import httpx
 from .config import settings
 from .db import connection, open_pool
 from .migrate import run_migrations
-from .chat_service import generate_reply, ProviderNotConfigured, ProviderRequestFailed
+from .chat_service import generate_reply, split_reply_bubbles, ProviderNotConfigured, ProviderRequestFailed
 
 app = FastAPI(title="SYLUS private companion API", version="0.3.0")
 DEFAULT_TIMEZONE = "Asia/Dhaka"
@@ -105,6 +105,7 @@ class MessageOut(BaseModel):
 class ChatTurnOut(BaseModel):
     user_message: MessageOut
     assistant_message: MessageOut
+    assistant_messages: list[MessageOut] = Field(default_factory=list)
 
 class SpeechIn(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
@@ -282,14 +283,20 @@ def edit_user_message(message_id: UUID, payload: MessageEdit, request: Request, 
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ProviderRequestFailed as exc:
         raise HTTPException(status_code=502, detail="Your edit was saved, but Sylus could not generate a reply. You can send another message to try again.") from exc
+    bubbles = split_reply_bubbles(answer)
     with connection() as conn:
-        assistant_row = conn.execute(
-            "INSERT INTO messages (role, body) VALUES ('assistant', %s) RETURNING id, role, body, created_at",
-            (answer,),
-        ).fetchone()
+        assistant_rows = [
+            conn.execute(
+                "INSERT INTO messages (role, body) VALUES ('assistant', %s) RETURNING id, role, body, created_at",
+                (bubble,),
+            ).fetchone()
+            for bubble in bubbles
+        ]
+    assistant_messages = [MessageOut(id=str(r[0]), role=r[1], text=r[2], created_at=r[3]) for r in assistant_rows]
     return ChatTurnOut(
         user_message=MessageOut(id=str(user_row[0]), role=user_row[1], text=user_row[2], created_at=user_row[3]),
-        assistant_message=MessageOut(id=str(assistant_row[0]), role=assistant_row[1], text=assistant_row[2], created_at=assistant_row[3]),
+        assistant_message=assistant_messages[-1],
+        assistant_messages=assistant_messages,
     )
 
 @app.delete("/v1/messages/{message_id}")
@@ -348,13 +355,20 @@ def rewind_to_message(message_id: UUID, _: None = Depends(require_owner)):
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         except ProviderRequestFailed as exc:
             raise HTTPException(status_code=502, detail="The conversation was rewound, but Sylus could not generate a reply. Try sending another message.") from exc
+        bubbles = split_reply_bubbles(answer)
         with connection() as conn:
-            created = conn.execute(
-                "INSERT INTO messages (role, body) VALUES ('assistant', %s) RETURNING id, role, body, created_at",
-                (answer,),
-            ).fetchone()
-        assistant_message = MessageOut(id=str(created[0]), role=created[1], text=created[2], created_at=created[3])
-    return {"rewound_to": str(message_id), "archived_count": len(archived), "assistant_message": assistant_message}
+            created_rows = [
+                conn.execute(
+                    "INSERT INTO messages (role, body) VALUES ('assistant', %s) RETURNING id, role, body, created_at",
+                    (bubble,),
+                ).fetchone()
+                for bubble in bubbles
+            ]
+        assistant_messages = [MessageOut(id=str(r[0]), role=r[1], text=r[2], created_at=r[3]) for r in created_rows]
+        assistant_message = assistant_messages[-1]
+    else:
+        assistant_messages = []
+    return {"rewound_to": str(message_id), "archived_count": len(archived), "assistant_message": assistant_message, "assistant_messages": assistant_messages}
 
 @app.post("/v1/voice/speech")
 def create_speech(payload: SpeechIn, _: None = Depends(require_owner)):
@@ -541,11 +555,20 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
         with connection() as conn:
             conn.execute("DELETE FROM messages WHERE id = %s AND role = 'user'", (user_row[0],))
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    bubbles = split_reply_bubbles(answer)
     with connection() as conn:
-        assistant_row = conn.execute("INSERT INTO messages (role, body) VALUES ('assistant', %s) RETURNING id, role, body, created_at", (answer,)).fetchone()
+        assistant_rows = [
+            conn.execute(
+                "INSERT INTO messages (role, body) VALUES ('assistant', %s) RETURNING id, role, body, created_at",
+                (bubble,),
+            ).fetchone()
+            for bubble in bubbles
+        ]
+    assistant_messages = [MessageOut(id=str(r[0]), role=r[1], text=r[2], created_at=r[3]) for r in assistant_rows]
     return ChatTurnOut(
         user_message=MessageOut(id=str(user_row[0]), role=user_row[1], text=user_row[2], created_at=user_row[3]),
-        assistant_message=MessageOut(id=str(assistant_row[0]), role=assistant_row[1], text=assistant_row[2], created_at=assistant_row[3]),
+        assistant_message=assistant_messages[-1],
+        assistant_messages=assistant_messages,
     )
 
 @app.get("/v1/memories")
