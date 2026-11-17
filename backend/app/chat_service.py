@@ -50,7 +50,16 @@ class OpenAICompatibleChatModel(ChatModel):
             role = item.get("role")
             body = item.get("body") or item.get("text") or ""
             if role in ("user", "assistant") and body:
-                messages.append({"role": role, "content": str(body)[:12000]})
+                text = str(body)[:12000]
+                if role == "assistant" and any(
+                    phrase in text.lower() for phrase in (
+                        "low-key, strategic companion", "what's on your mind today",
+                        "what would you like to dive into", "how can i help",
+                        "what can i assist you with",
+                    )
+                ):
+                    continue
+                messages.append({"role": role, "content": text})
         messages.append({"role": "user", "content": user_text})
         try:
             response = httpx.post(
