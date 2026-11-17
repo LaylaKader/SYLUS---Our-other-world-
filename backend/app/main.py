@@ -478,7 +478,7 @@ def update_proactive_settings(payload: ProactiveSettingsUpdate, _: None = Depend
 
 @app.post("/v1/proactive/poll")
 def poll_proactive_messages(_: None = Depends(require_owner)):
-    """Owner app polls while open; create a spontaneous message only after idle/cooldown checks."""
+    """Create spontaneous messages after the maximum silence window; no proactive cooldown is applied."""
     now_utc = datetime.now(timezone.utc)
     with connection() as conn:
         row = conn.execute(
@@ -517,9 +517,6 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
         idle_minutes = (now_utc - last_activity[0]).total_seconds() / 60
         if idle_minutes < row[3]:
             return {"sent": False, "reason": "owner_recently_active", "messages": []}
-        last_proactive = row[6]
-        if last_proactive and (now_utc - last_proactive).total_seconds() < row[4] * 60:
-            return {"sent": False, "reason": "cooldown", "messages": []}
         conn.execute(
             "UPDATE proactive_contact_settings SET last_proactive_at = %s, updated_at = now() WHERE id = 1",
             (now_utc,),
