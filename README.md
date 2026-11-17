@@ -11,7 +11,7 @@ Private, single-owner companion app project.
 ## Run with Docker Compose
 1. Copy `.env.compose.example` to `.env`.
 2. Replace every placeholder with private values. Generate independent random values for `SYLUS_OWNER_TOKEN`, `SYLUS_OWNER_PASSWORD`, and `SESSION_SECRET`.
-3. Set `MODEL_API_KEY` only if you choose to use the configured external provider. The sample uses Groq's free-plan endpoint/model and has no paid fallback.
+3. Set `MODEL_API_KEY` only if you choose to use the configured external provider. The backend supports a no-cost provider pool: Gemini for ordinary chat, Groq/Aion for mature romantic chat, and optional free-tier fallbacks. Paid model IDs and paid fallbacks are not used.
 4. Run `docker compose up --build`.
 5. Open `http://localhost:8080`. Sign in under Settings using the owner password.
 
