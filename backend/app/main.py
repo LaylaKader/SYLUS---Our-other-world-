@@ -23,6 +23,15 @@ from .migrate import run_migrations
 from .chat_service import generate_reply, generate_proactive_bubbles, split_reply_bubbles, load_emotion_state, ProviderNotConfigured, ProviderRequestFailed
 
 app = FastAPI(title="SYLUS private companion API", version="0.3.0")
+
+def chat_provider_configured() -> bool:
+    """True when at least one explicitly configured free-tier provider is available."""
+    return any((
+        settings.gemini_api_key, settings.groq_api_key, settings.openrouter_api_key,
+        settings.mistral_api_key, settings.sambanova_api_key, settings.cohere_api_key,
+        settings.model_api_key,
+    )) or bool(settings.cloudflare_account_id and settings.cloudflare_api_token)
+
 DEFAULT_TIMEZONE = "Asia/Dhaka"
 
 _origins = [item.strip() for item in settings.cors_allowed_origins.split(",") if item.strip()]
@@ -221,8 +230,8 @@ def time_context(_: None = Depends(require_owner)):
         "timezone": tz_name, "now_utc": now_utc.isoformat(), "now_local": now_local.isoformat(),
         "local_date": now_local.date().isoformat(), "weekday": now_local.strftime("%A"),
         "local_time": now_local.strftime("%H:%M:%S"),
-        "chat_ready": bool(settings.model_api_base_url and settings.model_api_key and settings.model_name),
-        "chat_model": settings.model_name if settings.model_api_key else None,
+        "chat_ready": chat_provider_configured(),
+        "chat_model": ("Gemini (primary)" if settings.gemini_api_key else "Groq / configured free fallback" if chat_provider_configured() else None),
         "image_generation_ready": bool(settings.cloudflare_account_id and settings.cloudflare_api_token),
         "voice_ready": bool(settings.elevenlabs_api_key and settings.elevenlabs_voice_id),
         "vision_ready": bool(settings.cloudflare_account_id and settings.cloudflare_api_token and vision_row),
@@ -261,8 +270,8 @@ def edit_user_message(message_id: UUID, payload: MessageEdit, request: Request, 
     text = payload.text.strip()
     if not text:
         raise HTTPException(status_code=422, detail="Message cannot be blank")
-    if not (settings.model_api_base_url and settings.model_api_key and settings.model_name):
-        raise HTTPException(status_code=503, detail="Chat model is not configured on the private server.")
+    if not chat_provider_configured():
+        raise HTTPException(status_code=503, detail="No eligible free chat provider is configured on the private server.")
     with connection() as conn:
         row = conn.execute(
             "SELECT id, body, created_at FROM messages WHERE id = %s AND role = 'user' AND archived_at IS NULL",
@@ -839,7 +848,7 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
         raise HTTPException(status_code=429, detail="Too many chat requests. Wait a moment and try again.")
     attempts.append(now)
     if not (settings.model_api_base_url and settings.model_api_key and settings.model_name):
-        raise HTTPException(status_code=503, detail="Chat model is not configured on the private server. No paid or alternate provider will be selected automatically.")
+        raise HTTPException(status_code=503, detail="No eligible free chat provider is configured on the private server.")
     with connection() as conn:
         previous = conn.execute("SELECT created_at FROM messages WHERE role = 'user' AND archived_at IS NULL ORDER BY created_at DESC LIMIT 1").fetchone()
         tz_row = conn.execute("SELECT timezone FROM owner_runtime_context WHERE id = 1").fetchone()
