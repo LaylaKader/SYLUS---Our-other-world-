@@ -15,6 +15,8 @@ from .config import settings
 from .db import connection
 from .emotion import EmotionState
 
+_provider_cooldowns: dict[str, float] = {}
+
 
 class ProviderNotConfigured(RuntimeError):
     pass
