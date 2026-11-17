@@ -148,7 +148,7 @@ class ExplicitOnlyMemoryWriter:
     """Extract only durable, explicitly stated, non-sensitive owner facts."""
 
     def extract_and_store(self, *, user_text: str, assistant_text: str, source_message_id: str) -> None:
-        if len(user_text.strip()) < 18 or not settings.model_api_key:
+        if len(user_text.strip()) < 8 or not settings.model_api_key:
             return
         lowered = user_text.lower()
         if not any(marker in lowered for marker in (
@@ -317,28 +317,37 @@ def load_emotion_state() -> EmotionState:
 
 
 def classify_explicit_event(text: str) -> tuple[str | None, float]:
-    """Only respond to clear first-person statements or unmistakable interaction cues."""
+    """Recognize clear conversational signals without pretending to read minds."""
     value = text.lower()
-    if any(phrase in value for phrase in ("i passed", "i got accepted", "i got the offer", "i finished it", "i did it", "i finally submitted")):
-        return "user_reached_goal", 0.75
-    if any(phrase in value for phrase in ("i'm sad", "i am sad", "i feel hopeless", "i'm scared", "i am scared", "i feel overwhelmed", "i'm overwhelmed", "i am overwhelmed", "i'm upset", "i am upset")):
-        return "user_distressed", 0.65
-    if any(phrase in value for phrase in ("i'm disappointed", "i am disappointed", "that was frustrating", "this is frustrating")):
-        return "disappointment", 0.75
-    if any(phrase in value for phrase in ("i'm angry", "i am angry", "i'm annoyed", "i am annoyed", "i'm frustrated", "i am frustrated")):
-        return "frustrating_obstacle", 0.7
-    if any(phrase in value for phrase in ("that's interesting", "that's fascinating", "i discovered", "i found out")):
-        return "interesting_discovery", 0.55
+    if any(phrase in value for phrase in (
+        "i passed", "i got accepted", "i got the offer", "i finished it",
+        "i did it", "i finally submitted", "i won", "i succeeded",
+    )):
+        return "user_reached_goal", 0.8
+    if any(phrase in value for phrase in (
+        "i'm sad", "i am sad", "i feel hopeless", "i'm scared", "i am scared",
+        "i feel overwhelmed", "i'm overwhelmed", "i am overwhelmed",
+        "i'm upset", "i am upset", "i'm lonely", "i feel lonely",
+        "i'm worried", "i am worried", "i'm exhausted", "i feel awful",
+    )):
+        return "user_distressed", 0.7
+    if any(phrase in value for phrase in (
+        "i'm disappointed", "i am disappointed", "that was frustrating",
+        "this is frustrating", "i'm frustrated", "i am frustrated",
+        "i'm annoyed", "i am annoyed", "i'm angry", "i am angry",
+    )):
+        return "frustrating_obstacle", 0.75
+    if any(phrase in value for phrase in ("i trust you", "i feel safe with you", "i love you")):
+        return "meaningful_trust", 0.65
+    if any(phrase in value for phrase in ("i feel better", "that helped", "i'm feeling better", "im feeling better")):
+        return "reassurance_received", 0.6
+    if any(phrase in value for phrase in ("that's interesting", "thats interesting", "that's fascinating", "i discovered", "i found out")):
+        return "interesting_discovery", 0.6
+    if any(phrase in value for phrase in ("haha", "hehe", "lmao", "you're funny", "you are funny", "nice try")):
+        return "playful_banter", 0.5
     if any(phrase in value for phrase in ("good morning", "good night", "missed you", "i missed you", "i'm back", "im back")):
-        return "quiet_companionship", 0.45
-    if any(phrase in value for phrase in ("i trust you", "i feel safe with you")):
-        return "meaningful_trust", 0.6
-    if any(phrase in value for phrase in ("i feel better", "that helped", "i'm feeling better")):
-        return "reassurance_received", 0.55
-    if any(phrase in value for phrase in ("haha", "hehe", "lmao")):
-        return "playful_banter", 0.4
+        return "quiet_companionship", 0.5
     return None, 0.0
-
 
 def save_emotion_state(state: EmotionState, previous: dict[str, float], event: str | None, source_message_id: str) -> None:
     current = state.to_dict()
