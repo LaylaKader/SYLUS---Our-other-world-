@@ -4,7 +4,7 @@
 
 The backend uses only explicitly configured providers and the model IDs listed below. It never selects a paid model or silently enables billing.
 
-- Ordinary conversations: Gemini Flash → Groq → Aion Labs RP → OpenRouter free router → Mistral free mode → Cloudflare Workers AI free model → Cohere trial.
+- Ordinary conversations: Gemini Flash → Groq → Aion Labs RP → OpenRouter free router → Mistral free mode → Cloudflare Workers AI free model → Cohere trial → LLM7 free-token test fallback.
 - Mature romantic/intimate conversations: Groq → Aion Labs RP → Mistral → an explicitly configured OpenRouter model only when its own provider/model terms permit the content. Gemini is intentionally excluded from this route.
 - A provider that returns 429, 402, 403, or another error is skipped; the backend does not retry an exhausted quota. It proceeds to the next eligible provider.
 - The provider chain is best-effort, not unlimited. Every free tier has quotas and can change or become unavailable.
@@ -23,6 +23,7 @@ All keys are server-side secrets. Never put them in frontend code, commit them, 
 | Mistral | `MISTRAL_API_KEY`, `MISTRAL_MODEL` | `mistral-small-latest`; Free mode only |
 | Cloudflare Workers AI | Existing `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, plus `CLOUDFLARE_CHAT_MODEL` | `@cf/meta/llama-3.1-8b-instruct`; Workers Free allowance only |
 | Cohere | `COHERE_API_KEY`, `COHERE_MODEL` | `command-a-03-2025`; trial/evaluation key only |
+| LLM7 | `LLM7_API_KEY`, `LLM7_MODEL` | `default`; free-token test fallback only |
 
 Legacy `MODEL_API_BASE_URL`, `MODEL_API_KEY`, and `MODEL_NAME` remain supported for the existing Groq connection.
 
@@ -35,6 +36,7 @@ Legacy `MODEL_API_BASE_URL`, `MODEL_API_KEY`, and `MODEL_NAME` remain supported 
 - Mistral: Free mode is intended for evaluation and prototyping and has lower limits. Do not enable pay-as-you-go.
 - Cloudflare Workers AI: Workers Free includes 10,000 Neurons/day. Requests stop when the free allocation is exhausted; do not upgrade to Workers Paid or buy AI Gateway credits.
 - Cohere: trial keys are free but limited to 1,000 calls/month and are intended for evaluation/prototyping, not a high-volume production service.
+- LLM7: free-token access advertises up to 100,000 input+output tokens/day, 250 requests/hour, 60/minute and 1/second. Quotas may be reduced without notice. Its terms describe the service as educational/research-oriented and explicitly not a managed production inference platform, so this is a last-resort testing lane only. Privacy/retention details are limited; do not send sensitive conversations through it.
 
 SambaNova is deliberately excluded because its current Plans page says a payment method and credit purchase are required to run first requests. Cerebras is excluded because it requires a payment method for its current offer. NVIDIA NIM is excluded from this hosted app because its no-charge offering is for exploration/development rather than dependable production inference. Alibaba Cloud's free quota can automatically bill after exhaustion unless Free Quota Only is explicitly enabled, so it is not configured.
 
@@ -56,6 +58,7 @@ The memory-extraction step skips mature/intimate messages. It should never send 
 - Mistral free-mode limits: https://help.mistral.ai/en/articles/698531-why-am-i-hitting-api-rate-limits-and-how-do-i-increase-them
 - Cloudflare Workers AI pricing: https://developers.cloudflare.com/workers-ai/platform/pricing/
 - Cohere trial limits: https://docs.cohere.com/v2/docs/rate-limits
+- LLM7 free access and terms: https://llm7.io/ and https://github.com/chigwell/llm7.io/blob/main/TERMS.md
 - SambaNova Plans: https://cloud.sambanova.ai/plans
 
 ## No-paid guarantee
