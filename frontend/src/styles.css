@@ -65,3 +65,10 @@
   .sticker-picker-grid { grid-template-columns:repeat(4,minmax(0,1fr)); }
   .sticker-option .sticker-art { width:52px; height:46px; }
 }
+
+/* Chibi Mephisto sticker polish */
+.sticker-picker{padding:13px;border:1px solid rgba(201,168,117,.2);border-radius:14px;background:linear-gradient(145deg,rgba(31,25,36,.98),rgba(20,17,25,.98));box-shadow:0 16px 45px rgba(0,0,0,.38);}
+.sticker-option{min-height:82px;background:rgba(255,255,255,.025);}
+.sticker-option:hover{border-color:rgba(201,168,117,.42);background:rgba(139,53,78,.13);}
+.sticker-option .sticker-art{width:66px;height:56px;background-size:300% 500%;}
+.message-sticker .sticker-art{width:92px;height:78px;background-size:300% 500%;}
