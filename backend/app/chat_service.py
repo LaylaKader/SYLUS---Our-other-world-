@@ -130,6 +130,18 @@ class OpenAICompatibleChatModel(ChatModel):
             }:
                 logging.warning("Skipping Gemini model not approved for free tier: %s", model)
                 return
+            if name.startswith("Groq") and model not in {"openai/gpt-oss-120b", "openai/gpt-oss-20b"}:
+                logging.warning("Skipping Groq model not approved for the free plan: %s", model)
+                return
+            if name == "Aion Labs RP" and model != "aion-labs/aion-rp-llama-3.1-8b":
+                logging.warning("Skipping Aion model outside the selected free RP tier: %s", model)
+                return
+            if name == "Mistral" and model != "mistral-small-latest":
+                logging.warning("Skipping Mistral model outside the configured free-mode allowlist: %s", model)
+                return
+            if name == "Cloudflare Workers AI" and model != "@cf/meta/llama-3.1-8b-instruct":
+                logging.warning("Skipping Cloudflare model not approved for Workers Free: %s", model)
+                return
             if name == "OpenRouter-free" and model != "openrouter/free" and not model.endswith(":free"):
                 logging.warning("Skipping OpenRouter model that is not explicitly free: %s", model)
                 return
@@ -163,10 +175,6 @@ class OpenAICompatibleChatModel(ChatModel):
                 )
             add_provider("Cohere-trial", "https://api.cohere.com/compatibility/v1", settings.cohere_api_key, settings.cohere_model)
 
-        # Backward compatibility: existing deployment variables continue to work
-        # when they point to a non-Groq OpenAI-compatible endpoint.
-        if not providers and legacy_key and legacy_base and legacy_model:
-            providers.append(("Legacy configured provider", legacy_base, legacy_key, legacy_model))
         if not providers:
             raise ProviderNotConfigured(
                 "No free chat provider is configured. Add at least one eligible provider API key in the private server settings."
