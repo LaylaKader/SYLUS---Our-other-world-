@@ -10,8 +10,10 @@ class Settings(BaseSettings):
     # Optional no-cost provider credentials. Empty means provider is not used.
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.8-flash"
+    gemini_fallback_model: str = "gemini-3.5-flash-lite"
     groq_api_key: str = ""
     groq_model: str = "openai/gpt-oss-120b"
+    groq_fallback_model: str = "openai/gpt-oss-20b"
     aion_api_key: str = ""
     aion_model: str = "aion-labs/aion-rp-llama-3.1-8b"
     openrouter_api_key: str = ""
