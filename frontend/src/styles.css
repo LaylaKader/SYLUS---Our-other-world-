@@ -96,3 +96,6 @@ html,body,#root{height:100%;overflow:hidden}
  .composer-wrap{padding:9px 9px 6px;border-radius:13px}
  .composer-caption{margin-top:8px}
 }
+
+.content-view{min-height:0;max-height:calc(100dvh - 72px);overflow-y:auto;overscroll-behavior:contain}
+@media(max-width:620px){.content-view{max-height:calc(100dvh - 60px);overflow-y:auto}}
