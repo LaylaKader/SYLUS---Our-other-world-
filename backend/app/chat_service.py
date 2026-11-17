@@ -124,7 +124,7 @@ class OpenAICompatibleChatModel(ChatModel):
             if not (key and base and model):
                 return
             # Hard guards: never let an environment typo select a paid model.
-            if name == "Gemini" and model not in {
+            if name.startswith("Gemini") and model not in {
                 "gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash",
                 "gemini-3.5-flash-lite", "gemini-2.5-flash", "gemini-2.5-flash-lite",
             }:
