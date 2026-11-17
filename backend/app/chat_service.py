@@ -275,7 +275,7 @@ def generate_proactive_bubbles(history: list[dict], time_context: str = "") -> l
         "share a thought, tease gently, check on something the owner explicitly mentioned, or bring up a detail you remembered. "
         "Do not send generic 'how are you' check-ins, fake events, invented observations, or repeated reminders. "
         "If nothing genuinely worth saying comes to mind, return exactly {\"messages\":[]}. "
-        "If you do reach out, use 1-3 short separate chat bubbles, natural and unmistakably Sylus. Never demand a reply."
+        "If you do reach out, use 1-4 short separate chat bubbles, natural and unmistakably Sylus. Never demand a reply."
     )
     persona += (
         f"\n\nCurrent emotional tone: {emotion.dominant_mood()}. {emotion.style_directive()} "
