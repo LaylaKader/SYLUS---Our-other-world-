@@ -21,7 +21,7 @@ All keys are server-side secrets. Never put them in frontend code, commit them, 
 | Aion Labs | `AION_API_KEY`, `AION_MODEL` | `aion-labs/aion-rp-llama-3.1-8b`; default Free tier |
 | OpenRouter | `OPENROUTER_API_KEY`, `OPENROUTER_MODEL` | `openrouter/free`; free-model routing only |
 | Mistral | `MISTRAL_API_KEY`, `MISTRAL_MODEL` | `mistral-small-latest`; Free mode only |
-| Cloudflare Workers AI | Existing `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, plus `CLOUDFLARE_CHAT_MODEL` | `@cf/meta/llama-3.1-8b-instruct`; Workers Free allowance only |
+| Cloudflare Workers AI | Existing `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, plus `CLOUDFLARE_CHAT_MODEL` | `@cf/meta/llama-3.1-8b-instruct-fp8-fast`; Workers Free allowance only |
 | Cohere | `COHERE_API_KEY`, `COHERE_MODEL` | `command-a-03-2025`; trial/evaluation key only |
 
 Legacy `MODEL_API_BASE_URL`, `MODEL_API_KEY`, and `MODEL_NAME` remain supported for the existing Groq connection.
