@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     model_name: str = "openai/gpt-oss-120b"
     # Optional no-cost provider credentials. Empty means provider is not used.
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-3.8-flash"
+    gemini_model: str = "gemini-3.6-flash"
     gemini_fallback_model: str = "gemini-3.5-flash-lite"
     groq_api_key: str = ""
     groq_model: str = "openai/gpt-oss-120b"
@@ -19,8 +19,6 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     openrouter_model: str = "openrouter/free"
     openrouter_mature_model: str = ""
-    mistral_api_key: str = ""
-    mistral_model: str = "mistral-small-latest"
     cohere_api_key: str = ""
     cohere_model: str = "command-a-03-2025"
     cloudflare_chat_model: str = "@cf/meta/llama-3.1-8b-instruct-fp8-fast"
