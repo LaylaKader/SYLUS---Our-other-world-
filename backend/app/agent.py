@@ -51,11 +51,19 @@ class SylusAgent:
             if item.get("role") == "user"
         )
         memories = self.retriever.retrieve(query=(user_text + " " + continuity).strip(), limit=8)
+        dimensions = self.emotion.to_dict()
+        secondary = sorted(
+            ((name, value) for name, value in dimensions.items()
+             if value >= 0.30 and name not in {"confidence", "energy"}),
+            key=lambda item: item[1], reverse=True
+        )[:3]
+        mixed = ", ".join(f"{name} {value:.2f}" for name, value in secondary)
         emotional_context = (
             "\n\nCurrent simulated emotional state (internal style guidance): "
             f"{self.emotion.dominant_mood()}. {self.emotion.style_directive()} "
-            "Express this subtly and consistently with Sylus. Do not describe the state "
-            "as a diagnostic readout or claim human subjective experience."
+            + (f"Other active undertones: {mixed}. " if mixed else "")
+            + "Let emotional continuity influence rhythm, warmth, humour, restraint, and initiative naturally. "
+            "Do not name the dimensions, describe a diagnostic readout, or claim human subjective experience."
         )
         answer = self.model.respond(
             persona=self.persona + emotional_context,
