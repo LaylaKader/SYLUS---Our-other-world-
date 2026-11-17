@@ -140,6 +140,7 @@ class OpenAICompatibleChatModel(ChatModel):
 
         if is_mature:
             add_provider("Groq", "https://api.groq.com/openai/v1", groq_key, groq_model)
+            add_provider("Groq GPT-OSS 20B", "https://api.groq.com/openai/v1", groq_key, settings.groq_fallback_model)
             add_provider("Aion Labs RP", "https://api.aionlabs.ai/v1", settings.aion_api_key, settings.aion_model)
             # These are optional, user-configured fallbacks. Their own model/provider
             # terms still apply; this router does not override or bypass safeguards.
@@ -147,7 +148,9 @@ class OpenAICompatibleChatModel(ChatModel):
             add_provider("OpenRouter-mature", "https://openrouter.ai/api/v1", settings.openrouter_api_key, settings.openrouter_mature_model)
         else:
             add_provider("Gemini", "https://generativelanguage.googleapis.com/v1beta/openai", settings.gemini_api_key, settings.gemini_model)
+            add_provider("Gemini Flash-Lite", "https://generativelanguage.googleapis.com/v1beta/openai", settings.gemini_api_key, settings.gemini_fallback_model)
             add_provider("Groq", "https://api.groq.com/openai/v1", groq_key, groq_model)
+            add_provider("Groq GPT-OSS 20B", "https://api.groq.com/openai/v1", groq_key, settings.groq_fallback_model)
             add_provider("Aion Labs RP", "https://api.aionlabs.ai/v1", settings.aion_api_key, settings.aion_model)
             add_provider("OpenRouter-free", "https://openrouter.ai/api/v1", settings.openrouter_api_key, settings.openrouter_model)
             add_provider("Mistral", "https://api.mistral.ai/v1", settings.mistral_api_key, settings.mistral_model)
