@@ -82,10 +82,10 @@ function App() {
   }
 
   function renderMessageText(value) {
-    const parts = String(value || '').split(/(〔sticker:[a-z0-9-]+〕|\\{sticker:[a-z0-9-]+\\})/g);
+    const parts = String(value || '').split(/(〔sticker:[a-z0-9-]+〕|\{sticker:[a-z0-9-]+\\})/g);
     const legacy = { teacup: 'sleepy', rosebud: 'heart-hug', tarot: 'thinking', wink: 'mischief', raven: 'waiting', feather: 'wave', rose: 'heart-hug', laugh: 'laugh', smirk: 'sneaky' };
     return parts.map((part, index) => {
-      const match = part.match(/^(?:〔sticker:([a-z0-9-]+)〕|\\{sticker:([a-z0-9-]+)\\})$/);
+      const match = part.match(/^(?:〔sticker:([a-z0-9-]+)〕|\{sticker:([a-z0-9-]+)\\})$/);
       if (!match) return <React.Fragment key={index}>{part}</React.Fragment>;
       const sticker = stickerById[match[1] || legacy[match[2]] || match[2]];
       if (!sticker) return <React.Fragment key={index}>{part}</React.Fragment>;
