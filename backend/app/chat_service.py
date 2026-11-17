@@ -184,7 +184,7 @@ class ExplicitOnlyMemoryWriter:
             return
         prompt = (
             'Extract up to 3 durable facts explicitly stated by the USER in this message. '
-            'Do not infer, embellish, or use the assistant reply as evidence. Store preferences, ongoing projects, '
+            'Do not infer, embellish, or use the assistant reply as evidence. In this app, the character is named Sylus: never refer to him as the assistant, AI, chatbot, or system in a saved memory. If the user jokingly calls him an assistant, preserve the meaning but write Sylus instead. Store preferences, ongoing projects, '
             'important relationships (e.g. the user has a sister), stable goals, and explicit promises/decisions. '
             'Do not store transient questions, one-off requests, sensitive personal data, health, religion, politics, '
             'finances, sexuality, passwords, or guesses. If nothing qualifies, return {"memories":[]}. '
