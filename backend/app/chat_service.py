@@ -50,11 +50,9 @@ class MultiProviderMemoryCall:
 
 
 class OpenAICompatibleChatModel(ChatModel):
-    """Single configured provider only. No silent provider switching or paid fallback."""
+    """Route between explicitly configured no-cost providers; never use paid models."""
 
     def respond(self, *, persona: str, recent_history: list[dict], memories: list[RetrievedMemory], user_text: str) -> str:
-        if not settings.model_api_base_url or not settings.model_api_key or not settings.model_name:
-            raise ProviderNotConfigured("A chat model is not configured. Add MODEL_API_BASE_URL, MODEL_API_KEY, and MODEL_NAME on the private server.")
         memory_context = "\n".join(
             f'- [{m.category}; source {m.source}; confidence {m.confidence:.2f}] "{m.content}"' for m in memories
         ) or "No relevant saved memories were retrieved."
@@ -105,9 +103,9 @@ class OpenAICompatibleChatModel(ChatModel):
         # Route ordinary chat to Gemini first. Mature/romantic-intimate turns go to
         # Groq first; Gemini is deliberately excluded from that route.
         mature_terms = re.compile(
-            r"\\b(sex|sexual|sexually|erotic|erotica|nsfw|18\\s*\\+|adult content|explicit|nude|nudity|orgasm|"
+            r"\b(sex|sexual|sexually|erotic|erotica|nsfw|18\s*\+|adult content|explicit|nude|nudity|orgasm|"
             r"foreplay|intercourse|intimate|intimacy|sensual|seduce|seduction|bedroom|make love|"
-            r"kiss|kissing|touch me|desire|aroused|turn me on|undress|undressing)\\b",
+            r"kiss|kissing|touch me|desire|aroused|turn me on|undress|undressing)\b",
             re.IGNORECASE,
         )
         is_mature = bool(mature_terms.search(user_text))
@@ -195,13 +193,6 @@ class OpenAICompatibleChatModel(ChatModel):
         raise ProviderRequestFailed(
             "All configured free chat providers are temporarily unavailable or out of quota. Your message is still in the composer; please try again later."
         )
-        except httpx.HTTPStatusError as exc:
-            status = exc.response.status_code
-            logging.error("Chat provider failed after retry (HTTP %s): %s", status, exc.response.text[:500])
-            raise ProviderRequestFailed(f"Chat provider is temporarily unavailable (HTTP {status}). Your message is still in the composer; try again shortly.") from exc
-        except (httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
-            logging.error("Chat provider request failed (%s): %s", type(exc).__name__, str(exc)[:300])
-            raise ProviderRequestFailed(f"Chat provider request failed ({type(exc).__name__}). Your message is still in the composer; try again shortly.") from exc
 
 
 MEMORY_STOP_WORDS = {
@@ -284,7 +275,7 @@ class ExplicitOnlyMemoryWriter:
     """Extract only durable, explicitly stated, non-sensitive owner facts."""
 
     def extract_and_store(self, *, user_text: str, assistant_text: str, source_message_id: str) -> None:
-        if len(user_text.strip()) < 8 or not any((settings.gemini_api_key, settings.groq_api_key, settings.model_api_key)):
+        if len(user_text.strip()) < 8 or not any((settings.gemini_api_key, settings.groq_api_key, settings.openrouter_api_key, settings.mistral_api_key, settings.sambanova_api_key, settings.cohere_api_key, settings.model_api_key)):
             return
         lowered = user_text.lower()
         if not any(marker in lowered for marker in (
@@ -345,7 +336,7 @@ class ExplicitOnlyMemoryWriter:
                             "VALUES (%s, %s, %s, 'conversation_auto', %s, 'normal')",
                             (category, content, min(confidence, 1.0), source_message_id),
                         )
-        except (httpx.HTTPError, KeyError, IndexError, ValueError, TypeError, json.JSONDecodeError):
+        except (httpx.HTTPError, KeyError, IndexError, ValueError, TypeError, json.JSONDecodeError, ProviderRequestFailed):
             # Memory extraction must never break an otherwise successful conversation.
             return
 
