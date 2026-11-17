@@ -17,8 +17,6 @@ class Settings(BaseSettings):
     openrouter_mature_model: str = ""
     mistral_api_key: str = ""
     mistral_model: str = "mistral-small-latest"
-    sambanova_api_key: str = ""
-    sambanova_model: str = "DeepSeek-V3.1"
     cohere_api_key: str = ""
     cohere_model: str = "command-a-03-2025"
     cloudflare_chat_model: str = "@cf/meta/llama-3.1-8b-instruct"
