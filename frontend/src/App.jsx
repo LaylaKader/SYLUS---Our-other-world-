@@ -309,7 +309,7 @@ function App() {
       if (!response.ok) { const failure = await response.json().catch(() => ({})); throw new Error(failure.detail || 'Could not edit your message.'); }
       const turn = await response.json();
       setEditingMessageId(null);
-      const sylusBubbles = turn.assistant_messages?.length ? turn.assistant_messages : [turn.assistant_message];
+      const sylusBubbles = turn.assistant_messages?.length ? turn.assistant_messages : (turn.assistant_message ? [turn.assistant_message] : []);
       setMessages(current => [...current.filter(message => new Date(message.created_at) < new Date(turn.user_message.created_at) && !message.id.startsWith('pending-')), turn.user_message, ...sylusBubbles]);
       setNotice('Message revised. Sylus has replied from this point.');
       const memoryResponse = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/memories`, { headers, credentials: 'include' });
