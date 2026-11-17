@@ -62,12 +62,21 @@ class OpenAICompatibleChatModel(ChatModel):
                 messages.append({"role": role, "content": text})
         messages.append({"role": "user", "content": user_text})
         try:
-            response = httpx.post(
-                settings.model_api_base_url.rstrip("/") + "/chat/completions",
-                headers={"Authorization": f"Bearer {settings.model_api_key}", "Content-Type": "application/json"},
-                json={"model": settings.model_name, "messages": messages, "temperature": 0.78, "max_tokens": 800},
-                timeout=45.0,
-            )
+            endpoint = settings.model_api_base_url.rstrip("/") + "/chat/completions"
+            headers = {"Authorization": f"Bearer {settings.model_api_key}", "Content-Type": "application/json"}
+            payload = {
+                "model": settings.model_name,
+                "messages": messages,
+                "temperature": 0.78,
+                "max_tokens": 800,
+                "response_format": {"type": "json_object"},
+            }
+            response = httpx.post(endpoint, headers=headers, json=payload, timeout=45.0)
+            if response.status_code in (400, 422):
+                # Some OpenAI-compatible providers/models do not implement JSON mode.
+                # Fall back to the explicit prompt contract rather than breaking chat.
+                fallback_payload = {key: value for key, value in payload.items() if key != "response_format"}
+                response = httpx.post(endpoint, headers=headers, json=fallback_payload, timeout=45.0)
             response.raise_for_status()
             data: dict[str, Any] = response.json()
             answer = data["choices"][0]["message"]["content"]
