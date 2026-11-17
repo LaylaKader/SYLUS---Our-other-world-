@@ -370,6 +370,25 @@ function App() {
     finally { setMessageActionBusy(false); }
   }
 
+  async function resetChat() {
+    if (!connected || messageActionBusy) return;
+    if (!window.confirm('Start a completely fresh conversation? Current chat messages will disappear from the active chat. Saved memories will stay.')) return;
+    setMessageActionBusy(true);
+    try {
+      const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/messages`, { method: 'DELETE', headers, credentials: 'include' });
+      if (!response.ok) {
+        const failure = await response.json().catch(() => ({}));
+        throw new Error(failure.detail || 'Could not reset the conversation.');
+      }
+      setMessages([]);
+      setDraft('');
+      setStickerPickerOpen(false);
+      setAudioUrls({});
+      setNotice('A fresh conversation. Your saved memories are still here.');
+    } catch (error) { setNotice(error.message); }
+    finally { setMessageActionBusy(false); }
+  }
+
   async function rewindToMessage(messageId) {
     if (!window.confirm('Rewind the active conversation to this message? Everything after it will be archived, not permanently erased. If this is one of your messages, Sylus will answer it again.')) return;
     setMessageActionBusy(true);
@@ -468,7 +487,7 @@ function App() {
       </header>
 
       {active === 'chat' && <section className="chat-view">
-        <div className="chat-heading"><div><div className="eyebrow"><span className="eyebrow-line"/> THE N109 CONNECTION</div><h1>Our conversations<span className="heading-period">.</span></h1><p className="subheading">A quiet corner of the world, just for us.</p></div><button className="more-button" aria-label="Conversation options coming later" title="Conversation options coming later" disabled><MoreHorizontal size={20}/></button></div>
+        <div className="chat-heading"><div><div className="eyebrow"><span className="eyebrow-line"/> THE N109 CONNECTION</div><h1>Our conversations<span className="heading-period">.</span></h1><p className="subheading">A quiet corner of the world, just for us.</p></div><button className="more-button reset-chat-button" aria-label="Reset chat" title="Start a fresh conversation" onClick={resetChat} disabled={!connected || messageActionBusy}><MoreHorizontal size={20}/></button></div>
         <div className="chat-stage">
           {messages.length === 0 ? <div className="empty-state">
             <div className="sigil-wrap"><div className="sigil-ring ring-one"/><div className="sigil-ring ring-two"/><div className="sigil-center"><Crown size={31} strokeWidth={1}/></div><span className="sigil-star star-a">✧</span><span className="sigil-star star-b">✦</span><span className="sigil-star star-c">·</span></div>
