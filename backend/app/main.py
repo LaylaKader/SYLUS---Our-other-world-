@@ -439,6 +439,20 @@ def send_push_notification(title: str, body: str) -> dict[str, int]:
         logging.error("Push delivery skipped: VAPID configuration is incomplete.")
         return {"accepted": 0, "failed": 0}
     from pywebpush import webpush, WebPushException
+    from py_vapid import Vapid
+    private_key_text = settings.web_push_vapid_private_key
+    if isinstance(private_key_text, bytes):
+        private_key_text = private_key_text.decode("utf-8")
+    private_key_text = str(private_key_text).strip().replace("\\n", "\n")
+    try:
+        vapid_key = (
+            Vapid.from_pem(private_key_text.encode("utf-8"))
+            if "-----BEGIN" in private_key_text
+            else Vapid.from_string(private_key_text)
+        )
+    except Exception as exc:
+        logging.error("VAPID private key could not be parsed (%s).", type(exc).__name__)
+        return {"accepted": 0, "failed": 1}
     with connection() as conn:
         subscriptions = conn.execute("SELECT endpoint, p256dh, auth FROM push_subscriptions").fetchall()
     if not subscriptions:
@@ -452,7 +466,7 @@ def send_push_notification(title: str, body: str) -> dict[str, int]:
             webpush(
                 subscription_info=subscription,
                 data=json.dumps({"title": title, "body": body[:180], "url": "/"}),
-                vapid_private_key=settings.web_push_vapid_private_key,
+                vapid_private_key=vapid_key,
                 vapid_claims={"sub": settings.web_push_vapid_subject},
                 ttl=60 * 60 * 12,
             )
