@@ -400,7 +400,7 @@ def update_proactive_settings(payload: ProactiveSettingsUpdate, _: None = Depend
                 "UPDATE proactive_contact_settings SET messages_enabled = %s, updated_at = now() WHERE id = 1",
                 (changes["messages_enabled"],),
             )
-    return get_proactive_settings()
+    return get_proactive_settings(None)
 
 
 @app.post("/v1/proactive/poll")
