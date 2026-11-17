@@ -652,15 +652,29 @@ def discuss_uploaded_image(asset_id: UUID, _: None = Depends(require_owner)):
         vision_response = httpx.post(
             "https://api.cloudflare.com/client/v4/accounts/" + settings.cloudflare_account_id + "/ai/run/@cf/meta/llama-3.2-11b-vision-instruct",
             headers={"Authorization": f"Bearer {settings.cloudflare_api_token}", "Content-Type": "application/json"},
-            json={"messages": [{"role": "user", "content": "Describe this image accurately and concisely. Focus on visible details. Do not infer identity, sensitive traits, or unseen context."}], "image": image_data},
+            json={"messages": [{"role": "user", "content": [
+                {"type": "text", "text": "Describe this image accurately and concisely. Focus on visible details. If a person or character is shown, describe visible appearance without guessing their identity. Do not infer sensitive traits or unseen context."},
+                {"type": "image_url", "image_url": {"url": image_data}},
+            ]}], "max_tokens": 512, "temperature": 0.2},
             timeout=90.0,
         )
         vision_response.raise_for_status()
-        visual_description = vision_response.json().get("result", {}).get("response", "")
+        vision_payload = vision_response.json()
+        vision_result = vision_payload.get("result") or {}
+        visual_description = (
+            vision_result.get("response", "") if isinstance(vision_result, dict)
+            else vision_result if isinstance(vision_result, str) else ""
+        )
         if not visual_description:
+            logging.error("Cloudflare vision returned no text. Response keys: %s", list(vision_payload.keys()))
             raise ValueError("The vision model returned no description.")
-    except (httpx.HTTPError, ValueError) as exc:
-        raise HTTPException(status_code=502, detail="Image understanding failed. The image remains saved privately.") from exc
+    except httpx.HTTPError as exc:
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        detail = getattr(getattr(exc, "response", None), "text", "")[:500]
+        logging.error("Cloudflare vision request failed (HTTP %s): %s", status or "unknown", detail)
+        raise HTTPException(status_code=502, detail=f"Image understanding failed (provider HTTP {status or 'error'}). The image remains saved privately.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail="Image understanding returned an empty result. The image remains saved privately.") from exc
     history = [{"role": r[0], "body": r[1][:1800], "created_at": r[2].isoformat()} for r in reversed(history_rows)]
     user_text = "The owner shared an image. What I can actually see in it: " + visual_description[:5000] + ". Respond naturally to the image, without claiming details that are not visible."
     try:
