@@ -22,7 +22,8 @@ function App() {
   const [notice, setNotice] = useState('Preview mode · private connection not configured');
   const [apiUrl, setApiUrl] = useState(API_BASE);
   const [memories, setMemories] = useState([]);
-  const [proactiveSettings, setProactiveSettings] = useState(null);\n  const [pushStatus, setPushStatus] = useState(null);\n  const [pushBusy, setPushBusy] = useState(false);
+  const [proactiveSettings, setProactiveSettings] = useState(null);
+  const [pushStatus, setPushStatus] = useState(null);\n  const [pushBusy, setPushBusy] = useState(false);
   const [timeContext, setTimeContext] = useState(null);
   const [sending, setSending] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState(null);
@@ -100,6 +101,16 @@ function App() {
       if (memoryResponse.ok) setMemories(await memoryResponse.json());
       const proactiveResponse = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/proactive/settings`, { headers, credentials: 'include' });
       if (proactiveResponse.ok) setProactiveSettings(await proactiveResponse.json());
+      const pushResponse = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/push/status`, { headers, credentials: 'include' });
+      if (pushResponse.ok) {
+        const pushInfo = await pushResponse.json();
+        let deviceSubscribed = false;
+        if ('serviceWorker' in navigator && 'PushManager' in window) {
+          const registration = await navigator.serviceWorker.ready;
+          deviceSubscribed = Boolean(await registration.pushManager.getSubscription());
+        }
+        setPushStatus({ ...pushInfo, subscribed: deviceSubscribed });
+      }
     } catch (error) {
       setConnected(false);
       setChatReady(false);
