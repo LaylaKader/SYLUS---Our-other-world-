@@ -433,7 +433,7 @@ def send_push_notification(title: str, body: str) -> None:
             webpush(
                 subscription_info=subscription,
                 data=json.dumps({"title": title, "body": body[:180], "url": "/"}),
-                vapid_private_key=settings.web_push_vapid_private_key,
+                vapid_private_key=settings.web_push_vapid_private_key.encode("utf-8"),
                 vapid_claims={"sub": settings.web_push_vapid_subject},
                 ttl=60 * 60 * 12,
             )
@@ -550,6 +550,17 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
     messages = [MessageOut(id=str(r[0]), role=r[1], text=r[2], created_at=r[3]) for r in created_rows]
     send_push_notification("Sylus", bubbles[0])
     return {"sent": True, "messages": messages}
+
+
+@app.post("/internal/proactive/run")
+def scheduled_proactive_messages(authorization: str | None = Header(default=None)):
+    """Authenticated scheduler entry point; the same safeguards as the owner poll still apply."""
+    if not settings.scheduler_secret:
+        raise HTTPException(status_code=503, detail="The background scheduler is not configured.")
+    expected = f"Bearer {settings.scheduler_secret}"
+    if not authorization or not secrets.compare_digest(authorization, expected):
+        raise HTTPException(status_code=401, detail="Scheduler authentication failed.")
+    return poll_proactive_messages(None)
 
 
 @app.post("/v1/voice/speech")
