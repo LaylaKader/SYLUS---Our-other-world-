@@ -724,7 +724,7 @@ def discuss_uploaded_image(asset_id: UUID, _: None = Depends(require_owner)):
     user_text = (
         "Umi has just shown you an image. Your private visual impression: "
         + visual_description[:3500]
-        + "\\nReact to her act of sharing it as Sylus would in a private conversation. "
+        + "\nReact to her act of sharing it as Sylus would in a private conversation. "
         "Give a genuine personal reaction, not a caption or inventory. If she asks who is pictured, identify the person or character when the visual evidence supports it; be candid if uncertain."
     )
     try:
@@ -847,7 +847,10 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
         f"Current owner-local time: {now_local.strftime('%A, %Y-%m-%d %H:%M:%S')} ({tz_name}). "
         f"Current UTC: {now_utc.isoformat()}.{gap} Use this context naturally when relevant; do not announce it unnecessarily."
     )
-    history = [{"role": r[0], "body": r[1][:1800], "created_at": r[2].isoformat()} for r in reversed(history_rows)]
+    history = [
+        {"role": r[0], "body": r[1][:1800], "created_at": r[2].isoformat(), "image_context": r[3]}
+        for r in reversed(history_rows)
+    ]
     try:
         answer = generate_reply(text, str(user_row[0]), history, time_context=time_note)
     except ProviderNotConfigured as exc:
