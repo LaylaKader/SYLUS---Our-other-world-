@@ -142,7 +142,7 @@ class OpenAICompatibleChatModel(ChatModel):
             if name == "Mistral" and model != "mistral-small-latest":
                 logging.warning("Skipping Mistral model outside the configured free-mode allowlist: %s", model)
                 return
-            if name == "Cloudflare Workers AI" and model != "@cf/meta/llama-3.1-8b-instruct":
+            if name == "Cloudflare Workers AI" and model != "@cf/meta/llama-3.1-8b-instruct-fp8-fast":
                 logging.warning("Skipping Cloudflare model not approved for Workers Free: %s", model)
                 return
             if name == "Cohere-trial" and model != "command-a-03-2025":
