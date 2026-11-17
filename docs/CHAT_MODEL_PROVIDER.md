@@ -16,8 +16,8 @@ All keys are server-side secrets. Never put them in frontend code, commit them, 
 
 | Provider | Environment variables | Free model / tier |
 |---|---|---|
-| Google Gemini | `GEMINI_API_KEY`, `GEMINI_MODEL` | `gemini-3.8-flash`; Free tier only |
-| Groq | `GROQ_API_KEY`, `GROQ_MODEL` | `openai/gpt-oss-120b`; Free plan only |
+| Google Gemini | `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_FALLBACK_MODEL` | `gemini-3.8-flash` → `gemini-3.5-flash-lite`; Free tier only |
+| Groq | `GROQ_API_KEY`, `GROQ_MODEL`, `GROQ_FALLBACK_MODEL` | `openai/gpt-oss-120b` → `openai/gpt-oss-20b`; Free plan only |
 | Aion Labs | `AION_API_KEY`, `AION_MODEL` | `aion-labs/aion-rp-llama-3.1-8b`; default Free tier |
 | OpenRouter | `OPENROUTER_API_KEY`, `OPENROUTER_MODEL` | `openrouter/free`; free-model routing only |
 | Mistral | `MISTRAL_API_KEY`, `MISTRAL_MODEL` | `mistral-small-latest`; Free mode only |
@@ -29,7 +29,7 @@ Legacy `MODEL_API_BASE_URL`, `MODEL_API_KEY`, and `MODEL_NAME` remain supported 
 ## Free-tier caveats checked 18 November 2026
 
 - Gemini API: Free tier is limited to eligible models and project-specific quotas shown in Google AI Studio. Google says content submitted on the free tier may be used to improve its products. Do not use this provider for conversations you do not want processed under those terms. Do not attach a billing account.
-- Groq: Free-plan limits are model- and organization-specific. The current published `openai/gpt-oss-120b` limit is 1,000 requests/day and 200,000 tokens/day, with 8,000 tokens/minute. Quotas can vary by account.
+- Groq: Free-plan limits are model- and organization-specific. The Free plan publishes separate per-model limits for `openai/gpt-oss-120b` and `openai/gpt-oss-20b`: 1,000 requests/day and 200,000 tokens/day, with 8,000 tokens/minute. Quotas can vary by account. The smaller model is used as a second Groq lane when the primary model is exhausted.
 - Aion Labs: the default Free tier publishes 15 requests/minute and 20,000 tokens/day. Free access is described as a courtesy that may change; do not top up credits.
 - OpenRouter: free model variants have a 20 requests/minute and 50 requests/day cap. The 1,000/day increase requires buying credits, so it is not used here.
 - Mistral: Free mode is intended for evaluation and prototyping and has lower limits. Do not enable pay-as-you-go.
