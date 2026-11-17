@@ -9,15 +9,17 @@ jobs:
   check-for-a-message:
     runs-on: ubuntu-latest
     timeout-minutes: 3
+    env:
+      SYLUS_BASE_URL: ${{ secrets.SYLUS_BASE_URL }}
+      SYLUS_SCHEDULER_SECRET: ${{ secrets.SYLUS_SCHEDULER_SECRET }}
     steps:
       - name: Ask the private companion service to check
-        env:
-          SYLUS_BASE_URL: ${{ secrets.SYLUS_BASE_URL }}
-          SYLUS_SCHEDULER_SECRET: ${{ secrets.SYLUS_SCHEDULER_SECRET }}
+        if: ${{ env.SYLUS_BASE_URL != '' && env.SYLUS_SCHEDULER_SECRET != '' }}
         run: |
-          test -n "$SYLUS_BASE_URL" || { echo "Missing SYLUS_BASE_URL repository secret"; exit 1; }
-          test -n "$SYLUS_SCHEDULER_SECRET" || { echo "Missing SYLUS_SCHEDULER_SECRET repository secret"; exit 1; }
           curl --fail-with-body --silent --show-error --max-time 120 \
             -X POST \
             -H "Authorization: Bearer $SYLUS_SCHEDULER_SECRET" \
             "$SYLUS_BASE_URL/internal/proactive/run"
+      - name: Explain missing setup without failing scheduled runs
+        if: ${{ env.SYLUS_BASE_URL == '' || env.SYLUS_SCHEDULER_SECRET == '' }}
+        run: echo "Add SYLUS_BASE_URL and SYLUS_SCHEDULER_SECRET in repository Actions secrets to activate background delivery."
