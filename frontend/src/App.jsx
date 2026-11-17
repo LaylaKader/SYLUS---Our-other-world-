@@ -47,6 +47,7 @@ function App() {
   const [pushBusy, setPushBusy] = useState(false);
   const [timeContext, setTimeContext] = useState(null);
   const [sending, setSending] = useState(false);
+  const [composerNotice, setComposerNotice] = useState('');
   const [editingMessageId, setEditingMessageId] = useState(null);
   const [editingMessageText, setEditingMessageText] = useState('');
   const [messageActionBusy, setMessageActionBusy] = useState(false);
@@ -174,6 +175,7 @@ function App() {
     const text = draft.trim();
     if (!text || !connected || sending) return;
     setSending(true);
+    setComposerNotice('');
     setDraft('');
     const pendingId = `pending-${Date.now()}`;
     const optimisticMessage = { id: pendingId, role: 'user', text, created_at: new Date().toISOString() };
@@ -190,7 +192,7 @@ function App() {
       setNotice('Private conversation saved');
       const memoryResponse = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/memories`, { headers, credentials: 'include' });
       if (memoryResponse.ok) setMemories(await memoryResponse.json());
-    } catch (error) { setMessages(current => current.filter(message => message.id !== pendingId)); setDraft(text); setNotice(error.message); }
+    } catch (error) { setMessages(current => current.filter(message => message.id !== pendingId)); setDraft(text); const message = error.message || 'Message could not be sent. Your text has been kept.'; setNotice(message); setComposerNotice(message); }
     finally { setSending(false); }
   }
 
@@ -316,15 +318,16 @@ function App() {
     try {
       const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/voice/speech`, { method: 'POST', headers, credentials: 'include', body: JSON.stringify({ text: message.text }) });
       if (!response.ok) { const failure = await response.json().catch(() => ({})); throw new Error(failure.detail || `Voice generation failed (${response.status}).`); }
-      const blob = await response.blob();
+      const receivedBlob = await response.blob();
+      const blob = new Blob([receivedBlob], { type: 'audio/mpeg' });
       const signature = new Uint8Array(await blob.slice(0, 3).arrayBuffer());
       const isMp3 = (signature[0] === 0x49 && signature[1] === 0x44 && signature[2] === 0x33)
         || (signature[0] === 0xff && (signature[1] & 0xe0) === 0xe0);
       if (blob.size < 256 || !isMp3) throw new Error('The voice server did not return a valid MP3 stream. The audio was not attached.');
       const url = URL.createObjectURL(blob);
-      setAutoPlayAudioId(message.id);
+      setAutoPlayAudioId(null);
       setAudioUrls(current => ({ ...current, [message.id]: url }));
-      setNotice('Sylus is speaking…');
+      setNotice('Voice generated. Press Play in the audio player below.');
     } catch (error) { setNotice(error.message || 'Could not generate voice audio.'); }
     finally { setSpeakingMessageId(null); }
   }
@@ -526,10 +529,10 @@ function App() {
             <div className="empty-divider"><span/><Sparkles size={12}/><span/></div>
             <div className="empty-footnote"><LockKeyhole size={12}/> Your conversations stay yours.</div>
           </div> : <div className="message-list" ref={messageListRef} aria-live="polite" aria-relevant="additions text">{messages.map(m => <div className={`message-row ${m.role === 'user' ? 'mine' : 'theirs'}`} key={m.id}><div className="message-avatar">{m.role === 'user' ? 'U' : <Crown size={15}/>}</div><div className="message-content"><div className="message-author">{m.role === 'user' ? 'YOU' : 'SYLUS'} <span>{new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span></div>{editingMessageId === m.id ? <div className="message-edit-box"><textarea value={editingMessageText} onChange={e => setEditingMessageText(e.target.value)} rows={3} maxLength={12000}/><div className="message-edit-actions"><button className="text-action" onClick={() => setEditingMessageId(null)}>Cancel</button><button className="text-action" disabled={messageActionBusy || !editingMessageText.trim()} onClick={() => saveMessageEdit(m.id)}>{messageActionBusy ? 'Saving…' : 'Save & rewind'}</button></div></div> : <div className="message-bubble">{renderMessageText(m.text)}{m.media_url && <img className="chat-image" src={m.media_url} alt="Image shared in our private conversation" loading="lazy"/>}</div>}{m.role === 'assistant' && <button className="text-action read-aloud-button" disabled={!timeContext?.voice_ready || speakingMessageId === m.id} onClick={() => readAloud(m)}>{speakingMessageId === m.id ? 'Preparing voice…' : !timeContext?.voice_ready ? 'Voice setup needed' : audioUrls[m.id] ? 'Play voice again' : 'Read aloud'}</button>}{audioUrls[m.id] && <audio id={`message-audio-${m.id}`} ref={element => { if (element) audioElements.current[m.id] = element; else delete audioElements.current[m.id]; }} className="message-audio" controls preload="auto" playsInline src={audioUrls[m.id]} onLoadedMetadata={e => { const duration = e.currentTarget.duration; if (Number.isFinite(duration) && duration > 0) setNotice(`Audio ready · ${Math.round(duration)} seconds.`); }} onCanPlay={e => { if (autoPlayAudioId === m.id) e.currentTarget.play().catch(() => setNotice('Audio is ready. Press Play to listen.')); }} onPlay={() => setAutoPlayAudioId(current => current === m.id ? null : current)} onError={() => setNotice('The audio file could not be decoded by this browser. Try Chrome; if it still fails, tell me this notice.')} />}<div className="message-actions">{m.role === 'assistant' && <></>}{m.role === 'user' && editingMessageId !== m.id && <><button className="text-action" disabled={messageActionBusy} onClick={() => beginEditMessage(m)}>Edit</button><button className="text-action danger-action" disabled={messageActionBusy} onClick={() => deleteMessage(m.id)}>Delete</button></>}<button className="text-action" disabled={messageActionBusy} onClick={() => rewindToMessage(m.id)}>Rewind here</button></div></div></div>)}
-          {sending && <div className="typing-row" role="status" aria-label="Sylus is typing"><div className="message-avatar"><Crown size={15}/></div><div className="typing-bubble"><span/><span/><span/></div></div>}
+          {composerNotice && <div className="composer-feedback" role="alert">{composerNotice}</div>}{sending && <div className="typing-row" role="status" aria-label="Sylus is typing"><div className="message-avatar"><Crown size={15}/></div><div className="typing-bubble"><span/><span/><span/></div></div>}
         </div>}
         </div>
-        <div className="composer-wrap"><form className="composer" onSubmit={sendMessage}><input ref={imageInputRef} className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={e => uploadImage(e.target.files?.[0])}/><button type="button" className="composer-tool" title="Send an image" aria-label="Send an image" disabled={!connected || uploadingImage} onClick={() => imageInputRef.current?.click()}><Camera size={18}/></button><button type="button" className="composer-tool sticker-toggle" title="Choose a sticker" aria-label="Choose a sticker" disabled={!connected || !chatReady} onClick={() => setStickerPickerOpen(open => !open)}><Sparkles size={18}/></button><textarea value={draft} onChange={e => setDraft(e.target.value)} placeholder={connected ? (chatReady ? 'Say something…' : 'Chat model not configured yet…') : 'Connect your private instance to begin…'} rows={1} disabled={!connected || !chatReady || sending} onKeyDown={e => {if(e.key === 'Enter' && !e.shiftKey){e.preventDefault();sendMessage(e);}}}/><div className="composer-actions"><span className="composer-hint">{uploadingImage ? 'Uploading…' : '↵ to send'}</span><button className="send-button" type="submit" disabled={!connected || !chatReady || !draft.trim() || sending} aria-label="Send message"><Send size={16}/></button></div></form>{stickerPickerOpen && <div className="sticker-picker" role="group" aria-label="Sylus sticker collection"><div className="sticker-picker-heading"><span>OUR LITTLE COLLECTION</span><button type="button" className="text-action" onClick={() => setStickerPickerOpen(false)}>Close</button></div><div className="sticker-picker-grid">{stickerOptions.map(sticker => <button type="button" className="sticker-option" key={sticker.id} onClick={() => addStickerToDraft(sticker)}><span className="sticker-art" style={{ backgroundPosition: `${sticker.col * 50}% ${sticker.row * 25}%` }}/><span>{sticker.label}</span></button>)}</div></div>}<div className="composer-caption"><span>SYLUS IS A PRIVATE, PERSONAL COMPANION</span><span>✦</span><span>YOUR WORLD, YOUR RULES</span></div></div>
+        <div className="composer-wrap"><form className="composer" onSubmit={sendMessage}><input ref={imageInputRef} className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={e => uploadImage(e.target.files?.[0])}/><button type="button" className="composer-tool" title="Send an image" aria-label="Send an image" disabled={!connected || uploadingImage} onClick={() => imageInputRef.current?.click()}><Camera size={18}/></button><button type="button" className="composer-tool sticker-toggle" title="Choose a sticker" aria-label="Choose a sticker" disabled={!connected || !chatReady} onClick={() => setStickerPickerOpen(open => !open)}><Sparkles size={18}/></button><textarea value={draft} onChange={e => setDraft(e.target.value)} placeholder={connected ? (chatReady ? 'Say something…' : 'Chat model not configured yet…') : 'Connect your private instance to begin…'} rows={1} disabled={!connected || !chatReady || sending} onKeyDown={e => {if(e.key === 'Enter' && !e.shiftKey){e.preventDefault();sendMessage(e);}}}/><div className="composer-actions"><span className="composer-hint">{sending ? 'Sending…' : uploadingImage ? 'Uploading…' : '↵ to send'}</span><button className="send-button" type="submit" disabled={!connected || !chatReady || !draft.trim() || sending} aria-label="Send message"><Send size={16}/></button></div></form>{stickerPickerOpen && <div className="sticker-picker" role="group" aria-label="Sylus sticker collection"><div className="sticker-picker-heading"><span>OUR LITTLE COLLECTION</span><button type="button" className="text-action" onClick={() => setStickerPickerOpen(false)}>Close</button></div><div className="sticker-picker-grid">{stickerOptions.map(sticker => <button type="button" className="sticker-option" key={sticker.id} onClick={() => addStickerToDraft(sticker)}><span className="sticker-art" style={{ backgroundPosition: `${sticker.col * 50}% ${sticker.row * 25}%` }}/><span>{sticker.label}</span></button>)}</div></div>}<div className="composer-caption"><span>SYLUS IS A PRIVATE, PERSONAL COMPANION</span><span>✦</span><span>YOUR WORLD, YOUR RULES</span></div></div>
       </section>}
 
       {active === 'bond' && <section className="content-view"><div className="eyebrow"><span className="eyebrow-line"/> THE STORY WE BUILD</div><h1>Bond<span className="heading-period">.</span></h1><p className="subheading">A connection shaped by time, trust, and the moments we keep.</p><div className="feature-card bond-card"><div className="feature-symbol"><Heart size={25}/></div><div><span className="card-kicker">OUR STORY</span><h2>Still unfolding.</h2><p>Relationship milestones and shared experiences will live here. Nothing is assumed or rushed.</p></div><Sparkles className="card-sparkle" size={20}/></div><div className="small-note"><ShieldCheck size={15}/> Progress is private and always under your control.</div></section>}
