@@ -1,25 +1,63 @@
-# Chat model provider and data boundary
+# SYLUS chat providers: free-tier routing
 
-## Initial adapter configuration
-The server-side adapter is OpenAI-compatible. The sample configuration points to GroqCloud:
-- Base URL: `https://api.groq.com/openai/v1`
-- Sample model: `openai/gpt-oss-120b`
-- Key location: backend environment only (`MODEL_API_KEY`)
+## Routing policy
 
-This is a configurable starting point, not a hard dependency. No key is bundled in the frontend or repository. No alternate provider or paid fallback is selected automatically. If the key is absent or the configured model is unavailable, the app returns an error rather than switching to a paid service.
+The backend uses only explicitly configured providers and the model IDs listed below. It never selects a paid model or silently enables billing.
 
-## What leaves the private server
-For a normal chat reply, the server sends the current message, up to 12 recent user/assistant messages (each clipped to 1,800 characters), the Sylus persona instructions, up to five retrieved non-sensitive memory records (each clipped to 1,000 characters) to the configured model provider. The private chat database remains under the app owner's database control, but prompts are processed by the external provider. Do not send highly sensitive information until you have reviewed the provider's current terms and data controls.
+- Ordinary conversations: Gemini Flash → Groq → Aion Labs RP → OpenRouter free router → Mistral free mode → Cloudflare Workers AI free model → Cohere trial.
+- Mature romantic/intimate conversations: Groq → Aion Labs RP → Mistral → an explicitly configured OpenRouter model only when its own provider/model terms permit the content. Gemini is intentionally excluded from this route.
+- A provider that returns 429, 402, 403, or another error is skipped; the backend does not retry an exhausted quota. It proceeds to the next eligible provider.
+- The provider chain is best-effort, not unlimited. Every free tier has quotas and can change or become unavailable.
+- Mature routing is a simple keyword/context classifier, not a perfect content classifier. Provider safeguards and terms still apply; routing does not bypass them.
 
-Sensitive memories are excluded from retrieval, but sensitive content written in ordinary chat history may still be included in the recent-message context. This is a known limitation; a future per-conversation privacy filter should be added.
+## Optional environment variables
 
-The response is capped at 800 output tokens. This bounds accidental long generations and helps keep free-tier token use predictable.
-- Groq says inference requests are not retained by default. It may temporarily log inputs and outputs for reliability troubleshooting or abuse investigations for up to 30 days; its Data Controls page describes Zero Data Retention (ZDR), which disables this temporary customer-data storage: https://console.groq.com/docs/your-data
-- Groq's services agreement says it does not use customer inputs or outputs to train or fine-tune models unless the customer explicitly permits or instructs it: https://console.groq.com/docs/legal/services-agreement
-- Groq states retained customer data is stored in GCP buckets in the United States. Review its current terms and data controls before using it: https://console.groq.com/docs/your-data
-- Free-tier quotas are model- and organization-specific and may change. The official rate-limit page is authoritative for the account's current quotas: https://console.groq.com/docs/rate-limits
-- ## Current provider documentation checked 2026-11-17
-- Groq's current supported-model documentation lists `openai/gpt-oss-120b` as a featured model: https://console.groq.com/docs/models
-- The current Free-plan rate-limit table lists `openai/gpt-oss-120b` with 30 requests/minute, 1,000 requests/day, 8,000 tokens/minute, and 200,000 tokens/day as the published Free-plan limits. Check the Groq Console before relying on these figures.
+All keys are server-side secrets. Never put them in frontend code, commit them, or paste them into chat.
 
-A free API is not the same as local/offline inference. If the data boundary is not acceptable, do not configure an external key; chat remains disabled until another provider or a self-hosted model is selected.
+| Provider | Environment variables | Free model / tier |
+|---|---|---|
+| Google Gemini | `GEMINI_API_KEY`, `GEMINI_MODEL` | `gemini-3.8-flash`; Free tier only |
+| Groq | `GROQ_API_KEY`, `GROQ_MODEL` | `openai/gpt-oss-120b`; Free plan only |
+| Aion Labs | `AION_API_KEY`, `AION_MODEL` | `aion-labs/aion-rp-llama-3.1-8b`; default Free tier |
+| OpenRouter | `OPENROUTER_API_KEY`, `OPENROUTER_MODEL` | `openrouter/free`; free-model routing only |
+| Mistral | `MISTRAL_API_KEY`, `MISTRAL_MODEL` | `mistral-small-latest`; Free mode only |
+| Cloudflare Workers AI | Existing `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, plus `CLOUDFLARE_CHAT_MODEL` | `@cf/meta/llama-3.1-8b-instruct`; Workers Free allowance only |
+| Cohere | `COHERE_API_KEY`, `COHERE_MODEL` | `command-a-03-2025`; trial/evaluation key only |
+
+Legacy `MODEL_API_BASE_URL`, `MODEL_API_KEY`, and `MODEL_NAME` remain supported for the existing Groq connection.
+
+## Free-tier caveats checked 18 November 2026
+
+- Gemini API: Free tier is limited to eligible models and project-specific quotas shown in Google AI Studio. Google says content submitted on the free tier may be used to improve its products. Do not use this provider for conversations you do not want processed under those terms. Do not attach a billing account.
+- Groq: Free-plan limits are model- and organization-specific. The current published `openai/gpt-oss-120b` limit is 1,000 requests/day and 200,000 tokens/day, with 8,000 tokens/minute. Quotas can vary by account.
+- Aion Labs: the default Free tier publishes 15 requests/minute and 20,000 tokens/day. Free access is described as a courtesy that may change; do not top up credits.
+- OpenRouter: free model variants have a 20 requests/minute and 50 requests/day cap. The 1,000/day increase requires buying credits, so it is not used here.
+- Mistral: Free mode is intended for evaluation and prototyping and has lower limits. Do not enable pay-as-you-go.
+- Cloudflare Workers AI: Workers Free includes 10,000 Neurons/day. Requests stop when the free allocation is exhausted; do not upgrade to Workers Paid or buy AI Gateway credits.
+- Cohere: trial keys are free but limited to 1,000 calls/month and are intended for evaluation/prototyping, not a high-volume production service.
+
+SambaNova is deliberately excluded because its current Plans page says a payment method and credit purchase are required to run first requests. Cerebras is excluded because it requires a payment method for its current offer. NVIDIA NIM is excluded from this hosted app because its no-charge offering is for exploration/development rather than dependable production inference. Alibaba Cloud's free quota can automatically bill after exhaustion unless Free Quota Only is explicitly enabled, so it is not configured.
+
+## Privacy and memory
+
+For each reply, the provider receives the current message, a bounded recent conversation history, the Sylus persona, and retrieved non-sensitive memories. The database remains under the app owner's control, but prompts are processed by the selected external provider. Sensitive memories are excluded from retrieval; sensitive content in ordinary chat history may still be included in the recent context. Provider selection does not make external processing private or local.
+
+The memory-extraction step skips mature/intimate messages. It should never send those messages to Gemini as a side task.
+
+## Provider references
+
+- Gemini pricing and free-tier data policy: https://ai.google.dev/gemini-api/docs/pricing
+- Gemini model list: https://ai.google.dev/gemini-api/docs/models
+- Groq rate limits: https://console.groq.com/docs/rate-limits
+- Groq acceptable-use policy: https://console.groq.com/docs/legal/ai-policy
+- Aion Labs rate limits: https://www.aionlabs.ai/docs/rate-limits/
+- Aion Labs terms: https://www.aionlabs.ai/terms/2026-10-17/
+- OpenRouter pricing/free limits: https://openrouter.ai/pricing
+- Mistral free-mode limits: https://help.mistral.ai/en/articles/698531-why-am-i-hitting-api-rate-limits-and-how-do-i-increase-them
+- Cloudflare Workers AI pricing: https://developers.cloudflare.com/workers-ai/platform/pricing/
+- Cohere trial limits: https://docs.cohere.com/v2/docs/rate-limits
+- SambaNova Plans: https://cloud.sambanova.ai/plans
+
+## No-paid guarantee
+
+The application does not have a billing integration and never chooses a paid model ID. However, a provider can still bill an account if its owner independently enables billing or attaches a payment method. Keep every provider account on its no-payment free tier, do not add a card, do not buy credits, and remove any paid-tier API keys. If a provider's dashboard requires payment to activate an API key, leave that provider unconfigured.
