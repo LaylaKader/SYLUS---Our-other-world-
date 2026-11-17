@@ -1,4 +1,5 @@
 import os
+import json
 from pathlib import Path
 import secrets
 import hashlib
@@ -18,7 +19,7 @@ import httpx
 from .config import settings
 from .db import connection, open_pool
 from .migrate import run_migrations
-from .chat_service import generate_reply, split_reply_bubbles, ProviderNotConfigured, ProviderRequestFailed
+from .chat_service import generate_reply, generate_proactive_bubbles, split_reply_bubbles, ProviderNotConfigured, ProviderRequestFailed
 
 app = FastAPI(title="SYLUS private companion API", version="0.3.0")
 DEFAULT_TIMEZONE = "Asia/Dhaka"
@@ -113,6 +114,10 @@ class SpeechIn(BaseModel):
 class ImageGenerateIn(BaseModel):
     prompt: str = Field(min_length=1, max_length=1800)
     caption: str = Field(default='A picture for you.', max_length=300)
+
+class ProactiveSettingsUpdate(BaseModel):
+    messages_enabled: bool | None = None
+
 
 class MemoryCreate(BaseModel):
     category: str = Field(min_length=1, max_length=80)
@@ -369,6 +374,117 @@ def rewind_to_message(message_id: UUID, _: None = Depends(require_owner)):
     else:
         assistant_messages = []
     return {"rewound_to": str(message_id), "archived_count": len(archived), "assistant_message": assistant_message, "assistant_messages": assistant_messages}
+
+@app.get("/v1/proactive/settings")
+def get_proactive_settings(_: None = Depends(require_owner)):
+    with connection() as conn:
+        row = conn.execute(
+            "SELECT messages_enabled, calls_enabled, quiet_start, quiet_end, min_idle_minutes, "
+            "min_interval_minutes, timezone FROM proactive_contact_settings WHERE id = 1"
+        ).fetchone()
+    return {
+        "messages_enabled": bool(row[0]), "calls_enabled": bool(row[1]),
+        "quiet_start": row[2].strftime("%H:%M"), "quiet_end": row[3].strftime("%H:%M"),
+        "min_idle_minutes": row[4], "min_interval_minutes": row[5], "timezone": row[6],
+    }
+
+
+@app.patch("/v1/proactive/settings")
+def update_proactive_settings(payload: ProactiveSettingsUpdate, _: None = Depends(require_owner)):
+    changes = payload.model_dump(exclude_unset=True)
+    if not changes:
+        raise HTTPException(status_code=400, detail="No proactive settings supplied.")
+    with connection() as conn:
+        if "messages_enabled" in changes:
+            conn.execute(
+                "UPDATE proactive_contact_settings SET messages_enabled = %s, updated_at = now() WHERE id = 1",
+                (changes["messages_enabled"],),
+            )
+    return get_proactive_settings()
+
+
+@app.post("/v1/proactive/poll")
+def poll_proactive_messages(_: None = Depends(require_owner)):
+    """Owner app polls while open; create a spontaneous message only after idle/cooldown checks."""
+    now_utc = datetime.now(timezone.utc)
+    with connection() as conn:
+        row = conn.execute(
+            "SELECT messages_enabled, quiet_start, quiet_end, min_idle_minutes, min_interval_minutes, "
+            "timezone, last_proactive_at FROM proactive_contact_settings WHERE id = 1 FOR UPDATE"
+        ).fetchone()
+        if not row or not row[0]:
+            return {"sent": False, "reason": "disabled", "messages": []}
+        last_user = conn.execute(
+            "SELECT id, created_at FROM messages WHERE role = 'user' AND archived_at IS NULL "
+            "ORDER BY created_at DESC LIMIT 1"
+        ).fetchone()
+        if not last_user:
+            return {"sent": False, "reason": "no_conversation", "messages": []}
+        tz_name = row[5] or DEFAULT_TIMEZONE
+        try:
+            local_zone = ZoneInfo(tz_name)
+        except Exception:
+            local_zone = ZoneInfo(DEFAULT_TIMEZONE)
+            tz_name = DEFAULT_TIMEZONE
+        local_now = now_utc.astimezone(local_zone)
+        local_clock = local_now.time().replace(tzinfo=None)
+        quiet_start, quiet_end = row[1], row[2]
+        quiet = (
+            quiet_start <= local_clock < quiet_end
+            if quiet_start < quiet_end
+            else local_clock >= quiet_start or local_clock < quiet_end
+        )
+        if quiet:
+            return {"sent": False, "reason": "quiet_hours", "messages": []}
+        idle_minutes = (now_utc - last_user[1]).total_seconds() / 60
+        if idle_minutes < row[3]:
+            return {"sent": False, "reason": "owner_recently_active", "messages": []}
+        last_proactive = row[6]
+        if last_proactive and (now_utc - last_proactive).total_seconds() < row[4] * 60:
+            return {"sent": False, "reason": "cooldown", "messages": []}
+        previous_proactive = last_proactive
+        conn.execute(
+            "UPDATE proactive_contact_settings SET last_proactive_at = %s, updated_at = now() WHERE id = 1",
+            (now_utc,),
+        )
+        history_rows = conn.execute(
+            "SELECT role, body, created_at FROM messages WHERE role IN ('user','assistant') "
+            "AND archived_at IS NULL ORDER BY created_at DESC LIMIT 18"
+        ).fetchall()
+    history = [{"role": r[0], "body": r[1][:1800], "created_at": r[2].isoformat()} for r in reversed(history_rows)]
+    time_note = (
+        f"Current owner-local time: {local_now.strftime('%A, %Y-%m-%d %H:%M:%S')} ({tz_name}). "
+        f"The owner has been away for about {int(idle_minutes)} minutes. "
+        "You are deciding whether there is something natural worth texting first."
+    )
+    try:
+        bubbles = generate_proactive_bubbles(history, time_context=time_note)
+    except (ProviderNotConfigured, ProviderRequestFailed):
+        with connection() as conn:
+            conn.execute(
+                "UPDATE proactive_contact_settings SET last_proactive_at = %s WHERE id = 1",
+                (previous_proactive,),
+            )
+        return {"sent": False, "reason": "generation_unavailable", "messages": []}
+    if not bubbles:
+        with connection() as conn:
+            conn.execute(
+                "UPDATE proactive_contact_settings SET last_proactive_at = %s WHERE id = 1",
+                (previous_proactive,),
+            )
+        return {"sent": False, "reason": "nothing_natural_to_say", "messages": []}
+    with connection() as conn:
+        created_rows = [
+            conn.execute(
+                "INSERT INTO messages (role, body, metadata) VALUES ('assistant', %s, %s::jsonb) "
+                "RETURNING id, role, body, created_at",
+                (bubble, json.dumps({"proactive": True})),
+            ).fetchone()
+            for bubble in bubbles
+        ]
+    messages = [MessageOut(id=str(r[0]), role=r[1], text=r[2], created_at=r[3]) for r in created_rows]
+    return {"sent": True, "messages": messages}
+
 
 @app.post("/v1/voice/speech")
 def create_speech(payload: SpeechIn, _: None = Depends(require_owner)):
