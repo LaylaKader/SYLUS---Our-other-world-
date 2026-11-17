@@ -119,6 +119,15 @@ class ProactiveSettingsUpdate(BaseModel):
     messages_enabled: bool | None = None
 
 
+class PushSubscriptionIn(BaseModel):
+    endpoint: str = Field(min_length=20, max_length=3000)
+    keys: dict[str, str]
+
+
+class PushUnsubscribeIn(BaseModel):
+    endpoint: str = Field(min_length=20, max_length=3000)
+
+
 class MemoryCreate(BaseModel):
     category: str = Field(min_length=1, max_length=80)
     content: str = Field(min_length=1, max_length=4000)
@@ -375,6 +384,69 @@ def rewind_to_message(message_id: UUID, _: None = Depends(require_owner)):
         assistant_messages = []
     return {"rewound_to": str(message_id), "archived_count": len(archived), "assistant_message": assistant_message, "assistant_messages": assistant_messages}
 
+@app.get("/v1/push/status")
+def get_push_status(_: None = Depends(require_owner)):
+    configured = bool(settings.web_push_vapid_private_key and settings.web_push_vapid_public_key and settings.web_push_vapid_subject)
+    with connection() as conn:
+        count = conn.execute("SELECT count(*) FROM push_subscriptions").fetchone()[0]
+    return {"configured": configured, "subscribed": count > 0, "subscription_count": count}
+
+
+@app.get("/v1/push/public-key")
+def get_push_public_key(_: None = Depends(require_owner)):
+    if not (settings.web_push_vapid_private_key and settings.web_push_vapid_public_key and settings.web_push_vapid_subject):
+        raise HTTPException(status_code=503, detail="Push delivery is not configured on the private server yet.")
+    return {"public_key": settings.web_push_vapid_public_key}
+
+
+@app.post("/v1/push/subscribe")
+def subscribe_push(payload: PushSubscriptionIn, request: Request, _: None = Depends(require_owner)):
+    p256dh, auth = payload.keys.get("p256dh"), payload.keys.get("auth")
+    if not p256dh or not auth:
+        raise HTTPException(status_code=422, detail="The browser subscription is missing encryption keys.")
+    with connection() as conn:
+        conn.execute(
+            "INSERT INTO push_subscriptions (endpoint, p256dh, auth, user_agent) VALUES (%s, %s, %s, %s) "
+            "ON CONFLICT (endpoint) DO UPDATE SET p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth, "
+            "user_agent = EXCLUDED.user_agent, updated_at = now()",
+            (payload.endpoint, p256dh, auth, request.headers.get("user-agent", "")[:500]),
+        )
+    return {"subscribed": True}
+
+
+@app.delete("/v1/push/subscribe")
+def unsubscribe_push(payload: PushUnsubscribeIn, _: None = Depends(require_owner)):
+    with connection() as conn:
+        conn.execute("DELETE FROM push_subscriptions WHERE endpoint = %s", (payload.endpoint,))
+    return {"subscribed": False}
+
+
+def send_push_notification(title: str, body: str) -> None:
+    if not (settings.web_push_vapid_private_key and settings.web_push_vapid_public_key and settings.web_push_vapid_subject):
+        return
+    from pywebpush import webpush, WebPushException
+    with connection() as conn:
+        subscriptions = conn.execute("SELECT endpoint, p256dh, auth FROM push_subscriptions").fetchall()
+    for endpoint, p256dh, auth in subscriptions:
+        subscription = {"endpoint": endpoint, "keys": {"p256dh": p256dh, "auth": auth}}
+        try:
+            webpush(
+                subscription_info=subscription,
+                data=json.dumps({"title": title, "body": body[:180], "url": "/"}),
+                vapid_private_key=settings.web_push_vapid_private_key,
+                vapid_claims={"sub": settings.web_push_vapid_subject},
+                ttl=60 * 60 * 12,
+            )
+        except WebPushException as exc:
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            if status in (404, 410):
+                with connection() as conn:
+                    conn.execute("DELETE FROM push_subscriptions WHERE endpoint = %s", (endpoint,))
+        except Exception:
+            # Push delivery is best-effort; it must never interrupt chat or message persistence.
+            continue
+
+
 @app.get("/v1/proactive/settings")
 def get_proactive_settings(_: None = Depends(require_owner)):
     with connection() as conn:
@@ -476,6 +548,7 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
             for bubble in bubbles
         ]
     messages = [MessageOut(id=str(r[0]), role=r[1], text=r[2], created_at=r[3]) for r in created_rows]
+    send_push_notification("Sylus", bubbles[0])
     return {"sent": True, "messages": messages}
 
 
