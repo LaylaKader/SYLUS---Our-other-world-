@@ -219,7 +219,7 @@ function App() {
     if (!connected || pushBusy) return;
     setPushBusy(true);
     try {
-      const response = await fetch(apiUrl.replace(/\\/$/, '') + '/v1/push/test', { method: 'POST', headers, credentials: 'include' });
+      const response = await fetch(apiUrl.replace(/\/$/, '') + '/v1/push/test', { method: 'POST', headers, credentials: 'include' });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.detail || 'The test notification could not be sent.');
       setNotice('Test notification sent to the push service. Check your Android notification shade.');
