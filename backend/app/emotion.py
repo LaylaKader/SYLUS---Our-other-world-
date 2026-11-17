@@ -29,6 +29,9 @@ class EmotionState:
     disappointment: float = 0.00
     confidence: float = 0.85
     energy: float = 0.45
+    playfulness: float = 0.18
+    longing: float = 0.05
+    surprise: float = 0.05
 
     def normalize(self) -> "EmotionState":
         for key, value in asdict(self).items():
@@ -43,7 +46,7 @@ class EmotionState:
             "anger": 0.0, "pride": .10, "concern": .10,
             "curiosity": .25, "affection": .20, "happiness": .18,
             "disappointment": 0.0, "confidence": .85,
-            "energy": .45,
+            "energy": .45, "playfulness": .18, "longing": .05, "surprise": .05,
         }
         for key, base in baselines.items():
             current = getattr(self, key)
@@ -54,7 +57,12 @@ class EmotionState:
         """Apply an explicit interaction event; unknown events do nothing."""
         x = _clamp(intensity)
         changes: Mapping[str, Mapping[str, float]] = {
-            "playful_banter": {"amusement": .35, "warmth": .08, "energy": .08},
+            "playful_banter": {"amusement": .35, "playfulness": .38, "warmth": .08, "energy": .08},
+            "flirtatious_banter": {"amusement": .24, "playfulness": .42, "affection": .12, "warmth": .08},
+            "distance_longing": {"longing": .42, "affection": .22, "warmth": .14, "concern": .08},
+            "image_shared": {"curiosity": .22, "warmth": .08, "playfulness": .05},
+            "image_interesting": {"curiosity": .34, "amusement": .10, "happiness": .12},
+            "shared_memory": {"affection": .18, "warmth": .18, "happiness": .08},
             "shared_success": {"pride": .32, "warmth": .18, "affection": .08, "happiness": .26},
             "user_reached_goal": {"pride": .28, "warmth": .18, "amusement": .06, "happiness": .25},
             "meaningful_trust": {"affection": .18, "warmth": .20, "confidence": .04},
@@ -67,6 +75,7 @@ class EmotionState:
             "conflict_resolved": {"anger": -.24, "irritation": -.22, "disappointment": -.16, "warmth": .10},
             "quiet_companionship": {"warmth": .12, "affection": .08, "happiness": .08, "energy": -.04},
             "disappointment": {"warmth": -.08, "irritation": .16, "disappointment": .40, "energy": -.08},
+            "surprise": {"surprise": .42, "curiosity": .16, "energy": .08},
         }
         for key, delta in changes.get(event, {}).items():
             setattr(self, key, getattr(self, key) + delta * x)
@@ -83,6 +92,9 @@ class EmotionState:
             "affectionate": self.affection,
             "content": self.happiness,
             "disappointed": self.disappointment,
+            "playful": self.playfulness,
+            "longing": self.longing,
+            "surprised": self.surprise,
         }
         mood, score = max(scores.items(), key=lambda item: item[1])
         return mood if score >= .34 else "composed"
@@ -100,6 +112,9 @@ class EmotionState:
             "affectionate": "Warmth expressed through familiarity and attention, not constant pet names.",
             "content": "Quiet satisfaction and a little more ease; keep the confidence and dry wit.",
             "disappointed": "A restrained, honest note of disappointment; never punish or guilt the owner.",
+            "playful": "More mischievous and openly amused; tease lightly without turning every line into flirtation.",
+            "longing": "A little more intimate and wistful; acknowledge distance without melodrama or pressure.",
+            "surprised": "A brief, genuine note of surprise and curiosity; avoid exaggerated reactions.",
             "composed": "Calm, confident, observant, unhurried; use concise deliberate language.",
         }
         return directives[mood]
