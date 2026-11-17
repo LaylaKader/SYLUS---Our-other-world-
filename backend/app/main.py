@@ -446,7 +446,6 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
         last_proactive = row[6]
         if last_proactive and (now_utc - last_proactive).total_seconds() < row[4] * 60:
             return {"sent": False, "reason": "cooldown", "messages": []}
-        previous_proactive = last_proactive
         conn.execute(
             "UPDATE proactive_contact_settings SET last_proactive_at = %s, updated_at = now() WHERE id = 1",
             (now_utc,),
