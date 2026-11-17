@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.8-flash"
     groq_api_key: str = ""
     groq_model: str = "openai/gpt-oss-120b"
+    aion_api_key: str = ""
+    aion_model: str = "aion-labs/aion-rp-llama-3.1-8b"
     openrouter_api_key: str = ""
     openrouter_model: str = "openrouter/free"
     openrouter_mature_model: str = ""
