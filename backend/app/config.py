@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     model_name: str = "openai/gpt-oss-120b"
     # Optional no-cost provider credentials. Empty means provider is not used.
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.8-flash"
     groq_api_key: str = ""
     groq_model: str = "openai/gpt-oss-120b"
     openrouter_api_key: str = ""
