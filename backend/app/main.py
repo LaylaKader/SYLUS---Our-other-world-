@@ -312,16 +312,49 @@ def delete_user_message(message_id: UUID, _: None = Depends(require_owner)):
 def rewind_to_message(message_id: UUID, _: None = Depends(require_owner)):
     with connection() as conn:
         row = conn.execute(
-            "SELECT created_at FROM messages WHERE id = %s AND role IN ('user','assistant') AND archived_at IS NULL",
+            "SELECT role, body, created_at FROM messages WHERE id = %s AND role IN ('user','assistant') AND archived_at IS NULL",
             (message_id,),
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="That point in the conversation was not found.")
         archived = conn.execute(
             "UPDATE messages SET archived_at = now(), archive_reason = 'rewound_by_owner' "
-            "WHERE archived_at IS NULL AND created_at > %s RETURNING id", (row[0],)
+            "WHERE archived_at IS NULL AND created_at > %s RETURNING id", (row[2],)
         ).fetchall()
-    return {"rewound_to": message_id, "archived_count": len(archived)}
+        history_rows = conn.execute(
+            "SELECT role, body, created_at FROM messages WHERE archived_at IS NULL AND role IN ('user','assistant') "
+            "AND created_at < %s ORDER BY created_at DESC LIMIT 18", (row[2],)
+        ).fetchall() if row[0] == "user" else []
+        tz_row = conn.execute("SELECT timezone FROM owner_runtime_context WHERE id = 1").fetchone()
+    assistant_message = None
+    if row[0] == "user":
+        if not (settings.model_api_base_url and settings.model_api_key and settings.model_name):
+            raise HTTPException(status_code=503, detail="Chat model is not configured on the private server.")
+        tz_name = tz_row[0] if tz_row else DEFAULT_TIMEZONE
+        try:
+            local_zone = ZoneInfo(tz_name)
+        except Exception:
+            local_zone = ZoneInfo(DEFAULT_TIMEZONE)
+            tz_name = DEFAULT_TIMEZONE
+        now_local = datetime.now(timezone.utc).astimezone(local_zone)
+        time_note = (
+            f"Current owner-local time: {now_local.strftime('%A, %Y-%m-%d %H:%M:%S')} ({tz_name}). "
+            "The owner rewound the conversation to this message. Respond to it as the next turn."
+        )
+        history = [{"role": r[0], "body": r[1][:2400], "created_at": r[2].isoformat()} for r in reversed(history_rows)]
+        try:
+            answer = generate_reply(row[1], str(message_id), history, time_context=time_note)
+        except ProviderNotConfigured as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except ProviderRequestFailed as exc:
+            raise HTTPException(status_code=502, detail="The conversation was rewound, but Sylus could not generate a reply. Try sending another message.") from exc
+        with connection() as conn:
+            created = conn.execute(
+                "INSERT INTO messages (role, body) VALUES ('assistant', %s) RETURNING id, role, body, created_at",
+                (answer,),
+            ).fetchone()
+        assistant_message = MessageOut(id=str(created[0]), role=created[1], text=created[2], created_at=created[3])
+    return {"rewound_to": str(message_id), "archived_count": len(archived), "assistant_message": assistant_message}
 
 @app.post("/v1/voice/speech")
 def create_speech(payload: SpeechIn, _: None = Depends(require_owner)):
