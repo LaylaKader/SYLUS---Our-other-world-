@@ -575,7 +575,10 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
             "SELECT role, body, created_at FROM messages WHERE role IN ('user','assistant') "
             "AND archived_at IS NULL ORDER BY created_at DESC LIMIT 18"
         ).fetchall()
-    history = [{"role": r[0], "body": r[1][:1800], "created_at": r[2].isoformat()} for r in reversed(history_rows)]
+    history = [
+        {"role": r[0], "body": r[1][:1800], "created_at": r[2].isoformat(), "image_context": r[3]}
+        for r in reversed(history_rows)
+    ]
     time_note = (
         f"Current owner-local time: {local_now.strftime('%A, %Y-%m-%d %H:%M:%S')} ({tz_name}). "
         f"The owner has been away for about {int(idle_minutes)} minutes. "
@@ -624,9 +627,29 @@ def create_speech(payload: SpeechIn, _: None = Depends(require_owner)):
             timeout=60.0,
         )
         response.raise_for_status()
+        audio_bytes = response.content
+        content_type = response.headers.get("content-type", "").lower()
+        is_mp3 = audio_bytes.startswith(b"ID3") or (
+            len(audio_bytes) > 2 and audio_bytes[0] == 0xFF and (audio_bytes[1] & 0xE0) == 0xE0
+        )
+        logging.info("Voice provider response: content_type=%s bytes=%s mp3_signature=%s", content_type, len(audio_bytes), is_mp3)
+        if not audio_bytes or len(audio_bytes) < 256 or not (content_type.startswith("audio/") or is_mp3) or not is_mp3:
+            logging.error("Voice provider returned unusable audio: content_type=%s bytes=%s prefix=%s", content_type, len(audio_bytes), audio_bytes[:32].hex())
+            raise HTTPException(status_code=502, detail="The voice provider returned an empty or invalid audio stream. Check the voice ID, provider response, and usage allowance.")
     except httpx.HTTPError as exc:
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        logging.error("ElevenLabs speech request failed (HTTP %s): %s", status or "unknown", str(exc)[:300])
         raise HTTPException(status_code=502, detail="The voice provider could not generate audio. Check the private voice configuration and usage allowance.") from exc
-    return Response(content=response.content, media_type="audio/mpeg", headers={"Cache-Control": "no-store, private", "Content-Disposition": "inline; filename=sylus-message.mp3"})
+    return Response(
+        content=audio_bytes,
+        media_type="audio/mpeg",
+        headers={
+            "Cache-Control": "no-store, private",
+            "Content-Disposition": 'inline; filename="sylus-message.mp3"',
+            "Content-Length": str(len(audio_bytes)),
+            "Accept-Ranges": "bytes",
+        },
+    )
 
 @app.post("/v1/vision/accept-license")
 def accept_vision_license(_: None = Depends(require_owner)):
@@ -645,7 +668,7 @@ def accept_vision_license(_: None = Depends(require_owner)):
         conn.execute("INSERT INTO provider_acceptances (provider) VALUES ('cloudflare_meta_vision') ON CONFLICT (provider) DO NOTHING")
     return {"vision_ready": True}
 
-@app.post("/v1/media/{asset_id}/discuss", response_model=MessageOut)
+@app.post("/v1/media/{asset_id}/discuss")
 def discuss_uploaded_image(asset_id: UUID, _: None = Depends(require_owner)):
     with connection() as conn:
         accepted = conn.execute("SELECT 1 FROM provider_acceptances WHERE provider = 'cloudflare_meta_vision'").fetchone()
@@ -658,7 +681,7 @@ def discuss_uploaded_image(asset_id: UUID, _: None = Depends(require_owner)):
         if not asset:
             raise HTTPException(status_code=404, detail="Image not found.")
         history_rows = conn.execute(
-            "SELECT role, body, created_at FROM messages WHERE id <> %s AND role IN ('user','assistant') "
+            "SELECT role, body, created_at, metadata->>'image_context' FROM messages WHERE id <> %s AND role IN ('user','assistant') "
             "AND archived_at IS NULL ORDER BY created_at DESC LIMIT 18", (asset[2],),
         ).fetchall()
     image_data = "data:" + asset[1] + ";base64," + base64.b64encode(bytes(asset[0])).decode("ascii")
@@ -667,7 +690,7 @@ def discuss_uploaded_image(asset_id: UUID, _: None = Depends(require_owner)):
             "https://api.cloudflare.com/client/v4/accounts/" + settings.cloudflare_account_id + "/ai/run/@cf/meta/llama-3.2-11b-vision-instruct",
             headers={"Authorization": f"Bearer {settings.cloudflare_api_token}", "Content-Type": "application/json"},
             json={"messages": [{"role": "user", "content": [
-                {"type": "text", "text": "Describe this image accurately and concisely. Focus on visible details. If a person or character is shown, describe visible appearance without guessing their identity. Do not infer sensitive traits or unseen context."},
+                {"type": "text", "text": "You are a private visual interpreter for Sylus, not a caption writer. Inspect the image so Sylus can react naturally to something Umi chose to show him. In 1-3 concise sentences, identify the main subject and any recognizable fictional character if the visual evidence supports it; state uncertainty only when needed. Note the image's mood, style, expression, or one genuinely interesting detail. Do not produce a catalogue of colours, objects, edges, clothing, or composition. Do not write a polished image description or praise it automatically. Never infer sensitive traits, private identity, or unseen context. Be candid about low quality, ambiguity, or an unremarkable image."},
                 {"type": "image_url", "image_url": {"url": image_data}},
             ]}], "max_tokens": 512, "temperature": 0.2},
             timeout=90.0,
@@ -689,15 +712,37 @@ def discuss_uploaded_image(asset_id: UUID, _: None = Depends(require_owner)):
         raise HTTPException(status_code=502, detail=f"Image understanding failed (provider HTTP {status or 'error'}). The image remains saved privately.") from exc
     except ValueError as exc:
         raise HTTPException(status_code=502, detail="Image understanding returned an empty result. The image remains saved privately.") from exc
-    history = [{"role": r[0], "body": r[1][:1800], "created_at": r[2].isoformat()} for r in reversed(history_rows)]
-    user_text = "The owner shared an image. What I can actually see in it: " + visual_description[:5000] + ". Respond naturally to the image, without claiming details that are not visible."
+    history = [
+        {"role": r[0], "body": r[1][:1800], "created_at": r[2].isoformat(), "image_context": r[3]}
+        for r in reversed(history_rows)
+    ]
+    with connection() as conn:
+        conn.execute(
+            "UPDATE messages SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('image_context', %s::text) WHERE id = %s",
+            (visual_description[:3500], asset[2]),
+        )
+    user_text = (
+        "Umi has just shown you an image. Your private visual impression: "
+        + visual_description[:3500]
+        + "\\nReact to her act of sharing it as Sylus would in a private conversation. "
+        "Give a genuine personal reaction, not a caption or inventory. If she asks who is pictured, identify the person or character when the visual evidence supports it; be candid if uncertain."
+    )
     try:
-        answer = generate_reply(user_text, str(asset[2]), history, time_context="The owner has just shared an image in the current conversation.")
+        answer = generate_reply(user_text, str(asset[2]), history, time_context="Umi has just shared an image in the current conversation.")
     except (ProviderRequestFailed, ProviderNotConfigured) as exc:
         raise HTTPException(status_code=502, detail="I could inspect the image, but Sylus could not reply. The image remains saved privately.") from exc
+    bubbles = split_reply_bubbles(answer)
     with connection() as conn:
-        row = conn.execute("INSERT INTO messages (role, body) VALUES ('assistant', %s) RETURNING id, role, body, created_at", (answer,)).fetchone()
-    return MessageOut(id=str(row[0]), role=row[1], text=row[2], created_at=row[3])
+        rows = [
+            conn.execute(
+                "INSERT INTO messages (role, body) VALUES ('assistant', %s) RETURNING id, role, body, created_at",
+                (bubble,),
+            ).fetchone()
+            for bubble in bubbles
+        ]
+    return {"assistant_messages": [
+        MessageOut(id=str(r[0]), role=r[1], text=r[2], created_at=r[3]) for r in rows
+    ]}
 
 @app.post("/v1/media/upload", response_model=MessageOut)
 def upload_image(file: UploadFile = File(...), _: None = Depends(require_owner)):
@@ -783,7 +828,7 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
         tz_row = conn.execute("SELECT timezone FROM owner_runtime_context WHERE id = 1").fetchone()
         user_row = conn.execute("INSERT INTO messages (role, body) VALUES ('user', %s) RETURNING id, role, body, created_at", (text,)).fetchone()
         history_rows = conn.execute(
-            "SELECT role, body, created_at FROM messages WHERE id <> %s AND role IN ('user','assistant') AND archived_at IS NULL ORDER BY created_at DESC LIMIT 12",
+            "SELECT role, body, created_at, metadata->>'image_context' FROM messages WHERE id <> %s AND role IN ('user','assistant') AND archived_at IS NULL ORDER BY created_at DESC LIMIT 12",
             (user_row[0],),
         ).fetchall()
     tz_name = tz_row[0] if tz_row else DEFAULT_TIMEZONE
