@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     sylus_owner_password: str = ""
     session_secret: str = ""
     session_ttl_seconds: int = 1209600
+    web_push_vapid_public_key: str = ""
+    web_push_vapid_private_key: str = ""
+    web_push_vapid_subject: str = ""
+    scheduler_secret: str = ""
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 settings = Settings()
