@@ -54,7 +54,8 @@ class SylusAgent:
         dimensions = self.emotion.to_dict()
         secondary = sorted(
             ((name, value) for name, value in dimensions.items()
-             if value >= 0.30 and name not in {"confidence", "energy"}),
+             if value >= 0.30 and name not in {"confidence", "energy"}
+             and name != self.emotion.dominant_mood()),
             key=lambda item: item[1], reverse=True
         )[:3]
         mixed = ", ".join(f"{name} {value:.2f}" for name, value in secondary)
