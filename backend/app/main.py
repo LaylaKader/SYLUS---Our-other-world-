@@ -236,6 +236,16 @@ def list_messages(_: None = Depends(require_owner)):
         rows = conn.execute("SELECT m.id, m.role, m.body, m.created_at, a.id FROM messages m LEFT JOIN media_assets a ON a.message_id = m.id WHERE m.role IN ('user','assistant') AND m.archived_at IS NULL ORDER BY m.created_at ASC").fetchall()
     return [MessageOut(id=str(r[0]), role=r[1], text=r[2], created_at=r[3], media_url=f'/v1/media/{r[4]}' if r[4] else None) for r in rows]
 
+@app.delete("/v1/messages")
+def reset_active_conversation(_: None = Depends(require_owner)):
+    """Start a clean chat while preserving private archived history and saved memories."""
+    with connection() as conn:
+        rows = conn.execute(
+            "UPDATE messages SET archived_at = now(), archive_reason = 'owner_reset_chat' "
+            "WHERE archived_at IS NULL AND role IN ('user','assistant') RETURNING id"
+        ).fetchall()
+    return {"reset": True, "archived_count": len(rows), "memories_preserved": True}
+
 @app.post("/v1/messages", response_model=MessageOut)
 def save_user_message(payload: MessageIn, _: None = Depends(require_owner)):
     text = payload.text.strip()
