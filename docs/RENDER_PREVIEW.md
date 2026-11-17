@@ -10,14 +10,17 @@ Do not use Render's Free Postgres for SYLUS memory or chat history: Render docum
 
 1. Create a Neon account and a Postgres project named `sylus-private`. Choose Singapore or the closest Asia-Pacific region available.
 2. Copy the pooled connection string from Neon. Keep it private; it becomes the Render `DATABASE_URL`.
-3. Create a GroqCloud API key only if you want live model replies. The configured model is `openai/gpt-oss-120b`. Do not paste the key into ChatGPT or commit it.
+3. Create API keys only for providers whose free tier you intend to use. Gemini is the default for ordinary chat; Groq is first for mature romantic/intimate chat. Optional free-tier fallbacks are Aion Labs, OpenRouter free models, Mistral Free mode, Cloudflare Workers AI Free, and Cohere trial. Do not attach payment methods, buy credits, or enable billing. Never paste keys into ChatGPT or commit them.
 4. Connect the GitHub repository to Render.
 5. Create a Blueprint from the repository's `render.yaml` and inspect the proposed plan.
 6. Before applying, confirm the service is a Free web service in Singapore and that no Render Postgres database or paid resource is being created.
 7. After applying the Blueprint, set these manual variables in the Render service's Environment page:
    - `DATABASE_URL`: your Neon pooled connection string
    - `SYLUS_OWNER_PASSWORD`: a unique, strong password used only for SYLUS
-   - `MODEL_API_KEY`: your Groq key (leave blank to keep the app in no-chat preview mode)
+   - `GEMINI_API_KEY`: optional Gemini Free-tier key (ordinary chat primary)
+   - `GROQ_API_KEY`: optional Groq Free-plan key (mature chat primary)
+   - Add any other free-tier keys from `backend/.env.example` only if you can use them without a payment method
+   - Leave all provider keys blank to keep the app in no-chat preview mode
 8. Render generates `SYLUS_OWNER_TOKEN` and `SESSION_SECRET`. Do not replace them with reused passwords.
 9. Wait for the deploy and open the Render service URL. Sign in from Settings with your owner password.
 
