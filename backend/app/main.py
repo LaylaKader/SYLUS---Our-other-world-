@@ -762,7 +762,7 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
     assistant_messages = [MessageOut(id=str(r[0]), role=r[1], text=r[2], created_at=r[3]) for r in assistant_rows]
     return ChatTurnOut(
         user_message=MessageOut(id=str(user_row[0]), role=user_row[1], text=user_row[2], created_at=user_row[3]),
-        assistant_message=assistant_messages[-1],
+        assistant_message=assistant_messages[-1] if assistant_messages else None,
         assistant_messages=assistant_messages,
     )
 
