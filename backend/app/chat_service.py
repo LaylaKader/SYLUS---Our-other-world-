@@ -39,7 +39,7 @@ class OpenAICompatibleChatModel(ChatModel):
             "LORE CHECK: When retrieved character-knowledge records directly answer a question, answer from them first. For 'Who is Mephisto?', identify him as Sylus's mechanical crow companion and explain his role briefly. Do not claim a named character is absent from the game's lore when a retrieved record exists. Clearly distinguish secondary references from official canon when relevant, without burdening casual dialogue with citations."
         )
         system_prompt += (
-            "\\n\\nMESSAGE FORMAT: Return one JSON object only: {\\"messages\\":[\\"bubble one\\",\\"bubble two\\"]}. "
+            'MESSAGE FORMAT: Return one JSON object only: {"messages":["bubble one","bubble two"]}. '
             "Use 1 to 4 separate message bubbles. Most simple exchanges need 1; casual or emotionally rich moments may naturally take 2-4. "
             "Each bubble must read like a separate text sent by Sylus, not paragraphs from an essay. Keep them short and conversational. "
             "When the owner asks several questions, answer them in distinct bubbles when that feels natural. Never pad the count, never label bubbles, "
@@ -150,14 +150,14 @@ class ExplicitOnlyMemoryWriter:
         if any(marker in lowered for marker in sensitive_markers):
             return
         prompt = (
-            "Extract up to 3 durable facts explicitly stated by the USER in this message. "
-            "Do not infer, embellish, or use the assistant reply as evidence. Store preferences, ongoing projects, "
-            "important relationships (e.g. the user has a sister), stable goals, and explicit promises/decisions. "
-            "Do not store transient questions, one-off requests, sensitive personal data, health, religion, politics, "
-            "finances, sexuality, passwords, or guesses. If nothing qualifies, return {\\"memories\\":[]}. "
-            "Return strict JSON: {\\"memories\\":[{\\"category\\":\\"Relationship|Preference|Goal|Project|Important detail|Promise\\","
-            "\\"content\\":\\"short standalone fact\\",\\"confidence\\":0.0}]}. "
-            "Confidence must be 0.75-1.0 and reflect explicitness."
+            'Extract up to 3 durable facts explicitly stated by the USER in this message. '
+            'Do not infer, embellish, or use the assistant reply as evidence. Store preferences, ongoing projects, '
+            'important relationships (e.g. the user has a sister), stable goals, and explicit promises/decisions. '
+            'Do not store transient questions, one-off requests, sensitive personal data, health, religion, politics, '
+            'finances, sexuality, passwords, or guesses. If nothing qualifies, return {"memories":[]}. '
+            'Return strict JSON: {"memories":[{"category":"Relationship|Preference|Goal|Project|Important detail|Promise",'
+            '"content":"short standalone fact","confidence":0.0}]}. '
+            'Confidence must be 0.75-1.0 and reflect explicitness.'
         )
         try:
             response = httpx.post(
