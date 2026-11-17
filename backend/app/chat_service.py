@@ -108,7 +108,7 @@ class OpenAICompatibleChatModel(ChatModel):
         )
         mature_terms = re.compile(
             r"\b(sex|sexual|sexually|erotic|erotica|nsfw|adult|mature|spicy|18\s*\+|explicit|nude|nudity|orgasm|"
-            r"foreplay|intercourse|intimate|intimacy|sensual|seduce|seduction|bedroom|make love|"
+            r"foreplay|intercourse|intimate|intimacy|sensual|seduce|seduction|bedroom|make love|serious|important|urgent|something happened|need to talk|"
             r"kiss|kissing|touch me|desire|aroused|turn me on|undress|undressing)\b",
             re.IGNORECASE,
         )
@@ -121,8 +121,22 @@ class OpenAICompatibleChatModel(ChatModel):
         groq_model = settings.groq_model or (legacy_model if groq_key and "groq.com" in legacy_base else "openai/gpt-oss-120b")
 
         def add_provider(name, base, key, model):
-            if key and base and model:
-                providers.append((name, base.rstrip("/"), key, model))
+            if not (key and base and model):
+                return
+            # Hard guards: never let an environment typo select a paid model.
+            if name == "Gemini" and model not in {
+                "gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash",
+                "gemini-3.5-flash-lite", "gemini-2.5-flash", "gemini-2.5-flash-lite",
+            }:
+                logging.warning("Skipping Gemini model not approved for free tier: %s", model)
+                return
+            if name == "OpenRouter-free" and model != "openrouter/free" and not model.endswith(":free"):
+                logging.warning("Skipping OpenRouter model that is not explicitly free: %s", model)
+                return
+            if name == "OpenRouter-mature" and not model.endswith(":free"):
+                logging.warning("Skipping mature OpenRouter model without :free suffix.")
+                return
+            providers.append((name, base.rstrip("/"), key, model))
 
         if is_mature:
             add_provider("Groq", "https://api.groq.com/openai/v1", groq_key, groq_model)
