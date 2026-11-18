@@ -126,6 +126,7 @@ class ChatTurnOut(BaseModel):
     user_message: MessageOut
     assistant_message: MessageOut | None = None
     assistant_messages: list[MessageOut] = Field(default_factory=list)
+    user_messages: list[MessageOut] = Field(default_factory=list)
 
 class SpeechIn(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
@@ -870,8 +871,8 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
             for part in texts
         ]
         history_rows = conn.execute(
-            "SELECT role, body, created_at, metadata->>'image_context' FROM messages WHERE id <> %s AND role IN ('user','assistant') AND archived_at IS NULL ORDER BY created_at DESC LIMIT 16",
-            (user_rows[0][0],),
+            "SELECT role, body, created_at, metadata->>'image_context' FROM messages WHERE id <> ALL(%s) AND role IN ('user','assistant') AND archived_at IS NULL ORDER BY created_at DESC LIMIT 16",
+            ([row[0] for row in user_rows],)
         ).fetchall()
     tz_name = tz_row[0] if tz_row else DEFAULT_TIMEZONE
     try:
@@ -893,9 +894,8 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
         {"role": r[0], "body": r[1][:1800], "created_at": r[2].isoformat(), "image_context": r[3]}
         for r in reversed(history_rows)
     ]
-    history.extend({"role": "user", "body": part} for part in texts)
     try:
-        answer = generate_reply(text, str(user_rows[-1][0]), history[:-len(texts)], time_context=time_note)
+        answer = generate_reply(text, str(user_rows[-1][0]), history, time_context=time_note)
     except ProviderNotConfigured as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ProviderRequestFailed as exc:
