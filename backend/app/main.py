@@ -758,6 +758,11 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
         idle_minutes = (now_utc - last_activity[0]).total_seconds() / 60
         if idle_minutes < row[3]:
             return {"sent": False, "reason": "owner_recently_active", "messages": []}
+        # Enforce the configured proactive interval. This also prevents two
+        # overlapping scheduler/browser polls from generating duplicate messages.
+        last_proactive_at = row[6]
+        if last_proactive_at and (now_utc - last_proactive_at).total_seconds() < row[4] * 60:
+            return {"sent": False, "reason": "proactive_cooldown", "messages": []}
         conn.execute(
             "UPDATE proactive_contact_settings SET last_proactive_at = %s, updated_at = now() WHERE id = 1",
             (now_utc,),
@@ -777,7 +782,7 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
         "You are deciding whether there is something natural worth texting first."
     )
     try:
-        bubbles = generate_proactive_bubbles(history, time_context=time_note)
+        bubbles = generate_proactive_bubbles(history, time_context=time_note)[:1]
     except (ProviderNotConfigured, ProviderRequestFailed):
         return {"sent": False, "reason": "generation_unavailable", "messages": []}
     if not bubbles:
