@@ -102,3 +102,16 @@ html,body,#root{height:100%;overflow:hidden}
 @media(max-width:620px){.content-view{max-height:calc(100dvh - 60px);overflow-y:auto}}
 
 .chat-presence{display:flex;align-items:center;gap:9px;width:fit-content;max-width:100%;margin:3px 0 8px 41px;padding:8px 11px;border:1px solid rgba(189,154,171,.12);border-radius:9px;background:rgba(39,32,43,.55);font-size:10px;line-height:1.5;color:#b9aab8}.presence-dot{width:6px;height:6px;border-radius:50%;background:#b99aaa;flex-shrink:0}.chat-presence.waiting .presence-dot{background:#c9a875;box-shadow:0 0 8px rgba(201,168,117,.45)}.chat-presence.quiet{color:#9f929f;background:rgba(39,32,43,.35)}.chat-presence.quiet .presence-dot{background:#8e788a}.chat-presence.failed{color:#e0a1a7;border-color:rgba(190,91,105,.28);background:rgba(110,38,52,.13)}.chat-presence.failed .presence-dot{background:#d77d89}.typing-row .presence-caption{font-size:9px;color:#a996a8;align-self:center}@media(max-width:620px){.chat-presence{margin-left:0;font-size:9px}}
+
+
+/* In-app profile avatar editor */
+.avatar-editor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:18px}
+.avatar-editor-person{display:flex;flex-direction:column;align-items:center;gap:7px;padding:18px 10px;border:1px solid rgba(189,154,171,.16);border-radius:12px;background:rgba(16,14,19,.45);text-align:center}
+.avatar-preview{width:92px;height:92px;display:grid;place-items:center;overflow:hidden;border-radius:50%;border:1px solid rgba(201,168,117,.42);background:radial-gradient(circle,rgba(135,64,88,.24),rgba(28,22,32,.9));color:#d1b27f;font:32px 'Playfair Display',serif}
+.avatar-preview img{width:100%;height:100%;object-fit:cover}
+.avatar-editor-person strong{font-size:9px;letter-spacing:1.5px;color:#e4d6e2}
+.avatar-editor-person>span{font-size:9px;color:#928595}
+.avatar-editor-actions{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:5px}
+.message-avatar{overflow:hidden}
+.message-avatar img{width:100%;height:100%;object-fit:cover;display:block}
+@media(max-width:420px){.avatar-editor-grid{gap:8px}.avatar-editor-person{padding:14px 6px}.avatar-preview{width:76px;height:76px}.avatar-editor-actions .primary-button{padding:9px 10px;font-size:9px}}
