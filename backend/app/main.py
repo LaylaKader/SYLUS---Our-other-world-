@@ -1214,6 +1214,8 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
         ]
     user_messages = [MessageOut(id=str(r[0]), role=r[1], text=r[2], created_at=r[3]) for r in user_rows]
     assistant_messages = [MessageOut(id=str(r[0]), role=r[1], text=r[2], created_at=r[3]) for r in assistant_rows]
+    # Update relationship progression on the server for both text and voice turns.
+    refresh_bond()
     return ChatTurnOut(
         user_message=user_messages[-1],
         user_messages=user_messages,
