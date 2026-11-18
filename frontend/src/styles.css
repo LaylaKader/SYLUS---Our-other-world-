@@ -115,3 +115,32 @@ html,body,#root{height:100%;overflow:hidden}
 .message-avatar{overflow:hidden}
 .message-avatar img{width:100%;height:100%;object-fit:cover;display:block}
 @media(max-width:420px){.avatar-editor-grid{gap:8px}.avatar-editor-person{padding:14px 6px}.avatar-preview{width:76px;height:76px}.avatar-editor-actions .primary-button{padding:9px 10px;font-size:9px}}
+
+
+/* Private two-way voice call */
+.call-launch-button{display:inline-flex;align-items:center;gap:7px;color:#d8bd9a;border-color:rgba(201,168,117,.32)}
+.call-launch-button:not(:disabled):hover{background:rgba(139,53,78,.18);border-color:rgba(201,168,117,.58)}
+.call-launch-button:disabled{opacity:.35;cursor:not-allowed}
+.voice-call-backdrop{position:fixed;inset:0;z-index:80;display:grid;place-items:center;padding:18px;background:rgba(7,6,10,.82);backdrop-filter:blur(13px)}
+.voice-call-panel{position:relative;width:min(100%,440px);max-height:min(92dvh,760px);overflow:auto;padding:34px 26px 25px;border:1px solid rgba(201,168,117,.3);border-radius:22px;background:radial-gradient(circle at 50% 15%,rgba(112,52,79,.23),transparent 42%),linear-gradient(155deg,#211923,#100e14 72%);box-shadow:0 24px 90px rgba(0,0,0,.58);text-align:center;color:#e8dce6}
+.voice-call-close{position:absolute;right:15px;top:14px;width:34px;height:34px;border:1px solid rgba(189,154,171,.2);border-radius:50%;background:rgba(255,255,255,.035);color:#c8b7c6;display:grid;place-items:center}
+.voice-call-emblem{width:84px;height:84px;margin:0 auto 18px;display:grid;place-items:center;overflow:hidden;border-radius:50%;border:1px solid rgba(201,168,117,.55);background:radial-gradient(circle,rgba(135,64,88,.28),rgba(28,22,32,.95));color:#d1b27f;box-shadow:0 0 45px rgba(145,65,91,.18)}
+.voice-call-emblem img{width:100%;height:100%;object-fit:cover}
+.voice-call-panel h2{margin:8px 0 22px;font:500 27px 'Playfair Display',serif;color:#f0e7ef}
+.voice-call-panel h2 em{color:#d0ad83;font-weight:500}
+.voice-call-orb{width:142px;height:142px;margin:0 auto 17px;display:grid;place-items:center;border:1px solid rgba(201,168,117,.32);border-radius:50%;background:radial-gradient(circle,rgba(135,64,88,.18),rgba(21,17,26,.92) 68%);box-shadow:0 0 0 9px rgba(201,168,117,.035),0 0 0 20px rgba(201,168,117,.02);transition:box-shadow .25s ease,border-color .25s ease}
+.voice-call-orb span{font-size:9px;letter-spacing:2px;color:#d5b78f}
+.voice-call-orb.is-active{border-color:rgba(190,129,153,.7);box-shadow:0 0 0 9px rgba(190,129,153,.07),0 0 0 20px rgba(190,129,153,.035),0 0 38px rgba(145,65,91,.22)}
+.voice-call-orb.is-listening{animation:callPulse 2.2s ease-in-out infinite}
+@keyframes callPulse{0%,100%{transform:scale(1);box-shadow:0 0 0 9px rgba(190,129,153,.07),0 0 0 20px rgba(190,129,153,.035)}50%{transform:scale(1.035);box-shadow:0 0 0 13px rgba(190,129,153,.08),0 0 0 27px rgba(190,129,153,.025)}}
+.voice-call-status{min-height:36px;margin:0 auto 17px;max-width:330px;color:#bbaaba;font-size:11px;line-height:1.6}
+.voice-call-transcript{margin:0 auto 17px;padding:12px 14px;max-width:340px;text-align:left;border:1px solid rgba(189,154,171,.14);border-radius:10px;background:rgba(255,255,255,.025)}
+.voice-call-transcript span{font-size:8px;letter-spacing:1.5px;color:#c5a078}
+.voice-call-transcript p{margin:6px 0 0;color:#e1d3e0;font-size:11px;line-height:1.55}
+.voice-call-start{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-width:190px;padding:13px 18px}
+.voice-call-actions{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap}
+.voice-call-actions button{display:inline-flex;align-items:center;justify-content:center;gap:7px}
+.voice-call-end{border:1px solid rgba(190,105,122,.4);border-radius:8px;padding:10px 13px;background:rgba(112,43,62,.28);color:#edcbd1;font-size:10px}
+.voice-call-footnote{margin:22px auto 0;max-width:350px;color:#827584;font-size:9px;line-height:1.65}
+@media(max-width:480px){.voice-call-panel{padding:31px 18px 21px;border-radius:18px}.voice-call-actions{display:grid;grid-template-columns:1fr 1fr;width:100%}.voice-call-end{grid-column:1/-1}.voice-call-orb{width:128px;height:128px}}
+@media(prefers-reduced-motion:reduce){.voice-call-orb.is-listening{animation:none}}
