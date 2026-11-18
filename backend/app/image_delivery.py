@@ -17,6 +17,17 @@ def extract_image_directive(text: str) -> tuple[str, str | None]:
     return clean, prompt or None
 
 
+def extract_link_directive(text: str) -> tuple[str, str | None]:
+    """Remove the private link-search directive and return its search query."""
+    match = _LINK_DIRECTIVE.search(text or "")
+    if not match:
+        return (text or "").strip(), None
+    query = re.sub(r"\\s+", " ", match.group(1)).strip()[:220]
+    clean = (text[:match.start()] + text[match.end():]).strip()
+    clean = re.sub(r"\\n{3,}", "\\n\\n", clean)
+    return clean, query or None
+
+
 def should_generate_image(text: str) -> bool:
     """Detect direct requests for a newly created image, not image discussion/search."""
     value = (text or "").strip().lower()
