@@ -27,6 +27,41 @@ const tabs = [
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
+function audioBufferToWavBlob(buffer) {
+  const channels = Math.min(buffer.numberOfChannels, 2);
+  const frames = buffer.length;
+  const bytesPerSample = 2;
+  const dataSize = frames * channels * bytesPerSample;
+  const wav = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(wav);
+  const writeText = (offset, value) => {
+    for (let i = 0; i < value.length; i += 1) view.setUint8(offset + i, value.charCodeAt(i));
+  };
+  writeText(0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true);
+  writeText(8, 'WAVE');
+  writeText(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, channels, true);
+  view.setUint32(24, buffer.sampleRate, true);
+  view.setUint32(28, buffer.sampleRate * channels * bytesPerSample, true);
+  view.setUint16(32, channels * bytesPerSample, true);
+  view.setUint16(34, 16, true);
+  writeText(36, 'data');
+  view.setUint32(40, dataSize, true);
+  const channelData = Array.from({ length: channels }, (_, channel) => buffer.getChannelData(channel));
+  let offset = 44;
+  for (let frame = 0; frame < frames; frame += 1) {
+    for (let channel = 0; channel < channels; channel += 1) {
+      const sample = Math.max(-1, Math.min(1, channelData[channel][frame]));
+      view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+      offset += bytesPerSample;
+    }
+  }
+  return new Blob([wav], { type: 'audio/wav' });
+}
+
 function App() {
   const [active, setActive] = useState('chat');
   const [mobileMenu, setMobileMenu] = useState(false);
@@ -426,12 +461,26 @@ function App() {
       const frame = new Uint8Array(audioBytes.slice(0, 2));
       const hasMpegFrame = frame.length === 2 && frame[0] === 0xFF && (frame[1] & 0xE0) === 0xE0;
       if (audioBytes.byteLength < 256 || (!hasId3 && !hasMpegFrame)) throw new Error('The voice server returned an invalid MP3 audio stream. Please try again.');
-      const blob = new Blob([audioBytes], { type: 'audio/mpeg' });
+      // Decode MP3 with Android Chrome's Web Audio decoder, then give the media
+      // element a simple PCM WAV file instead of the provider's compressed stream.
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) throw new Error('This browser does not support audio decoding. Please open the app in Chrome.');
+      const audioContext = new AudioContextClass();
+      let decoded;
+      try {
+        decoded = await audioContext.decodeAudioData(audioBytes.slice(0));
+      } catch (decodeError) {
+        throw new Error(`Android could not decode the generated MP3 (${decodeError?.name || 'decode error'}). Please retry voice.`);
+      } finally {
+        await audioContext.close().catch(() => {});
+      }
+      if (!decoded || !decoded.length) throw new Error('The generated voice contained no decodable audio. Please retry voice.');
+      const blob = audioBufferToWavBlob(decoded);
       const url = URL.createObjectURL(blob);
       setAutoPlayAudioId(null);
       setAudioUrls(current => ({ ...current, [message.id]: url }));
       setAudioErrors(current => { const next = { ...current }; delete next[message.id]; return next; });
-      setNotice(`Voice ready · ${Math.max(1, Math.round(audioBytes.byteLength / 1024))} KB. Press Play below.`);
+      setNotice(`Voice decoded and ready · ${Math.max(1, Math.round(blob.size / 1024))} KB WAV. Press Play below.`);
     } catch (error) { setNotice(error.message || 'Could not generate voice audio.'); }
     finally { setSpeakingMessageId(null); }
   }
