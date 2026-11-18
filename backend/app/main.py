@@ -329,6 +329,8 @@ def edit_user_message(message_id: UUID, payload: MessageEdit, request: Request, 
     try:
         answer = generate_reply(text, str(user_row[0]), history, time_context=time_note)
     except ProviderNotConfigured as exc:
+        with connection() as conn:
+            conn.execute("DELETE FROM messages WHERE id = ANY(%s) AND role = 'user'", ([row[0] for row in user_rows],))
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ProviderRequestFailed as exc:
         raise HTTPException(status_code=502, detail="Your edit was saved, but Sylus could not generate a reply. You can send another message to try again.") from exc
