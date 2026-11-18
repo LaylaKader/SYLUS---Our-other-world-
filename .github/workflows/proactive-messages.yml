@@ -20,6 +20,8 @@ jobs:
             -X POST \
             -H "Authorization: Bearer $SYLUS_SCHEDULER_SECRET" \
             "$SYLUS_BASE_URL/internal/proactive/run"
-      - name: Explain missing setup without failing scheduled runs
+      - name: Fail clearly when background delivery secrets are missing
         if: ${{ env.SYLUS_BASE_URL == '' || env.SYLUS_SCHEDULER_SECRET == '' }}
-        run: echo "Add SYLUS_BASE_URL and SYLUS_SCHEDULER_SECRET in repository Actions secrets to activate background delivery."
+        run: |
+          echo "::error::Background delivery is inactive. Configure SYLUS_BASE_URL and SYLUS_SCHEDULER_SECRET in GitHub Actions secrets, and set the matching SCHEDULER_SECRET in Render."
+          exit 1
