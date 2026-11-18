@@ -146,3 +146,19 @@ html,body,#root{height:100%;overflow:hidden}
 @media(prefers-reduced-motion:reduce){.voice-call-orb.is-listening{animation:none}}
 
 .voice-call-incoming{margin:0 auto 14px;color:#e5c6d2;font:500 13px 'Playfair Display',serif}
+
+
+/* Long voice-call transcripts: independently scrollable on mobile. */
+.call-transcript-scroll {
+  max-height: min(48dvh, 420px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  scrollbar-width: thin;
+}
+.call-transcript-scroll p {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
