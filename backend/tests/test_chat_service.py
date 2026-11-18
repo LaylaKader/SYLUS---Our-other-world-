@@ -36,3 +36,13 @@ def test_memory_terms_keep_unicode_words():
 def test_memory_terms_ignore_short_or_empty_queries():
     from app.chat_service import extract_memory_terms
     assert extract_memory_terms("I am in it") == []
+
+
+def test_common_typo_for_within_reach_is_normalized():
+    from app.chat_service import extract_memory_terms
+    assert extract_memory_terms("What happened in withen reach card?") == ["within", "reach"]
+
+
+def test_memory_card_filler_words_do_not_drown_out_card_title():
+    from app.chat_service import extract_memory_terms
+    assert extract_memory_terms("Tell me about the Within Reach memory card") == ["tell", "within", "reach"]
