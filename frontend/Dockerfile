@@ -1,4 +1,4 @@
-FROM node:20-alpine AS build
+FROM node:20-bookworm-slim AS build
 WORKDIR /build
 COPY frontend/package.json ./package.json
 RUN npm install
