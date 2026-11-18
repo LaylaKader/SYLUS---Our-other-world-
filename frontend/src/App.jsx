@@ -278,10 +278,16 @@ function App() {
     const parts = String(value || '').split(/(〔sticker:[a-z0-9-]+〕|\{sticker:[a-z0-9-]+\})/g);
     const legacy = { teacup: 'sleepy', rosebud: 'heart-hug', tarot: 'thinking', wink: 'mischief', raven: 'waiting', feather: 'wave', rose: 'heart-hug', laugh: 'laugh', smirk: 'sneaky' };
     const linkify = (text, keyPrefix) => {
-      const chunks = String(text).split(/(https:\/\/[^\s<]+)/g);
-      return chunks.map((chunk, index) => chunk.startsWith('https://')
-        ? <a key={keyPrefix + index} className="chat-inline-link" href={chunk.replace(/[),.!?]+$/, '')} target="_blank" rel="noopener noreferrer">{chunk.replace(/[),.!?]+$/, '')}</a>
-        : <React.Fragment key={keyPrefix + index}>{chunk}</React.Fragment>);
+      const chunks = String(text).split(/(\[[^\]]+\]\(https:\/\/[^)\s]+\)|https:\/\/[^\s<]+)/g);
+      return chunks.map((chunk, index) => {
+        const markdown = chunk.match(/^\[([^\]]+)\]\((https:\/\/[^)\s]+)\)$/);
+        if (markdown) return <a key={keyPrefix + index} className="chat-inline-link" href={markdown[2]} target="_blank" rel="noopener noreferrer">{markdown[1]}</a>;
+        if (chunk.startsWith('https://')) {
+          const url = chunk.replace(/[),.!?]+$/, '');
+          return <a key={keyPrefix + index} className="chat-inline-link" href={url} target="_blank" rel="noopener noreferrer">{url}</a>;
+        }
+        return <React.Fragment key={keyPrefix + index}>{chunk}</React.Fragment>;
+      });
     };
     return parts.map((part, index) => {
       const match = part.match(/^(?:〔sticker:([a-z0-9-]+)〕|\{sticker:([a-z0-9-]+)\})$/);
