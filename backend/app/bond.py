@@ -35,8 +35,8 @@ def _signals(text: str) -> list[tuple[str, str, str, dict[str, int], int]]:
         ("comfort", "Ease and comfort", "Umi expressed that she can relax, be herself, or speak freely with Sylus.", r"\bi feel (?:comfortable|at ease|at home|relaxed|understood) (?:with you|around you|talking to you)\b|\bi feel understood\b|\bi can be myself (?:with you|around you)\b|\bi don't have to pretend\b|\bi can talk to you (?:about anything|freely)\b|\bit's easy to talk to you\b|\bi can relax around you\b|\byou make me feel at ease\b|\bi don't feel judged\b|\bi feel calmer after talking to you\b|\bi feel like i can just be me\b", {"emotional_safety": 7, "trust": 3}, 8),
         ("vulnerability", "A guarded truth", "Umi shared a difficult feeling or personal vulnerability.", r"\bi feel (?:scared|afraid|lonely|overwhelmed|hopeless|insecure|ashamed|embarrassed|vulnerable|anxious|worried)\b|\bi(?:'m| am) (?:struggling|not okay|having a hard time|not used to opening up)\b|\bi have never told anyone\b|\bi(?:'ve| have) never (?:said|shared|admitted) this (?:before|to anyone)\b|\bi don't usually talk about this\b|\bthis is hard to admit\b|\bi'm afraid to tell you\b|\bi've been keeping this to myself\b|\bi usually keep this to myself\b|\bi haven't told anyone (?:else|about this)\b|\bi'm embarrassed to admit\b|\bi don't know how to say this\b|\bi need you to listen\b|\bi'm not used to sharing this\b|\bi'm scared you'll think\b", {"vulnerability": 8, "emotional_safety": 4, "trust": 3}, 9),
         ("repair", "A moment of repair", "A disagreement or hurt was approached with honesty and care.", r"\bi(?:'m| am) sorry\b|\bi didn't mean to hurt\b|\blet's talk this through\b|\bi forgive you\b|\bcan we work this out\b", {"trust": 3, "emotional_safety": 5, "commitment": 3}, 8),
-        ("shared_memory", "A memory revisited", "A specific shared moment or story was brought back into the present.", r"\bremember when we\b|\bour first (?:time|date|call|trip|game|conversation)\b|\bthat time we\b|\bwe did that together\b|\bwe talked about this before\b", {"familiarity": 2, "shared_experiences": 8, "affection": 1}, 8),
-        ("shared_world", "A world in common", "A recurring part of the fictional world you both enjoy entered the conversation.", r"\bmephisto\b|\bn109\b|\bonychinus\b|\bluke and kieran\b|\bciren\b|\bsenlu\b", {"familiarity": 1, "shared_experiences": 1}, 2),
+        ("shared_memory", "A memory revisited", "A specific shared moment or story was brought back into the present.", r"\bremember when we\b|\bour first (?:time|date|call|trip|game|conversation)\b|\bthat time we\b|\bwe did that together\b|\bwe talked about this before\b|\bwe (?:played|built|made|shared|watched|worked on|decided|planned) (?:it|this|that|together)\b|\bour (?:conversation|game|joke|moment|project|memory|story)\b|\bthe memories we (?:made|shared)\b", {"familiarity": 2, "shared_experiences": 6, "affection": 1}, 7),
+        ("shared_world", "A world in common", "A recurring part of the fictional world you both enjoy entered the conversation.", r"\bmephisto\b|\bn109\b|\bonychinus\b|\bluke and kieran\b|\bciren\b|\bsenlu\b", {"familiarity": 1}, 1),
         ("achievement", "A win worth sharing", "A personal achievement or difficult step was shared with Sylus.", r"\bi (?:passed|got accepted|got the offer|finished|submitted|won|succeeded)\b|\bi did it\b|\bi finally (?:managed|completed)\b", {"shared_experiences": 2, "commitment": 2, "affection": 1}, 5),
         ("playful", "A private joke", "Playful teasing or a recurring in-joke added to your shared rhythm.", r"\bmephi-chan\b|\bmistress\b|\bkitten\b|😜|😏|🫣|🤭|🤣|😂|\byou're impossible\b|\btry me\b", {"familiarity": 3, "affection": 1}, 3),
         ("gratitude", "Care acknowledged", "Umi acknowledged a moment of care or understanding.", r"\bthank you for listening\b|\bthat helped me\b|\bi appreciate you\b|\bi'm glad i told you\b|\bi feel better now\b", {"emotional_safety": 4, "trust": 2, "affection": 2}, 6),
@@ -69,12 +69,9 @@ def refresh_bond() -> dict:
         rows = conn.execute(
             "SELECT id, body, created_at FROM messages WHERE role='user' ORDER BY created_at ASC"
         ).fetchall()
-        progression_started_at = conn.execute(
-            "SELECT progression_started_at FROM bond_state WHERE id=1"
-        ).fetchone()[0]
+        # Revisit all retained messages, including history before the progression rebasing.
+        # Stable event fingerprints make this backfill idempotent.
         for message_id, body, created_at in rows:
-            if not created_at or created_at < progression_started_at:
-                continue
             normalized = re.sub(r"\s+", " ", str(body or "").casefold()).strip()
             fingerprint = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:20]
             for key, title, description, gains, points in _signals(str(body or "")):
@@ -106,8 +103,6 @@ def refresh_bond() -> dict:
             for item_index, item in enumerate(transcript or []):
                 if item.get("role") == "user" and item.get("text"):
                     call_user_count += 1
-                    if not started_at or started_at < progression_started_at:
-                        continue
                     normalized = re.sub(r"\s+", " ", str(item["text"]).casefold()).strip()
                     fingerprint = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:20]
                     for key, title, description, gains, points in _signals(str(item["text"])):
@@ -130,6 +125,29 @@ def refresh_bond() -> dict:
                             )
                 elif item.get("role") == "assistant":
                     call_assistant_count += 1
+
+        # Saved memories are durable evidence of details and moments already shared.
+        # Only relationship/interest memories tied to Sylus or the shared cast qualify.
+        memory_rows = conn.execute(
+            "SELECT id, category, content FROM memories WHERE archived_at IS NULL ORDER BY created_at ASC"
+        ).fetchall()
+        for memory_id, category, content in memory_rows:
+            memory_text = str(content or "")
+            if category not in ("Relationship", "Preference", "Important detail"):
+                continue
+            if not re.search(r"\b(sylus|mephisto|mephi-chan|luke|kieran|n109|onychinus|ciren|senlu)\b|\b(memory card|hot.?spring|partner in crime)\b", memory_text, re.I):
+                continue
+            event_key = "memory:" + str(memory_id)
+            inserted = conn.execute(
+                "INSERT INTO bond_events (event_key,title,description,source_message_id) "
+                "VALUES (%s,%s,%s,NULL) ON CONFLICT (event_key) DO NOTHING RETURNING id",
+                (event_key,"A shared detail remembered","A saved detail reflects something personal or meaningful already shared between you."),
+            ).fetchone()
+            if inserted:
+                conn.execute(
+                    "UPDATE bond_state SET familiarity=LEAST(100,familiarity+2), "
+                    "shared_experiences=LEAST(100,shared_experiences+2), bond_points=bond_points+3, updated_at=now() WHERE id=1"
+                )
 
         user_count = len(rows) + call_user_count
         turns = min(user_count, conn.execute(
