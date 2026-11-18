@@ -131,6 +131,9 @@ function App() {
   const callProcessingRef = useRef(false);
   const callRecognitionRef = useRef(null);
   const callMicPausedRef = useRef(false);
+  const callFinalTranscriptRef = useRef('');
+  const callSilenceTimerRef = useRef(null);
+  const callRestartTimerRef = useRef(null);
 
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get('incoming-call') === '1') {
@@ -338,6 +341,17 @@ function App() {
     setComposerNotice('');
     setReplyError('');
     setReplyStatus('waiting');
+    const wantsCall = /\b(?:call|calling|ring|phone)\s+me\b|\bgive\s+me\s+a\s+call\b/i.test(text);
+    if (wantsCall) {
+      // The user has explicitly requested a call. Start it from this tap so Android
+      // can grant microphone/audio permissions in the required user-gesture context.
+      beginVoiceCall();
+      if (callActiveRef.current) {
+        setMessages(current => [...current, { id: `pending-call-${Date.now()}`, role: 'user', text, created_at: new Date().toISOString() }]);
+        sendCallUtterance(text);
+        return;
+      }
+    }
     const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2,7)}`;
     const optimisticMessage = { id: pendingId, role: 'user', text, created_at: new Date().toISOString() };
     messageQueue.current.push({ id: pendingId, text });
@@ -556,40 +570,63 @@ function App() {
   }
 
   function stopCallRecognition() {
-    try { callRecognitionRef.current?.stop?.(); } catch {}
+    if (callRestartTimerRef.current) window.clearTimeout(callRestartTimerRef.current);
+    callRestartTimerRef.current = null;
+    const current = callRecognitionRef.current;
     callRecognitionRef.current = null;
+    try { current?.stop?.(); } catch {}
     setCallListening(false);
   }
 
+  function commitCallTranscript() {
+    if (!callActiveRef.current || callProcessingRef.current) return;
+    const phrase = callFinalTranscriptRef.current.trim();
+    if (!phrase) return;
+    callFinalTranscriptRef.current = '';
+    if (callSilenceTimerRef.current) window.clearTimeout(callSilenceTimerRef.current);
+    callSilenceTimerRef.current = null;
+    setCallTranscript(phrase);
+    callProcessingRef.current = true;
+    stopCallRecognition();
+    sendCallUtterance(phrase);
+  }
+
   function startCallRecognition() {
-    if (!callActiveRef.current || callProcessingRef.current || callMicPausedRef.current) return;
+    if (!callActiveRef.current || callProcessingRef.current || callMicPausedRef.current || callRecognitionRef.current) return;
     const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!Recognition) {
       setCallStatus('Speech recognition is unavailable here. Try Chrome on Android, or use text chat.');
       return;
     }
     try {
-      stopCallRecognition();
       const recognition = new Recognition();
       callRecognitionRef.current = recognition;
       recognition.lang = 'en-US';
-      recognition.continuous = false;
+      recognition.continuous = true;
       recognition.interimResults = true;
-      recognition.onstart = () => setCallListening(true);
+      recognition.maxAlternatives = 1;
+      recognition.onstart = () => {
+        setCallListening(true);
+        setCallStatus('Listening… speak naturally, then pause when you’re finished.');
+      };
       recognition.onresult = event => {
-        let finalText = '';
         let interimText = '';
         for (let index = event.resultIndex; index < event.results.length; index += 1) {
-          const transcript = event.results[index][0]?.transcript || '';
-          if (event.results[index].isFinal) finalText += transcript;
-          else interimText += transcript;
+          const transcript = (event.results[index][0]?.transcript || '').trim();
+          if (!transcript) continue;
+          if (event.results[index].isFinal) {
+            callFinalTranscriptRef.current = [callFinalTranscriptRef.current, transcript].filter(Boolean).join(' ').trim();
+          } else {
+            interimText += (interimText ? ' ' : '') + transcript;
+          }
         }
-        if (interimText) setCallTranscript(interimText);
-        if (finalText.trim() && !callProcessingRef.current) {
-          setCallTranscript(finalText.trim());
-          callProcessingRef.current = true;
-          setCallListening(false);
-          sendCallUtterance(finalText.trim());
+        const preview = [callFinalTranscriptRef.current, interimText].filter(Boolean).join(' ').trim();
+        if (preview) setCallTranscript(preview);
+        if (callFinalTranscriptRef.current) {
+          if (callSilenceTimerRef.current) window.clearTimeout(callSilenceTimerRef.current);
+          // Do not submit on the first short recognition segment. Give Android speech
+          // recognition time to deliver the rest of the sentence.
+          callSilenceTimerRef.current = window.setTimeout(() => commitCallTranscript(), 1250);
         }
       };
       recognition.onerror = event => {
@@ -597,19 +634,28 @@ function App() {
           setCallStatus('Microphone permission was denied. Allow microphone access in your browser settings.');
           callActiveRef.current = false;
           setCallActive(false);
+        } else if (event.error === 'audio-capture') {
+          setCallStatus('The microphone is unavailable. Check that another app is not using it.');
+        } else if (event.error === 'network') {
+          setCallStatus('Speech recognition lost its network connection. Reconnecting…');
         } else if (event.error !== 'no-speech' && event.error !== 'aborted') {
-          setCallStatus('I could not hear that clearly. Try speaking again.');
+          setCallStatus('I could not hear that clearly. Try again, a little closer to the microphone.');
         }
       };
       recognition.onend = () => {
+        if (callRecognitionRef.current !== recognition) return;
+        callRecognitionRef.current = null;
         setCallListening(false);
-        if (callActiveRef.current && !callProcessingRef.current && !callMicPausedRef.current) {
-          window.setTimeout(() => startCallRecognition(), 450);
+        if (callFinalTranscriptRef.current.trim() && !callProcessingRef.current) {
+          if (callSilenceTimerRef.current) window.clearTimeout(callSilenceTimerRef.current);
+          callSilenceTimerRef.current = window.setTimeout(() => commitCallTranscript(), 350);
+        } else if (callActiveRef.current && !callProcessingRef.current && !callMicPausedRef.current) {
+          callRestartTimerRef.current = window.setTimeout(() => startCallRecognition(), 500);
         }
       };
       recognition.start();
-      setCallStatus('Listening. Speak naturally; Sylus will answer aloud.');
     } catch (error) {
+      callRecognitionRef.current = null;
       setCallStatus(error?.message || 'The microphone could not start. Check browser permission.');
     }
   }
@@ -702,6 +748,8 @@ function App() {
     callActiveRef.current = true;
     callMicPausedRef.current = false;
     callProcessingRef.current = false;
+    callFinalTranscriptRef.current = '';
+    if (callSilenceTimerRef.current) window.clearTimeout(callSilenceTimerRef.current);
     setCallActive(true);
     setCallTranscript('');
     try {
@@ -724,6 +772,9 @@ function App() {
     callActiveRef.current = false;
     callMicPausedRef.current = false;
     callProcessingRef.current = false;
+    callFinalTranscriptRef.current = '';
+    if (callSilenceTimerRef.current) window.clearTimeout(callSilenceTimerRef.current);
+    callSilenceTimerRef.current = null;
     stopCallRecognition();
     if (audioSourceRef.current) {
       try { audioSourceRef.current.stop(); } catch {}
