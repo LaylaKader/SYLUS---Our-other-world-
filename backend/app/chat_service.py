@@ -393,17 +393,46 @@ class ExplicitOnlyMemoryWriter:
 
 
 def split_reply_bubbles(answer: str) -> list[str]:
-    """Parse structured chat bubbles, safely falling back to one ordinary reply."""
-    try:
-        start, end = answer.find("{"), answer.rfind("}")
-        payload = json.loads(answer[start:end + 1]) if start >= 0 and end > start else {}
-        messages = payload.get("messages", []) if isinstance(payload, dict) else []
-        if isinstance(payload, dict) and isinstance(messages, list):
-            bubbles = [str(item).strip() for item in messages if isinstance(item, str) and item.strip()]
-            return bubbles[:10]
-    except (ValueError, TypeError, json.JSONDecodeError):
-        pass
-    return [answer.strip()]
+    """Unwrap structured provider output so JSON envelopes never appear as chat text."""
+    candidate = (answer or "").strip()
+    # Providers sometimes wrap a JSON object in Markdown or encode the object as
+    # a JSON string. Unwrap at most twice; never expose a valid messages envelope.
+    for _ in range(2):
+        cleaned = candidate
+        if cleaned.startswith("```"):
+            cleaned = re.sub(r"^\`\`\`(?:json)?\s*|\s*\`\`\`$", "", cleaned, flags=re.I).strip()
+        start, end = cleaned.find("{"), cleaned.rfind("}")
+        if start < 0 or end <= start:
+            candidate = cleaned
+            break
+        try:
+            payload = json.loads(cleaned[start:end + 1])
+        except (ValueError, TypeError, json.JSONDecodeError):
+            candidate = cleaned
+            break
+        if isinstance(payload, str):
+            candidate = payload.strip()
+            continue
+        if isinstance(payload, dict):
+            messages = payload.get("messages")
+            if isinstance(messages, list):
+                bubbles = [str(item).strip() for item in messages if isinstance(item, str) and item.strip()]
+                if bubbles:
+                    return bubbles[:4]
+                return []
+            # Some compatible models return a single response/content key.
+            for key in ("response", "reply", "content", "text"):
+                value = payload.get(key)
+                if isinstance(value, str) and value.strip():
+                    candidate = value.strip()
+                    break
+            else:
+                candidate = cleaned
+                break
+            continue
+        candidate = cleaned
+        break
+    return [candidate] if candidate else []
 
 
 def retrieve_character_knowledge(query: str, limit: int = 8) -> str:
