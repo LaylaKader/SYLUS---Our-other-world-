@@ -158,7 +158,8 @@ function App() {
       setOwnerPassword('');
       setNotice('Private owner session verified');
       const memoryResponse = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/memories`, { headers, credentials: 'include' });
-      if (memoryResponse.ok) setMemories(await memoryResponse.json());\n      const bondResponse = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/bond`, { headers, credentials: 'include' });
+      if (memoryResponse.ok) setMemories(await memoryResponse.json());
+      const bondResponse = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/bond`, { headers, credentials: 'include' });
       if (bondResponse.ok) setBond(await bondResponse.json());
       const proactiveResponse = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/proactive/settings`, { headers, credentials: 'include' });
       if (proactiveResponse.ok) setProactiveSettings(await proactiveResponse.json());
