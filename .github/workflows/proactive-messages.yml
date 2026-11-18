@@ -2,7 +2,8 @@ name: Sylus proactive messages
 
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    # Avoid the top of the hour, when GitHub scheduled events are busiest.
+    - cron: "3-58/5 * * * *"
   workflow_dispatch:
 
 jobs:
