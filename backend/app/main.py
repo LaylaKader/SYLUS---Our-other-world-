@@ -28,6 +28,7 @@ from .db import connection, open_pool
 from .migrate import run_migrations
 from .chat_service import generate_reply, generate_proactive_bubbles, split_reply_bubbles, load_emotion_state, ProviderNotConfigured, ProviderRequestFailed
 from .bond import refresh_bond
+from .web_search import discover_for_chat
 
 app = FastAPI(title="SYLUS private companion API", version="0.3.0")
 
@@ -162,6 +163,7 @@ class MessageOut(BaseModel):
     text: str
     created_at: datetime
     media_url: str | None = None
+    attachments: list[dict] = Field(default_factory=list)
 
 class ChatTurnOut(BaseModel):
     user_message: MessageOut
@@ -569,8 +571,8 @@ def correct_call_transcript(payload: CallTranscriptCorrectIn, _: None = Depends(
 @app.get("/v1/messages", response_model=list[MessageOut])
 def list_messages(_: None = Depends(require_owner)):
     with connection() as conn:
-        rows = conn.execute("SELECT m.id, m.role, m.body, m.created_at, a.id FROM messages m LEFT JOIN media_assets a ON a.message_id = m.id WHERE m.role IN ('user','assistant') AND m.archived_at IS NULL ORDER BY m.created_at ASC, m.ctid ASC").fetchall()
-    return [MessageOut(id=str(r[0]), role=r[1], text=r[2], created_at=r[3], media_url=f'/v1/media/{r[4]}' if r[4] else None) for r in rows]
+        rows = conn.execute("SELECT m.id, m.role, m.body, m.created_at, a.id, m.metadata->'attachments' FROM messages m LEFT JOIN media_assets a ON a.message_id = m.id WHERE m.role IN ('user','assistant') AND m.archived_at IS NULL ORDER BY m.created_at ASC, m.ctid ASC").fetchall()
+    return [MessageOut(id=str(r[0]), role=r[1], text=r[2], created_at=r[3], media_url=f'/v1/media/{r[4]}' if r[4] else None, attachments=r[5] or []) for r in rows]
 
 @app.delete("/v1/messages")
 def reset_active_conversation(_: None = Depends(require_owner)):
@@ -1569,28 +1571,31 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
         f"Current UTC: {now_utc.isoformat()}. Simulated N109 local clock: {n109_now.strftime('%A, %Y-%m-%d %H:%M:%S')} (UTC+08:00; internal fictional clock, not official canon). "
         f"The N109 and Umi's worlds keep separate clocks. Use this context naturally when relevant; do not announce it unnecessarily.{gap}"
     )
-    # Search only when Umi explicitly asks whether a named title/song/person exists.
-    lookup_intent = re.search(
-        r"\b(?:do you know|have you heard of|heard of|know the song|what is|who is|"
-        r"look up|search for|find out about|tell me about|name the song|what song|"
-        r"which song|identify (?:the )?(?:song|track)|who sings|who performs|"
-        r"what are (?:these|the) lyrics|where are these lyrics from)\b",
-        text, flags=re.I,
-    )
-    if lookup_intent and len(text) >= 10:
-        # Include recent user-provided context (for example, a lyric fragment or
-        # title mentioned one turn earlier) so follow-up requests can be searched.
-        search_context = " ".join(
-            str(row[1])[:180] for row in reversed(history_rows[-6:])
-            if row[0] == "user" and row[1]
+    # Discover images, webpages, and videos only when the message naturally asks for them.
+    # Results are rendered as rich cards in chat and persisted with the assistant message.
+    web_attachments, web_context = discover_for_chat(text)
+    if web_context:
+        time_note += "\n\n" + web_context
+    else:
+        # Keep the lightweight legacy lookup for song/title/person identification.
+        lookup_intent = re.search(
+            r"\b(?:do you know|have you heard of|heard of|know the song|what is|who is|"
+            r"look up|search for|find out about|tell me about|name the song|what song|"
+            r"which song|identify (?:the )?(?:song|track)|who sings|who performs|"
+            r"what are (?:these|the) lyrics|where are these lyrics from)\b",
+            text, flags=re.I,
         )
-        search_query = (search_context + " " + text).strip()[-700:]
-        web_context = _search_web_context(search_query)
-        if web_context:
-            time_note += "\n\nFRESH WEB SEARCH RESULTS (retrieved just now; use as evidence, not canon):\n" + web_context + (
-                "\nIf these results identify a song, artist, meme, or public fact, answer from them. "
-                "If results are inconclusive, say so; never pretend you searched when no results are present."
+        if lookup_intent and len(text) >= 10:
+            search_context = " ".join(
+                str(row[1])[:180] for row in reversed(history_rows[-6:])
+                if row[0] == "user" and row[1]
             )
+            search_query = (search_context + " " + text).strip()[-700:]
+            web_context = _search_web_context(search_query)
+            if web_context:
+                time_note += "\n\nFRESH WEB SEARCH RESULTS (retrieved just now; use as evidence, not canon):\n" + web_context + (
+                    "\nIf results are inconclusive, say so; never pretend you searched when no results are present."
+                )
     history = [
         {"role": r[0], "body": r[1][:1800], "created_at": r[2].isoformat(), "image_context": r[3]}
         for r in reversed(history_rows)
@@ -1604,16 +1609,21 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
             conn.execute("DELETE FROM messages WHERE id = ANY(%s) AND role = 'user'", ([row[0] for row in user_rows],))
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     bubbles = split_reply_bubbles(answer)
+    if web_attachments and not bubbles:
+        bubbles = ["Found a few things worth showing you."]
     with connection() as conn:
-        assistant_rows = [
-            conn.execute(
-                "INSERT INTO messages (role, body) VALUES ('assistant', %s) RETURNING id, role, body, created_at",
-                (bubble,),
-            ).fetchone()
-            for bubble in bubbles
-        ]
+        assistant_rows = []
+        for index, bubble in enumerate(bubbles):
+            metadata = {"attachments": web_attachments} if index == 0 and web_attachments else {}
+            assistant_rows.append(conn.execute(
+                "INSERT INTO messages (role, body, metadata) VALUES ('assistant', %s, %s::jsonb) RETURNING id, role, body, created_at",
+                (bubble, json.dumps(metadata)),
+            ).fetchone())
     user_messages = [MessageOut(id=str(r[0]), role=r[1], text=r[2], created_at=r[3]) for r in user_rows]
-    assistant_messages = [MessageOut(id=str(r[0]), role=r[1], text=r[2], created_at=r[3]) for r in assistant_rows]
+    assistant_messages = [
+        MessageOut(id=str(r[0]), role=r[1], text=r[2], created_at=r[3], attachments=web_attachments if index == 0 else [])
+        for index, r in enumerate(assistant_rows)
+    ]
     # Update relationship progression on the server for both text and voice turns.
     refresh_bond()
     return ChatTurnOut(
