@@ -277,9 +277,15 @@ function App() {
   function renderMessageText(value) {
     const parts = String(value || '').split(/(〔sticker:[a-z0-9-]+〕|\{sticker:[a-z0-9-]+\})/g);
     const legacy = { teacup: 'sleepy', rosebud: 'heart-hug', tarot: 'thinking', wink: 'mischief', raven: 'waiting', feather: 'wave', rose: 'heart-hug', laugh: 'laugh', smirk: 'sneaky' };
+    const linkify = (text, keyPrefix) => {
+      const chunks = String(text).split(/(https:\/\/[^\s<]+)/g);
+      return chunks.map((chunk, index) => chunk.startsWith('https://')
+        ? <a key={keyPrefix + index} className="chat-inline-link" href={chunk.replace(/[),.!?]+$/, '')} target="_blank" rel="noopener noreferrer">{chunk.replace(/[),.!?]+$/, '')}</a>
+        : <React.Fragment key={keyPrefix + index}>{chunk}</React.Fragment>);
+    };
     return parts.map((part, index) => {
       const match = part.match(/^(?:〔sticker:([a-z0-9-]+)〕|\{sticker:([a-z0-9-]+)\})$/);
-      if (!match) return <React.Fragment key={index}>{part}</React.Fragment>;
+      if (!match) return <React.Fragment key={index}>{linkify(part, 'text-' + index)}</React.Fragment>;
       const sticker = stickerById[match[1] || legacy[match[2]] || match[2]];
       if (!sticker) return <React.Fragment key={index}>{part}</React.Fragment>;
       return <span className="message-sticker" key={index} role="img" aria-label={sticker.label}>
@@ -287,6 +293,30 @@ function App() {
         <span className="sticker-caption">{sticker.label}</span>
       </span>;
     });
+  }
+
+  function renderWebAttachments(items) {
+    if (!Array.isArray(items) || !items.length) return null;
+    const safe = items.filter(item => item && typeof item.url === 'string' && item.url.startsWith('https://'));
+    if (!safe.length) return null;
+    return <div className="web-result-grid" aria-label="Things Sylus found online">
+      {safe.map((item, index) => item.type === 'image' ? (
+        <article className="web-image-card" key={item.url + index}>
+          <a href={item.source_url || item.url} target="_blank" rel="noopener noreferrer" className="web-image-open">
+            <img src={item.url} alt={item.title || 'Image found online'} loading="lazy" referrerPolicy="no-referrer"
+              onError={event => { event.currentTarget.style.display = 'none'; }} />
+          </a>
+          <div className="web-result-caption"><strong>{item.title || 'Image'}</strong>{item.source && <span>{item.source}</span>}</div>
+        </article>
+      ) : (
+        <a className="web-link-card" href={item.url} target="_blank" rel="noopener noreferrer" key={item.url + index}>
+          <span className="web-link-kind">{item.type === 'video' ? '▶ VIDEO' : '↗ WEB'}</span>
+          <strong>{item.title || 'Open result'}</strong>
+          {item.description && <span className="web-link-description">{item.description}</span>}
+          <span className="web-link-source">{item.source || new URL(item.url).hostname}</span>
+        </a>
+      ))}
+    </div>;
   }
 
   useEffect(() => {
@@ -1243,7 +1273,7 @@ function App() {
             <div className="empty-kicker">A NEW CHAPTER</div><h2>Well, look who’s here.</h2><p>{connected && chatReady ? 'The connection is ready. Send a message when you like.' : connected ? 'Your private sign-in works. The server still needs its chat model key before Sylus can reply.' : 'When the private connection is ready, this is where our story continues.'}</p>
             <div className="empty-divider"><span/><Sparkles size={12}/><span/></div>
             <div className="empty-footnote"><LockKeyhole size={12}/> Your conversations stay yours.</div>
-          </div> : <div className="message-list" ref={messageListRef} aria-live="polite" aria-relevant="additions text">{messages.map(m => <div className={`message-row ${m.role === 'user' ? 'mine' : 'theirs'}`} key={m.id}>{selectionMode && <input aria-label="Select message" type="checkbox" checked={selectedMessageIds.includes(m.id)} onChange={() => toggleMessageSelection(m.id)} style={{alignSelf:'center',accentColor:'#c7a078',width:18,height:18}}/>}<div className="message-avatar">{m.role === 'user' ? (umiAvatar ? <img src={umiAvatar} alt="Your avatar"/> : 'U') : (sylusAvatar ? <img src={sylusAvatar} alt="Sylus avatar"/> : <Crown size={15}/>)}</div><div className="message-content"><div className="message-author">{m.role === 'user' ? 'YOU' : 'SYLUS'} <span>{new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span></div>{editingMessageId === m.id ? <div className="message-edit-box"><textarea value={editingMessageText} onChange={e => setEditingMessageText(e.target.value)} rows={3} maxLength={12000}/><div className="message-edit-actions"><button className="text-action" onClick={() => setEditingMessageId(null)}>Cancel</button><button className="text-action" disabled={messageActionBusy || !editingMessageText.trim()} onClick={() => saveMessageEdit(m.id)}>{messageActionBusy ? 'Saving…' : 'Save & rewind'}</button></div></div> : <div className="message-bubble">{renderMessageText(m.text)}{m.media_url && <img className="chat-image" src={m.media_url} alt="Image shared in our private conversation" loading="lazy"/>}</div>}{m.role === 'assistant' && <button className="text-action read-aloud-button" disabled={!timeContext?.voice_ready || speakingMessageId === m.id} onClick={() => readAloud(m)}>{speakingMessageId === m.id ? 'Preparing voice…' : !timeContext?.voice_ready ? 'Voice setup needed' : audioErrors[m.id] ? 'Retry voice' : audioBuffers[m.id] ? (playingAudioId === m.id ? 'Pause voice' : 'Play voice again') : 'Read aloud'}</button>}{audioErrors[m.id] && <p className="field-help" role="alert">{audioErrors[m.id]}</p>}{audioBuffers[m.id] && <div className="message-audio-controls"><button className="text-action" onClick={() => readAloud(m)}>{playingAudioId === m.id ? 'Pause voice' : 'Play voice'}</button><span className="field-help">{Math.round(audioBuffers[m.id].duration)} sec</span></div>}<div className="message-actions">{m.role === 'assistant' && <></>}{m.role === 'user' && editingMessageId !== m.id && <><button className="text-action" disabled={messageActionBusy} onClick={() => beginEditMessage(m)}>Edit</button><button className="text-action danger-action" disabled={messageActionBusy} onClick={() => deleteMessage(m.id)}>Delete</button></>}<button className="text-action" disabled={messageActionBusy} onClick={() => rewindToMessage(m.id)}>Rewind here</button></div></div></div>)}
+          </div> : <div className="message-list" ref={messageListRef} aria-live="polite" aria-relevant="additions text">{messages.map(m => <div className={`message-row ${m.role === 'user' ? 'mine' : 'theirs'}`} key={m.id}>{selectionMode && <input aria-label="Select message" type="checkbox" checked={selectedMessageIds.includes(m.id)} onChange={() => toggleMessageSelection(m.id)} style={{alignSelf:'center',accentColor:'#c7a078',width:18,height:18}}/>}<div className="message-avatar">{m.role === 'user' ? (umiAvatar ? <img src={umiAvatar} alt="Your avatar"/> : 'U') : (sylusAvatar ? <img src={sylusAvatar} alt="Sylus avatar"/> : <Crown size={15}/>)}</div><div className="message-content"><div className="message-author">{m.role === 'user' ? 'YOU' : 'SYLUS'} <span>{new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span></div>{editingMessageId === m.id ? <div className="message-edit-box"><textarea value={editingMessageText} onChange={e => setEditingMessageText(e.target.value)} rows={3} maxLength={12000}/><div className="message-edit-actions"><button className="text-action" onClick={() => setEditingMessageId(null)}>Cancel</button><button className="text-action" disabled={messageActionBusy || !editingMessageText.trim()} onClick={() => saveMessageEdit(m.id)}>{messageActionBusy ? 'Saving…' : 'Save & rewind'}</button></div></div> : <div className="message-bubble">{renderMessageText(m.text)}{m.media_url && <img className="chat-image" src={m.media_url} alt="Image shared in our private conversation" loading="lazy"/>}{renderWebAttachments(m.attachments)}</div>}{m.role === 'assistant' && <button className="text-action read-aloud-button" disabled={!timeContext?.voice_ready || speakingMessageId === m.id} onClick={() => readAloud(m)}>{speakingMessageId === m.id ? 'Preparing voice…' : !timeContext?.voice_ready ? 'Voice setup needed' : audioErrors[m.id] ? 'Retry voice' : audioBuffers[m.id] ? (playingAudioId === m.id ? 'Pause voice' : 'Play voice again') : 'Read aloud'}</button>}{audioErrors[m.id] && <p className="field-help" role="alert">{audioErrors[m.id]}</p>}{audioBuffers[m.id] && <div className="message-audio-controls"><button className="text-action" onClick={() => readAloud(m)}>{playingAudioId === m.id ? 'Pause voice' : 'Play voice'}</button><span className="field-help">{Math.round(audioBuffers[m.id].duration)} sec</span></div>}<div className="message-actions">{m.role === 'assistant' && <></>}{m.role === 'user' && editingMessageId !== m.id && <><button className="text-action" disabled={messageActionBusy} onClick={() => beginEditMessage(m)}>Edit</button><button className="text-action danger-action" disabled={messageActionBusy} onClick={() => deleteMessage(m.id)}>Delete</button></>}<button className="text-action" disabled={messageActionBusy} onClick={() => rewindToMessage(m.id)}>Rewind here</button></div></div></div>)}
           {composerNotice && <div className="composer-feedback" role="alert">{composerNotice}</div>}{replyStatus === 'waiting' && <div className="chat-presence waiting" role="status"><span className="presence-dot"/><span>Waiting for you to finish…</span></div>}{sending && <div className="typing-row" role="status" aria-label="Sylus is thinking"><div className="message-avatar"><Crown size={15}/></div><div className="typing-bubble"><span/><span/><span/></div><span className="presence-caption">Sylus is thinking</span></div>}{replyStatus === 'silent' && <div className="chat-presence quiet" role="status"><span className="presence-dot"/><span>Sylus is quiet for now.</span></div>}{replyStatus === 'error' && <div className="chat-presence failed" role="alert"><span className="presence-dot"/><span>Message delivery failed. {replyError || 'Please try again.'}</span></div>}
         </div>}
         </div>
