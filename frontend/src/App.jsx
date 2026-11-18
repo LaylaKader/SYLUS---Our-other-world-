@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import StickerStudio from './StickerStudio.jsx';
 import {ArrowLeft, Bell, Bird, BookHeart, Camera, ChevronDown, CircleHelp, Clock3, Crown, Heart, Image, LockKeyhole, Menu, MessageCircle, MoreHorizontal, Send, Settings, ShieldCheck, Sparkles, Star, X, RefreshCw, Phone, PhoneOff, Mic, MicOff, History, Volume2, Trash2, Headphones} from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? window.location.origin : '');
@@ -25,6 +26,7 @@ const tabs = [
   { id: 'bond', label: 'Bond', icon: Heart },
   { id: 'memories', label: 'Memories', icon: BookHeart },
   { id: 'gallery', label: 'Gallery', icon: Image },
+  { id: 'stickers', label: 'Sticker Studio', icon: Sparkles },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
@@ -94,7 +96,11 @@ function App() {
   const [draft, setDraft] = useState('');
   const [stickerPickerOpen, setStickerPickerOpen] = useState(false);
   const [stickerOptions, setStickerOptions] = useState(fallbackStickerOptions);
-  const stickerById = useMemo(() => Object.fromEntries(stickerOptions.map(sticker => [sticker.id, sticker])), [stickerOptions]);
+  const [privateStickers, setPrivateStickers] = useState([]);
+  const [stickerPickerTab, setStickerPickerTab] = useState('favorites');
+  const [favoriteStickerIds, setFavoriteStickerIds] = useState(() => { try { return JSON.parse(window.localStorage.getItem('sylus-favorite-stickers') || '[]'); } catch { return []; } });
+  const allStickerOptions = useMemo(() => [...stickerOptions, ...privateStickers.map(item => ({ ...item, src: `${apiUrl.replace(/\\/$/, '')}${item.src}`, custom: true }))], [stickerOptions, privateStickers, apiUrl]);
+  const stickerById = useMemo(() => Object.fromEntries(allStickerOptions.map(sticker => [sticker.id, sticker])), [allStickerOptions]);
   const [messages, setMessages] = useState([]);
   const [ownerPassword, setOwnerPassword] = useState('');
   const [connected, setConnected] = useState(false);
@@ -231,6 +237,35 @@ function App() {
     try { window.localStorage.removeItem(key); } catch {}
     if (kind === 'sylus') setSylusAvatar(''); else setUmiAvatar('');
     setNotice(kind === 'sylus' ? "Sylus's default avatar restored." : 'Your default avatar restored.');
+  }
+
+
+  useEffect(() => {
+    if (!connected) { setPrivateStickers([]); return; }
+    let cancelled = false;
+    fetch(`${apiUrl.replace(/\\/$/, '')}/v1/stickers`, { credentials: 'include' }).then(r => r.ok ? r.json() : []).then(items => { if (!cancelled && Array.isArray(items)) setPrivateStickers(items); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [connected, apiUrl]);
+
+  function refreshPrivateStickers() {
+    if (!connected) return;
+    fetch(`${apiUrl.replace(/\\/$/, '')}/v1/stickers`, { credentials: 'include' }).then(r => r.ok ? r.json() : []).then(items => { if (Array.isArray(items)) setPrivateStickers(items); }).catch(() => {});
+  }
+
+  async function toggleStickerFavorite(sticker) {
+    if (sticker.custom) {
+      try {
+        const response = await fetch(`${apiUrl.replace(/\\/$/, '')}/v1/stickers/${sticker.id}`, { method: 'PATCH', headers, credentials: 'include', body: JSON.stringify({ is_favorite: !sticker.is_favorite }) });
+        if (!response.ok) throw new Error('Could not update this sticker.');
+        refreshPrivateStickers();
+      } catch (error) { setNotice(error.message || 'Could not update favorite.'); }
+      return;
+    }
+    setFavoriteStickerIds(current => {
+      const next = current.includes(sticker.id) ? current.filter(id => id !== sticker.id) : [...current, sticker.id];
+      try { window.localStorage.setItem('sylus-favorite-stickers', JSON.stringify(next)); } catch {}
+      return next;
+    });
   }
 
   function addStickerToDraft(sticker) {
@@ -1202,9 +1237,11 @@ function App() {
           {composerNotice && <div className="composer-feedback" role="alert">{composerNotice}</div>}{replyStatus === 'waiting' && <div className="chat-presence waiting" role="status"><span className="presence-dot"/><span>Waiting for you to finish…</span></div>}{sending && <div className="typing-row" role="status" aria-label="Sylus is thinking"><div className="message-avatar"><Crown size={15}/></div><div className="typing-bubble"><span/><span/><span/></div><span className="presence-caption">Sylus is thinking</span></div>}{replyStatus === 'silent' && <div className="chat-presence quiet" role="status"><span className="presence-dot"/><span>Sylus is quiet for now.</span></div>}{replyStatus === 'error' && <div className="chat-presence failed" role="alert"><span className="presence-dot"/><span>Message delivery failed. {replyError || 'Please try again.'}</span></div>}
         </div>}
         </div>
-        <div className="composer-wrap"><form className="composer" onSubmit={sendMessage}><input ref={imageInputRef} className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={e => uploadImage(e.target.files?.[0])}/><button type="button" className="composer-tool" title="Send an image" aria-label="Send an image" disabled={!connected || uploadingImage} onClick={() => imageInputRef.current?.click()}><Camera size={18}/></button><button type="button" className="composer-tool sticker-toggle" title="Choose a sticker" aria-label="Choose a sticker" disabled={!connected || !chatReady} onClick={() => setStickerPickerOpen(open => !open)}><Sparkles size={18}/></button><textarea value={draft} onChange={e => setDraft(e.target.value)} placeholder={connected ? (chatReady ? 'Say something…' : 'Chat model not configured yet…') : 'Connect your private instance to begin…'} rows={1} disabled={!connected || !chatReady} onKeyDown={e => {if(e.key === 'Enter' && !e.shiftKey){e.preventDefault();sendMessage(e);}}}/><div className="composer-actions"><span className="composer-hint">{sending ? 'Sending…' : replyStatus === 'waiting' ? 'Reading…' : uploadingImage ? 'Uploading…' : '↵ to send'}</span><button className="send-button" type="submit" disabled={!connected || !chatReady || !draft.trim()} aria-label="Send message"><Send size={16}/></button></div></form>{stickerPickerOpen && <div className="sticker-picker" role="group" aria-label="Sylus sticker collection"><div className="sticker-picker-heading"><span>OUR LITTLE COLLECTION</span><button type="button" className="text-action" onClick={() => setStickerPickerOpen(false)}>Close</button></div><div className="sticker-picker-grid">{stickerOptions.map(sticker => <button type="button" className="sticker-option" key={sticker.id} onClick={() => addStickerToDraft(sticker)}><img className="sticker-art" src={sticker.src} alt="" loading="lazy"/><span>{sticker.label}</span></button>)}</div></div>}<div className="composer-caption"><span>SYLUS IS A PRIVATE, PERSONAL COMPANION</span><span>✦</span><span>YOUR WORLD, YOUR RULES</span></div></div>
+        <div className="composer-wrap"><form className="composer" onSubmit={sendMessage}><input ref={imageInputRef} className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={e => uploadImage(e.target.files?.[0])}/><button type="button" className="composer-tool" title="Send an image" aria-label="Send an image" disabled={!connected || uploadingImage} onClick={() => imageInputRef.current?.click()}><Camera size={18}/></button><button type="button" className="composer-tool sticker-toggle" title="Choose a sticker" aria-label="Choose a sticker" disabled={!connected || !chatReady} onClick={() => setStickerPickerOpen(open => !open)}><Sparkles size={18}/></button><textarea value={draft} onChange={e => setDraft(e.target.value)} placeholder={connected ? (chatReady ? 'Say something…' : 'Chat model not configured yet…') : 'Connect your private instance to begin…'} rows={1} disabled={!connected || !chatReady} onKeyDown={e => {if(e.key === 'Enter' && !e.shiftKey){e.preventDefault();sendMessage(e);}}}/><div className="composer-actions"><span className="composer-hint">{sending ? 'Sending…' : replyStatus === 'waiting' ? 'Reading…' : uploadingImage ? 'Uploading…' : '↵ to send'}</span><button className="send-button" type="submit" disabled={!connected || !chatReady || !draft.trim()} aria-label="Send message"><Send size={16}/></button></div></form>{stickerPickerOpen && <div className="sticker-picker" role="group" aria-label="Sylus sticker collection"><div className="sticker-picker-heading"><span>OUR LITTLE COLLECTION</span><button type="button" className="text-action" onClick={() => setStickerPickerOpen(false)}>Close</button></div><div className="sticker-picker-tabs"><button type="button" className={stickerPickerTab === 'favorites' ? 'active' : ''} onClick={() => setStickerPickerTab('favorites')}>★ Favorites</button><button type="button" className={stickerPickerTab === 'all' ? 'active' : ''} onClick={() => setStickerPickerTab('all')}>All stickers</button></div><div className="sticker-picker-grid">{allStickerOptions.filter(sticker => stickerPickerTab === 'all' || (sticker.custom ? sticker.is_favorite : favoriteStickerIds.includes(sticker.id))).map(sticker => <div className="sticker-option-wrap" key={sticker.id}><button type="button" className="sticker-option" onClick={() => addStickerToDraft(sticker)}><img className="sticker-art" src={sticker.src} alt="" loading="lazy"/><span>{sticker.label}</span></button><button type="button" className={((sticker.custom && sticker.is_favorite) || (!sticker.custom && favoriteStickerIds.includes(sticker.id))) ? 'sticker-star is-favorite' : 'sticker-star'} onClick={() => toggleStickerFavorite(sticker)} aria-label="Toggle favorite"><Star size={14} fill={((sticker.custom && sticker.is_favorite) || (!sticker.custom && favoriteStickerIds.includes(sticker.id))) ? 'currentColor' : 'none'}/></button></div>)}</div>{stickerPickerTab === 'favorites' && !allStickerOptions.some(sticker => sticker.custom ? sticker.is_favorite : favoriteStickerIds.includes(sticker.id)) && <p className="field-help">No favorites yet. Open All Stickers and tap the star on the ones you want here.</p>}</div>}<div className="composer-caption"><span>SYLUS IS A PRIVATE, PERSONAL COMPANION</span><span>✦</span><span>YOUR WORLD, YOUR RULES</span></div></div>
       </section>}
 
+
+      {active === 'stickers' && <StickerStudio connected={connected} apiUrl={apiUrl} onSaved={refreshPrivateStickers} setNotice={setNotice}/>}
       {active === 'calls' && <section className="content-view call-history-view">
         <button className="call-history-back" onClick={()=>setActive("chat")}><ArrowLeft size={16}/> Back to chat</button><div className="eyebrow"><span className="eyebrow-line"/> PRIVATE VOICE RECORDS</div><h1>Call history<span className="heading-period">.</span></h1><p className="subheading">Your voice conversations, separate from the text chat.</p>
         <div className="call-history-toolbar"><div><Headphones size={17}/><span>{callHistory.length} saved {callHistory.length===1?'call':'calls'}</span></div><button className="secondary-button icon-label-button" onClick={refreshCallHistory} disabled={!connected}><RefreshCw size={14}/> Refresh</button></div>
