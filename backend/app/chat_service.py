@@ -420,16 +420,23 @@ def split_reply_bubbles(answer: str) -> list[str]:
                 if bubbles:
                     return bubbles[:4]
                 return []
-            # Some compatible models return a single response/content key.
-            for key in ("response", "reply", "content", "text"):
-                value = payload.get(key)
-                if isinstance(value, str) and value.strip():
-                    candidate = value.strip()
+            # Some compatible models return a single response/content key,
+            # or an object whose only key is unexpectedly empty.
+            value = None
+            for key in ("response", "reply", "content", "text", ""):
+                candidate_value = payload.get(key)
+                if isinstance(candidate_value, str) and candidate_value.strip():
+                    value = candidate_value
                     break
-            else:
-                candidate = cleaned
-                break
-            continue
+            if value is None and len(payload) == 1:
+                only_value = next(iter(payload.values()))
+                if isinstance(only_value, str) and only_value.strip():
+                    value = only_value
+            if value is not None:
+                candidate = value.strip()
+                continue
+            candidate = cleaned
+            break
         candidate = cleaned
         break
     return [candidate] if candidate else []
