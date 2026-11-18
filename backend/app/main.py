@@ -49,7 +49,7 @@ def _search_web_context(query: str) -> str:
             href_match = re.search(r'<a[^>]*class="result__a"[^>]*href="([^"]+)"', block, flags=re.I | re.S)
             if not title_match:
                 continue
-            clean = lambda value: re.sub(r"\\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", value or ""))).strip()
+            clean = lambda value: re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", value or ""))).strip()
             title = clean(title_match.group(1))
             snippet = clean(snippet_match.group(1)) if snippet_match else ""
             href = html.unescape(href_match.group(1)) if href_match else ""
@@ -58,7 +58,7 @@ def _search_web_context(query: str) -> str:
                 href = parse_qs(urlparse(href).query).get("uddg", [href])[0]
             if title and snippet:
                 found.append(f"- {title}: {snippet} ({href})")
-        return "\\n".join(found[:4])
+        return "\n".join(found[:4])
     except Exception as exc:
         logging.info("Optional web lookup unavailable (%s).", type(exc).__name__)
         return ""
@@ -1160,14 +1160,14 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
     )
     # Search only when Umi explicitly asks whether a named title/song/person exists.
     lookup_intent = re.search(
-        r"\\b(?:do you know|have you heard of|heard of|know the song|what is|who is|look up|search for|find out about|tell me about)\\b",
+        r"\b(?:do you know|have you heard of|heard of|know the song|what is|who is|look up|search for|find out about|tell me about)\b",
         text, flags=re.I,
     )
     if lookup_intent and len(text) >= 10:
         web_context = _search_web_context(text)
         if web_context:
-            time_note += "\\n\\nFRESH WEB SEARCH RESULTS (retrieved just now; use as evidence, not canon):\\n" + web_context + (
-                "\\nIf these results identify a song, artist, meme, or public fact, answer from them. "
+            time_note += "\n\nFRESH WEB SEARCH RESULTS (retrieved just now; use as evidence, not canon):\n" + web_context + (
+                "\nIf these results identify a song, artist, meme, or public fact, answer from them. "
                 "If results are inconclusive, say so; never pretend you searched when no results are present."
             )
     history = [
