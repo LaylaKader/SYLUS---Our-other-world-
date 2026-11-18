@@ -32,7 +32,9 @@ ALTER TABLE proactive_contact_settings
     DROP CONSTRAINT IF EXISTS proactive_contact_settings_min_interval_minutes_check;
 
 UPDATE proactive_contact_settings
-SET min_idle_minutes = 0,
+SET messages_enabled = TRUE,
+    calls_enabled = TRUE,
+    min_idle_minutes = 0,
     min_interval_minutes = 0,
     quiet_start = '00:00',
     quiet_end = '00:00',
