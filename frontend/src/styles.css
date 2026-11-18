@@ -252,3 +252,55 @@ html,body,#root{height:100%;overflow:hidden}
     padding:12px;
   }
 }
+
+
+/* One predictable scroll owner for every non-chat page.
+   The header and footer stay in place; the content area owns vertical scrolling. */
+.main-panel{
+  height:100vh;
+  height:100dvh;
+  min-height:0;
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+}
+.main-panel>.content-view{
+  flex:1 1 0;
+  min-height:0;
+  max-height:none !important;
+  overflow-x:hidden;
+  overflow-y:auto;
+  overscroll-behavior-y:contain;
+  -webkit-overflow-scrolling:touch;
+  padding-bottom:calc(56px + env(safe-area-inset-bottom));
+}
+.main-panel>.page-footer{
+  flex:0 0 auto;
+  position:relative;
+}
+.main-panel>.call-history-view{
+  flex:1 1 0;
+  min-height:0;
+  max-height:none !important;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+}
+.call-history-list,
+.call-history-card,
+.call-transcript-scroll{
+  height:auto !important;
+  max-height:none !important;
+  overflow:visible !important;
+}
+@media(max-width:620px){
+  .main-panel>.content-view{
+    padding:30px 20px calc(72px + env(safe-area-inset-bottom));
+  }
+  .main-panel>.call-history-view{
+    padding:24px 20px calc(72px + env(safe-area-inset-bottom));
+  }
+  .main-panel>.page-footer{
+    min-height:44px;
+    padding:12px 16px calc(12px + env(safe-area-inset-bottom));
+  }
+}
