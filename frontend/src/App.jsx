@@ -347,7 +347,6 @@ function App() {
       // can grant microphone/audio permissions in the required user-gesture context.
       beginVoiceCall();
       if (callActiveRef.current) {
-        setMessages(current => [...current, { id: `pending-call-${Date.now()}`, role: 'user', text, created_at: new Date().toISOString() }]);
         sendCallUtterance(text);
         return;
       }
