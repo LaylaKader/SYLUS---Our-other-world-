@@ -270,7 +270,7 @@ function App() {
       const historyResponse = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/messages`, { headers, credentials: 'include' });
       if (!historyResponse.ok) throw new Error('Could not load private conversation history.');
       const history = await historyResponse.json();
-      setMessages(history.filter(m => m.role !== 'system'));
+      setMessages(history.filter(m => m.role !== 'system').map(message => message.role === 'assistant' ? { ...message, text: cleanAssistantText(message.text) } : message));
       setTimeContext(time);
       setChatReady(Boolean(time.chat_ready));
       setConnected(true);
