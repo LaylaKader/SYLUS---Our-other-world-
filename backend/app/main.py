@@ -141,6 +141,10 @@ class ProactiveSettingsUpdate(BaseModel):
     messages_enabled: bool | None = None
 
 
+class CallSettingsUpdate(BaseModel):
+    calls_enabled: bool | None = None
+
+
 class PushSubscriptionIn(BaseModel):
     endpoint: str = Field(min_length=20, max_length=3000)
     keys: dict[str, str]
@@ -228,6 +232,7 @@ def time_context(_: None = Depends(require_owner)):
         tz_row = conn.execute("SELECT timezone FROM owner_runtime_context WHERE id = 1").fetchone()
         vision_row = conn.execute("SELECT 1 FROM provider_acceptances WHERE provider = 'cloudflare_meta_vision'").fetchone()
     tz_name = tz_row[0] if tz_row else DEFAULT_TIMEZONE
+    apply_spoken_call_boundary(text, tz_name)
     try:
         local_zone = ZoneInfo(tz_name)
     except Exception:
@@ -574,6 +579,106 @@ def update_proactive_settings(payload: ProactiveSettingsUpdate, _: None = Depend
                 (changes["messages_enabled"],),
             )
     return get_proactive_settings(None)
+
+
+@app.get("/v1/calls/settings")
+def get_call_settings(_: None = Depends(require_owner)):
+    with connection() as conn:
+        row = conn.execute(
+            "SELECT calls_enabled, no_call_until, no_call_reason, quiet_start, quiet_end, timezone "
+            "FROM proactive_contact_settings WHERE id = 1"
+        ).fetchone()
+    until = row[1].astimezone(timezone.utc).isoformat() if row[1] else None
+    return {
+        "calls_enabled": bool(row[0]), "no_call_until": until, "no_call_reason": row[2],
+        "quiet_start": row[3].strftime("%H:%M"), "quiet_end": row[4].strftime("%H:%M"),
+        "timezone": row[5],
+    }
+
+
+@app.patch("/v1/calls/settings")
+def update_call_settings(payload: CallSettingsUpdate, _: None = Depends(require_owner)):
+    changes = payload.model_dump(exclude_unset=True)
+    if not changes:
+        raise HTTPException(status_code=400, detail="No call settings supplied.")
+    if "calls_enabled" in changes:
+        with connection() as conn:
+            conn.execute(
+                "UPDATE proactive_contact_settings SET calls_enabled = %s, updated_at = now() WHERE id = 1",
+                (changes["calls_enabled"],),
+            )
+    return get_call_settings(None)
+
+
+def apply_spoken_call_boundary(text: str, timezone_name: str) -> None:
+    """Persist natural-language call pauses or an explicit permission to resume calls."""
+    value = (text or "").strip().lower()
+    if not value:
+        return
+    resume = any(phrase in value for phrase in (
+        "you can call again", "call me again", "you may call me", "calls are okay again",
+        "it's okay to call", "it is okay to call", "i'm okay with calls", "im okay with calls",
+        "allow calls again", "resume calls",
+    ))
+    if resume:
+        with connection() as conn:
+            conn.execute(
+                "UPDATE proactive_contact_settings SET no_call_until = NULL, no_call_reason = NULL, updated_at = now() WHERE id = 1"
+            )
+        return
+    deny = any(phrase in value for phrase in (
+        "don't call", "dont call", "do not call", "no calls", "stop calling",
+        "don't phone", "dont phone", "do not phone", "no phone calls", "not call me",
+    ))
+    if not deny:
+        return
+    try:
+        zone = ZoneInfo(timezone_name or DEFAULT_TIMEZONE)
+    except Exception:
+        zone = ZoneInfo(DEFAULT_TIMEZONE)
+    now_local = datetime.now(timezone.utc).astimezone(zone)
+    until = None
+    reason = "Umi asked Sylus not to call until she explicitly allows it again."
+    if "tomorrow" in value:
+        from datetime import time as clock_time, timedelta
+        tomorrow = now_local.date() + timedelta(days=1)
+        until = datetime.combine(tomorrow, clock_time(23, 59, 59), tzinfo=zone)
+        reason = "Umi asked for no calls tomorrow."
+    elif any(word in value for word in ("today", "tonight", "for now", "right now", "now")):
+        from datetime import time as clock_time, timedelta
+        if "for now" in value or "right now" in value or value.endswith(" now"):
+            until = now_local + timedelta(hours=2)
+            reason = "Umi asked for a temporary pause on calls."
+        else:
+            until = datetime.combine(now_local.date(), clock_time(23, 59, 59), tzinfo=zone)
+            reason = "Umi asked for no calls today."
+    else:
+        import re
+        from datetime import timedelta
+        duration = re.search(r"for\\s+(\\d+)\\s*(hours?|hrs?|minutes?|mins?|days?)", value)
+        if duration:
+            amount = int(duration.group(1))
+            unit = duration.group(2)
+            seconds = amount * (86400 if unit.startswith("day") else 3600 if unit.startswith(("hour", "hr")) else 60)
+            until = now_local + timedelta(seconds=seconds)
+            reason = f"Umi asked for no calls for {amount} {unit}."
+        else:
+            clock = re.search(r"until\\s+(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm)?", value)
+            if clock:
+                from datetime import time as clock_time, timedelta
+                hour, minute = int(clock.group(1)), int(clock.group(2) or 0)
+                suffix = clock.group(3)
+                if suffix == "pm" and hour < 12: hour += 12
+                if suffix == "am" and hour == 12: hour = 0
+                if 0 <= hour <= 23 and 0 <= minute <= 59:
+                    candidate = datetime.combine(now_local.date(), clock_time(hour, minute), tzinfo=zone)
+                    until = candidate if candidate > now_local else candidate + timedelta(days=1)
+                    reason = f"Umi asked for no calls until {hour:02d}:{minute:02d}."
+    with connection() as conn:
+        conn.execute(
+            "UPDATE proactive_contact_settings SET no_call_until = %s, no_call_reason = %s, updated_at = now() WHERE id = 1",
+            (until, reason),
+        )
 
 
 @app.post("/v1/proactive/poll")
