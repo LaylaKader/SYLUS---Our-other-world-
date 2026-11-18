@@ -681,30 +681,32 @@ def create_speech(payload: SpeechIn, _: None = Depends(require_owner)):
         if not audio_bytes or len(audio_bytes) < 256 or not (content_type.startswith("audio/") or is_mp3) or not is_mp3:
             logging.error("Voice provider returned unusable audio: content_type=%s bytes=%s prefix=%s", content_type, len(audio_bytes), audio_bytes[:32].hex())
             raise HTTPException(status_code=502, detail="The voice provider returned an empty or invalid audio stream. Check the voice ID, provider response, and usage allowance.")
-        # Write WAV to a seekable temporary file. WAV written to stdout/pipe can
-        # contain an unknown-length RIFF data chunk, which some mobile browsers reject
-        # with MEDIA_ERR_SRC_NOT_SUPPORTED even though the bytes begin with RIFF/WAVE.
-        wav_path = None
+        # Normalize to a finalized, broadly supported MP3 file. Use a seekable
+        # temporary file rather than stdout so the encoder can write complete headers.
+        mp3_path = None
         try:
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as wav_file:
-                wav_path = wav_file.name
+            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as mp3_file:
+                mp3_path = mp3_file.name
             normalized = subprocess.run(
                 ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "mp3", "-i", "pipe:0",
-                 "-vn", "-c:a", "pcm_s16le", "-ar", "24000", "-ac", "1", "-f", "wav", wav_path],
+                 "-vn", "-c:a", "libmp3lame", "-b:a", "128k", "-ar", "44100", "-ac", "1", "-f", "mp3", mp3_path],
                 input=audio_bytes, capture_output=True, timeout=25, check=False,
             )
             if normalized.returncode != 0:
                 logging.error("Voice audio normalization failed: exit=%s stderr=%s", normalized.returncode, normalized.stderr[:300].decode("utf-8", "replace"))
                 raise HTTPException(status_code=502, detail="The voice provider returned audio, but it could not be prepared for playback. Please try again.")
-            audio_bytes = Path(wav_path).read_bytes()
-            if len(audio_bytes) < 512 or not audio_bytes.startswith(b"RIFF") or audio_bytes[8:12] != b"WAVE":
-                logging.error("Voice audio normalization produced an invalid WAV file: bytes=%s prefix=%s", len(audio_bytes), audio_bytes[:16].hex())
+            audio_bytes = Path(mp3_path).read_bytes()
+            is_normalized_mp3 = audio_bytes.startswith(b"ID3") or (
+                len(audio_bytes) > 2 and audio_bytes[0] == 0xFF and (audio_bytes[1] & 0xE0) == 0xE0
+            )
+            if len(audio_bytes) < 256 or not is_normalized_mp3:
+                logging.error("Voice audio normalization produced an invalid MP3 file: bytes=%s prefix=%s", len(audio_bytes), audio_bytes[:16].hex())
                 raise HTTPException(status_code=502, detail="The voice provider returned audio, but it could not be prepared for playback. Please try again.")
-            logging.info("Voice audio normalized to finalized PCM WAV file: bytes=%s riff_size=%s", len(audio_bytes), int.from_bytes(audio_bytes[4:8], "little"))
+            logging.info("Voice audio normalized to finalized MP3 file: bytes=%s prefix=%s", len(audio_bytes), audio_bytes[:8].hex())
         finally:
-            if wav_path:
+            if mp3_path:
                 try:
-                    os.unlink(wav_path)
+                    os.unlink(mp3_path)
                 except FileNotFoundError:
                     pass
     except subprocess.TimeoutExpired as exc:
@@ -716,10 +718,10 @@ def create_speech(payload: SpeechIn, _: None = Depends(require_owner)):
         raise HTTPException(status_code=502, detail="The voice provider could not generate audio. Check the private voice configuration and usage allowance.") from exc
     return Response(
         content=audio_bytes,
-        media_type="audio/wav",
+        media_type="audio/mpeg",
         headers={
             "Cache-Control": "no-store, private",
-            "Content-Disposition": 'inline; filename="sylus-message.wav"',
+            "Content-Disposition": 'inline; filename="sylus-message.mp3"',
             "Content-Length": str(len(audio_bytes)),
             "Accept-Ranges": "bytes",
         },
