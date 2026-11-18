@@ -216,3 +216,39 @@ html,body,#root{height:100%;overflow:hidden}
   .content-view{flex:1 0 auto;min-height:max-content;padding-bottom:calc(37px + env(safe-area-inset-bottom))}
   .page-footer{flex:0 0 auto;min-height:44px;padding-bottom:calc(15px + env(safe-area-inset-bottom))}
 }
+
+
+/* Call archive: let the page scroll through the complete transcript.
+   Do not create a second, height-limited scroll box inside each call card. */
+.call-history-view{
+  min-height:0;
+  flex:1 1 auto;
+  max-height:calc(100dvh - 72px);
+  overflow-y:auto;
+  overflow-x:hidden;
+  overscroll-behavior-y:contain;
+  -webkit-overflow-scrolling:touch;
+}
+.call-history-list,
+.call-history-card,
+.call-transcript-scroll{
+  max-height:none !important;
+  height:auto !important;
+  overflow:visible !important;
+  touch-action:auto;
+}
+.call-transcript-scroll{
+  display:block;
+  overflow-wrap:anywhere;
+}
+@media(max-width:620px){
+  .call-history-view{
+    max-height:calc(100dvh - 60px);
+    padding-bottom:calc(72px + env(safe-area-inset-bottom));
+  }
+  .call-transcript-scroll{
+    max-height:none !important;
+    overflow:visible !important;
+    padding:12px;
+  }
+}
