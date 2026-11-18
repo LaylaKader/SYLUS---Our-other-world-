@@ -144,3 +144,5 @@ html,body,#root{height:100%;overflow:hidden}
 .voice-call-footnote{margin:22px auto 0;max-width:350px;color:#827584;font-size:9px;line-height:1.65}
 @media(max-width:480px){.voice-call-panel{padding:31px 18px 21px;border-radius:18px}.voice-call-actions{display:grid;grid-template-columns:1fr 1fr;width:100%}.voice-call-end{grid-column:1/-1}.voice-call-orb{width:128px;height:128px}}
 @media(prefers-reduced-motion:reduce){.voice-call-orb.is-listening{animation:none}}
+
+.voice-call-incoming{margin:0 auto 14px;color:#e5c6d2;font:500 13px 'Playfair Display',serif}
