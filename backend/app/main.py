@@ -273,6 +273,16 @@ def reset_active_conversation(_: None = Depends(require_owner)):
         ).fetchall()
     return {"reset": True, "archived_count": len(rows), "memories_preserved": True}
 
+@app.delete("/v1/reset-all")
+def erase_all_private_data(_: None = Depends(require_owner)):
+    """Permanently erase all conversation messages, attachments, and saved memories."""
+    with connection() as conn:
+        conn.execute("DELETE FROM media_assets")
+        message_count = conn.execute("DELETE FROM messages RETURNING id").fetchall()
+        memory_count = conn.execute("DELETE FROM memories RETURNING id").fetchall()
+    return {"erased": True, "messages_deleted": len(message_count), "memories_deleted": len(memory_count)}
+
+
 @app.post("/v1/messages", response_model=MessageOut)
 def save_user_message(payload: MessageIn, _: None = Depends(require_owner)):
     text = payload.text.strip()
