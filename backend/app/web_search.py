@@ -217,7 +217,7 @@ def classify_search_request(text: str) -> tuple[str, str] | None:
     if not value:
         return None
     if re.search(r"\b(?:music|song|songs|track|tracks|playlist|soundtrack|soundtracks)\b", value, re.I) and re.search(
-        r"\b(?:link|recommend|recommendation|suggest|find|search|give|send|share|play|music|song|track)\b", value, re.I
+        r"\b(?:link|recommend|recommendation|suggest|find|search|give|send|share|play|want|need|listen|pick|put on)\b", value, re.I
     ):
         query = re.sub(
             r"^(?:please\s+)?(?:then\s+)?(?:give me|send me|find me|recommend|suggest|share|play|find|search for)\s+",
