@@ -1379,6 +1379,7 @@ def _analyze_uploaded_image(asset_id: UUID, image_bytes: bytes, content_type: st
         logging.info("Automatic image analysis and reaction completed asset=%s notes_chars=%s bubbles=%s", asset_id, len(visual_description), len(bubbles))
     except (ProviderRequestFailed, ProviderNotConfigured) as exc:
         logging.warning("Image was analyzed and saved, but Sylus could not generate a reaction asset=%s error=%s", asset_id, str(exc)[:300])
+        return False
     return True
 
 
