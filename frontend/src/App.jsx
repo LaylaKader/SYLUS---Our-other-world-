@@ -643,7 +643,7 @@ function App() {
         // Interim results mean the recognizer is still hearing/decoding speech.
         // Reset the quiet timer on every result, but submit only after a final segment.
         if (callSilenceTimerRef.current) window.clearTimeout(callSilenceTimerRef.current);
-        if (callFinalTranscriptRef.current) callSilenceTimerRef.current = window.setTimeout(() => commitCallTranscript(), 1800);
+        if (callFinalTranscriptRef.current) callSilenceTimerRef.current = window.setTimeout(() => commitCallTranscript(), 2500);
       };
       recognition.onerror = event => {
         if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
@@ -664,7 +664,7 @@ function App() {
         setCallListening(false);
         if (callFinalTranscriptRef.current.trim() && !callProcessingRef.current) {
           if (callSilenceTimerRef.current) window.clearTimeout(callSilenceTimerRef.current);
-          callSilenceTimerRef.current = window.setTimeout(() => commitCallTranscript(), 1200);
+          callSilenceTimerRef.current = window.setTimeout(() => commitCallTranscript(), 1500);
         } else if (callActiveRef.current && !callProcessingRef.current && !callMicPausedRef.current) {
           callRestartTimerRef.current = window.setTimeout(() => startCallRecognition(), 500);
         }
@@ -779,6 +779,16 @@ function App() {
       }
     } catch {}
     startCallRecognition();
+  }
+
+  function finishCallSpeaking() {
+    setCallStatus('Finishing your sentence…');
+    const recognition = callRecognitionRef.current;
+    if (recognition) {
+      try { recognition.stop(); } catch { commitCallTranscript(); }
+    } else {
+      commitCallTranscript();
+    }
   }
 
   function pauseCallMicrophone() {
@@ -1087,7 +1097,7 @@ function App() {
           <div className={'voice-call-orb' + (callActive ? ' is-active' : '') + (callListening ? ' is-listening' : '')}><span>{callActive ? (callListening ? 'LISTENING' : callBusy ? 'THINKING' : 'CONNECTED') : 'STANDBY'}</span></div>
           <p className="voice-call-status" role="status">{callStatus}</p>
           {callTranscript && <div className="voice-call-transcript"><span>LAST HEARD</span><p>{callTranscript}</p></div>}
-          {!callActive ? <>{incomingCall && <p className="voice-call-incoming">✦ Sylus is calling. Answer when you’re ready.</p>}<div className="voice-call-actions"><button className="primary-button voice-call-start" onClick={beginVoiceCall} disabled={!connected || !chatReady || !timeContext?.voice_ready}><Phone size={16}/> {incomingCall ? 'Accept call' : 'Start voice call'}</button>{incomingCall && <button className="secondary-button" onClick={() => { setIncomingCall(false); setCallOpen(false); setCallStatus('Call invitation declined.'); }}>Decline</button>}</div></> : <div className="voice-call-actions"><button className="secondary-button" onClick={() => { callMicPausedRef.current = false; startCallRecognition(); }} disabled={callListening || callBusy}><Mic size={15}/> Speak</button><button className="secondary-button" onClick={pauseCallMicrophone}><MicOff size={15}/> Pause mic</button><button className="voice-call-end" onClick={endVoiceCall}><PhoneOff size={16}/> End call</button></div>}
+          {!callActive ? <>{incomingCall && <p className="voice-call-incoming">✦ Sylus is calling. Answer when you’re ready.</p>}<div className="voice-call-actions"><button className="primary-button voice-call-start" onClick={beginVoiceCall} disabled={!connected || !chatReady || !timeContext?.voice_ready}><Phone size={16}/> {incomingCall ? 'Accept call' : 'Start voice call'}</button>{incomingCall && <button className="secondary-button" onClick={() => { setIncomingCall(false); setCallOpen(false); setCallStatus('Call invitation declined.'); }}>Decline</button>}</div></> : <div className="voice-call-actions"><button className="secondary-button" onClick={() => { callMicPausedRef.current = false; startCallRecognition(); }} disabled={callListening || callBusy}><Mic size={15}/> Speak</button><button className="secondary-button" onClick={finishCallSpeaking} disabled={!callListening || callBusy}>I'm finished</button><button className="secondary-button" onClick={pauseCallMicrophone}><MicOff size={15}/> Pause mic</button><button className="voice-call-end" onClick={endVoiceCall}><PhoneOff size={16}/> End call</button></div>}
           <p className="voice-call-footnote">Your speech is transcribed by your browser’s speech-recognition service and sent as text to your private Sylus server. Microphone recordings are not stored by this app. Incoming invitations can arrive as notifications, but you must accept in the app; the browser cannot keep the microphone open in the background.</p>
         </section>
       </div>}
