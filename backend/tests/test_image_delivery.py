@@ -15,7 +15,7 @@ def test_no_directive_keeps_normal_reply():
 def test_direct_image_requests_trigger_generation():
     assert should_generate_image("Make me an image of you.")
     assert should_generate_image("Can you draw us together?")
-    assert should_generate_image("Send me the image")
+    assert not should_generate_image("Send me the image")
 
 
 def test_image_discussion_does_not_trigger_generation():
@@ -41,3 +41,14 @@ def test_no_link_directive_keeps_normal_reply():
 def test_send_picture_of_sylus_fetches_instead_of_generating():
     assert not should_generate_image("Send me a picture of you.")
     assert not should_generate_image("Show me a photo of him.")
+
+
+def test_ordinary_picture_requests_search_online_instead_of_generating():
+    assert not should_generate_image("Send me a cute cat picture.")
+    assert not should_generate_image("Show me a Sylus photo.")
+    assert not should_generate_image("Send me a funny meme.")
+
+
+def test_only_explicit_creation_requests_generate():
+    assert should_generate_image("Create a new picture of a cute cat.")
+    assert should_generate_image("Draw us together.")
