@@ -305,8 +305,15 @@ def _search_query_from_history(text: str, history: list[dict] | None) -> tuple[s
     refinement = re.sub(r"\s+", " ", (text or "").strip())[:180]
     if not refinement:
         return None
-    # Only borrow the old intent for a short conversational refinement, not a new topic.
+    # Only borrow the old intent for an actual preference/refinement reply, not an unrelated chat turn.
     if len(refinement.split()) > 22:
+        return None
+    preference_reply = re.search(
+        r"\b(?:something|anything|whatever|your choice|surprise me|you choose|for me|fits me|suits me|"
+        r"i (?:like|prefer|want)|more (?:like|specific)|not too|without|with)\b",
+        refinement, re.I
+    )
+    if not preference_reply:
         return None
     if kind == "music" and re.search(
         r"\b(?:something|anything|whatever)\b.{0,60}\b(?:fits|suits) me\b|\b(?:your choice|surprise me|you choose)\b",
