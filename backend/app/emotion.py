@@ -60,6 +60,7 @@ class EmotionState:
             "playful_banter": {"amusement": .35, "playfulness": .38, "warmth": .08, "energy": .08},
             "affection_confession": {"affection": .34, "warmth": .24, "happiness": .20, "surprise": .08},
             "provocative_banter": {"amusement": .22, "playfulness": .34, "irritation": .05, "confidence": .04},
+            "competitive_challenge": {"amusement": .18, "playfulness": .30, "confidence": .08, "energy": .12},
             "conflict_repair": {"anger": -.18, "irritation": -.20, "disappointment": -.12, "warmth": .14, "affection": .06},
             "flirtatious_banter": {"amusement": .24, "playfulness": .42, "affection": .12, "warmth": .08},
             "distance_longing": {"longing": .42, "affection": .22, "warmth": .14, "concern": .08},
