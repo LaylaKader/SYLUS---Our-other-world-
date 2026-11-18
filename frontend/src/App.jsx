@@ -107,7 +107,7 @@ function App() {
   const [checking, setChecking] = useState(false);
   const [notice, setNotice] = useState('Preview mode · private connection not configured');
   const [apiUrl, setApiUrl] = useState(API_BASE);
-  const allStickerOptions = useMemo(() => [...stickerOptions, ...privateStickers.map(item => ({ ...item, src: `${apiUrl.replace(/\\/$/, '')}${item.src}`, custom: true }))], [stickerOptions, privateStickers, apiUrl]);
+  const allStickerOptions = useMemo(() => [...stickerOptions, ...privateStickers.map(item => ({ ...item, src: `${apiUrl.replace(/\/$/, '')}${item.src}`, custom: true }))], [stickerOptions, privateStickers, apiUrl]);
   const stickerById = useMemo(() => Object.fromEntries(allStickerOptions.map(sticker => [sticker.id, sticker])), [allStickerOptions]);
   const [memories, setMemories] = useState([]);
   const [bond, setBond] = useState(null);
@@ -244,19 +244,19 @@ function App() {
   useEffect(() => {
     if (!connected) { setPrivateStickers([]); return; }
     let cancelled = false;
-    fetch(`${apiUrl.replace(/\\/$/, '')}/v1/stickers`, { credentials: 'include' }).then(r => r.ok ? r.json() : []).then(items => { if (!cancelled && Array.isArray(items)) setPrivateStickers(items); }).catch(() => {});
+    fetch(`${apiUrl.replace(/\/$/, '')}/v1/stickers`, { credentials: 'include' }).then(r => r.ok ? r.json() : []).then(items => { if (!cancelled && Array.isArray(items)) setPrivateStickers(items); }).catch(() => {});
     return () => { cancelled = true; };
   }, [connected, apiUrl]);
 
   function refreshPrivateStickers() {
     if (!connected) return;
-    fetch(`${apiUrl.replace(/\\/$/, '')}/v1/stickers`, { credentials: 'include' }).then(r => r.ok ? r.json() : []).then(items => { if (Array.isArray(items)) setPrivateStickers(items); }).catch(() => {});
+    fetch(`${apiUrl.replace(/\/$/, '')}/v1/stickers`, { credentials: 'include' }).then(r => r.ok ? r.json() : []).then(items => { if (Array.isArray(items)) setPrivateStickers(items); }).catch(() => {});
   }
 
   async function toggleStickerFavorite(sticker) {
     if (sticker.custom) {
       try {
-        const response = await fetch(`${apiUrl.replace(/\\/$/, '')}/v1/stickers/${sticker.id}`, { method: 'PATCH', headers, credentials: 'include', body: JSON.stringify({ is_favorite: !sticker.is_favorite }) });
+        const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/stickers/${sticker.id}`, { method: 'PATCH', headers, credentials: 'include', body: JSON.stringify({ is_favorite: !sticker.is_favorite }) });
         if (!response.ok) throw new Error('Could not update this sticker.');
         refreshPrivateStickers();
       } catch (error) { setNotice(error.message || 'Could not update favorite.'); }
