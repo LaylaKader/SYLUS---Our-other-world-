@@ -631,7 +631,8 @@ function App() {
     }
     const bytes = await response.arrayBuffer();
     const decoded = await context.decodeAudioData(bytes.slice(0));
-    if (!decoded?.length) throw new Error('The voice response contained no playable audio.');
+    if (!callActiveRef.current) return;
+    if (!decoded?.length) throw new Error('The voice response contained no playable audio.')
     if (audioSourceRef.current) {
       try { audioSourceRef.current.stop(); } catch {}
       audioSourceRef.current = null;
@@ -667,6 +668,9 @@ function App() {
       const userMessages = turn.user_messages?.length ? turn.user_messages : (turn.user_message ? [turn.user_message] : []);
       const replies = turn.assistant_messages?.length ? turn.assistant_messages : (turn.assistant_message ? [turn.assistant_message] : []);
       setMessages(current => [...current, ...userMessages, ...replies]);
+      const callsResponse = await fetch(apiUrl.replace(/\/$/, '') + '/v1/calls/settings', { headers, credentials: 'include' });
+      if (callsResponse.ok) setCallSettings(await callsResponse.json());
+      if (!callActiveRef.current) return;
       if (!replies.length) {
         setCallStatus('Sylus is quiet for a moment. I’m listening again.');
       } else {
@@ -682,7 +686,7 @@ function App() {
     }
   }
 
-  async function beginVoiceCall() {
+  function beginVoiceCall() {
     if (!connected || !chatReady || !timeContext?.voice_ready) {
       setCallStatus('Connect the private server and configure Sylus’s voice before starting a call.');
       setCallOpen(true);
@@ -700,7 +704,7 @@ function App() {
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
       if (AudioContextClass) {
         if (!audioContextRef.current || audioContextRef.current.state === 'closed') audioContextRef.current = new AudioContextClass();
-        if (audioContextRef.current.state === 'suspended') await audioContextRef.current.resume();
+        if (audioContextRef.current.state === 'suspended') audioContextRef.current.resume().catch(() => {});
       }
     } catch {}
     startCallRecognition();
