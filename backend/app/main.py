@@ -837,8 +837,8 @@ def scheduled_proactive_messages(authorization: str | None = Header(default=None
     expected = f"Bearer {settings.scheduler_secret}"
     if not authorization or not secrets.compare_digest(authorization, expected):
         raise HTTPException(status_code=401, detail="Scheduler authentication failed.")
-    message_result = poll_proactive_messages(None)
     call_result = poll_proactive_call_invite()
+    message_result = poll_proactive_messages(None)
     return {"messages": message_result, "call_invitation": call_result}
 
 
