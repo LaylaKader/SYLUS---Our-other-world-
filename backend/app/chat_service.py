@@ -449,7 +449,7 @@ def generate_proactive_bubbles(history: list[dict], time_context: str = "") -> l
         "share a thought, tease gently, check on something the owner explicitly mentioned, or bring up a detail you remembered. "
         "Do not send generic check-ins, fake events, invented observations, or repeated reminders. "
         "Do not treat elapsed time as an obligation to send something. Reach out only when there is a specific, grounded thought that would make sense between people who know each other; if nothing genuinely comes to mind, return an empty messages list. Never invent off-screen events, noises, reports, sightings, activities, or mysterious happenings as excuses to text. "
-        "Choose 1-10 separate bubbles when the thoughts naturally divide; one is common, but several may be sent together without any per-message cooldown. Never demand a reply."
+        "Send at most two bubbles, and usually just one. Zero is correct when there is no genuinely worthwhile reason to interrupt Umi. Never demand a reply."
     )
     persona += (
         f"\n\nCurrent emotional tone: {emotion.dominant_mood()}. {emotion.style_directive()} "
@@ -457,7 +457,7 @@ def generate_proactive_bubbles(history: list[dict], time_context: str = "") -> l
     )
     instruction = (
         "You are deciding whether to text first. Return an empty messages list if there is no specific, grounded reason to reach out. Return strict JSON only as "
-        "{\"messages\":[\"first text\"]} with 1-10 separate bubbles. Do not return an empty list."
+        "{\"messages\":[\"first text\"]}. Return zero to two bubbles; an empty list is valid and preferred when there is no natural reason to text."
     )
     raw = OpenAICompatibleChatModel().respond(
         persona=persona,
@@ -470,7 +470,7 @@ def generate_proactive_bubbles(history: list[dict], time_context: str = "") -> l
         data = json.loads(raw[start:end + 1]) if start >= 0 and end > start else {}
         values = data.get("messages", []) if isinstance(data, dict) else []
         if not isinstance(values, list):
-            return ["I thought I would leave you a note rather than let the silence stretch any further."]
+            return []
         bubbles = [str(value).strip() for value in values if isinstance(value, str) and value.strip()][:10]
         return bubbles
     except (ValueError, TypeError, json.JSONDecodeError):
