@@ -179,6 +179,7 @@ class CallFinishIn(BaseModel):
 
 class CallTranscriptCorrectIn(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
+    session_id: UUID | None = None
 
 class VisualIdentityCreate(BaseModel):
     display_name: str = Field(min_length=1, max_length=100)
@@ -492,6 +493,15 @@ def call_turn(payload: CallTurnIn, _: None = Depends(require_owner)):
 def correct_call_transcript(payload: CallTranscriptCorrectIn, _: None = Depends(require_owner)):
     original=payload.text.strip()
     if not original: return {"text":"","changed":False}
+    recent_context = ""
+    if payload.session_id:
+        with connection() as conn:
+            row=conn.execute("SELECT transcript FROM call_sessions WHERE id=%s",(payload.session_id,)).fetchone()
+        if row:
+            recent_context="\\n".join(
+                f"{item.get('role','')}: {str(item.get('text',''))[:500]}"
+                for item in (row[0] or [])[-8:]
+            )
     fallback=re.sub(r"\b(silas|sylas|sailas|sailus)\b","Sylus",original,flags=re.I)
     fallback=re.sub(r"\b(hello|hey|hi) silence\b",lambda m:m.group(1)+" Sylus",fallback,flags=re.I)
     providers=[]
@@ -505,12 +515,12 @@ def correct_call_transcript(payload: CallTranscriptCorrectIn, _: None = Depends(
         providers.append(("Cloudflare",f"https://api.cloudflare.com/client/v4/accounts/{settings.cloudflare_account_id}/ai/v1",settings.cloudflare_api_token,settings.cloudflare_chat_model))
     prompt=("You are a conservative speech-to-text correction layer for a live conversation. Correct clear speech-recognition errors, punctuation, capitalization, and obvious grammar slips while preserving the speaker's exact meaning, tone, wording, and language. "
             "Known proper nouns: Sylus (not Silas, Sylas, or Silence when addressed by name), Umi, Mephisto, Mephi-chan, N109 Zone, Onychinus, Luke, Kieran, Protocore, Memoria, Within Reach. "
-            "Use context to resolve phonetic misspellings. Never add ideas, answer the speaker, censor, summarize, or rewrite casual phrasing into formal prose. If uncertain, keep the original wording. Return only the corrected transcript.")
+            "Use the recent call context to resolve phonetic misspellings and pronouns. Never add ideas, answer the speaker, censor, summarize, or rewrite casual phrasing into formal prose. If uncertain, keep the original wording. Return only the corrected transcript.")
     for _,base,key,model in providers[:3]:
         try:
             response=httpx.post(base.rstrip("/")+"/chat/completions",
                 headers={"Authorization":f"Bearer {key}","Content-Type":"application/json"},
-                json={"model":model,"messages":[{"role":"system","content":prompt},{"role":"user","content":original}],
+                json={"model":model,"messages":[{"role":"system","content":prompt},{"role":"user","content":("Recent call context (may be empty):\\n"+recent_context+"\\n\\nCurrent transcript to correct:\\n"+original)}],
                       "temperature":0,"max_tokens":300},
                 timeout=httpx.Timeout(9.0,connect=3.0))
             response.raise_for_status()
