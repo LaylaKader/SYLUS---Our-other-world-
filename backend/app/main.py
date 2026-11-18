@@ -28,7 +28,7 @@ from .db import connection, open_pool
 from .migrate import run_migrations
 from .chat_service import generate_reply, generate_proactive_bubbles, split_reply_bubbles, load_emotion_state, ProviderNotConfigured, ProviderRequestFailed
 from .bond import refresh_bond
-from .web_search import discover_for_chat, is_search_followup
+from .web_search import discover_for_chat, is_search_followup, requested_result_limit
 from .image_delivery import extract_image_directive, extract_link_directive, should_generate_image
 
 app = FastAPI(title="SYLUS private companion API", version="0.3.0")
@@ -1740,7 +1740,8 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
     previous_attachments = (last_search_row[0] or []) if last_search_row else []
     reused_search_results = is_search_followup(text) and bool(previous_attachments)
     if reused_search_results:
-        web_attachments = previous_attachments
+        # A singular follow-up must not replay an old gallery.
+        web_attachments = previous_attachments[:requested_result_limit(text, default=1)]
         web_context = (
             "The owner is following up on the immediately preceding web/image search. "
             "The original result cards are attached again to this reply. Show them directly; "
