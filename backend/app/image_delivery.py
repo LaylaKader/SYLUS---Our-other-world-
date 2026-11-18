@@ -35,8 +35,8 @@ def should_generate_image(text: str) -> bool:
     if not value:
         return False
     patterns = (
-        r"\\b(?:make|create|generate|draw|paint|illustrate)\\b.{0,100}\\b(?:me\\s+)?(?:an?\\s+)?(?:image|picture|photo|illustration|artwork|portrait|drawing)\\b",
-        r"\\bcan you\\s+(?:draw|make|create|generate|paint|illustrate)\\b",
-        r"\\b(?:draw|make|create|generate|paint|illustrate)\\b.{0,80}\\b(?:you and me|us together|a new picture)\\b",
+        r"\b(?:make|create|generate|draw|paint|illustrate)\b.{0,100}\b(?:me\s+)?(?:an?\s+)?(?:image|picture|photo|illustration|artwork|portrait|drawing)\b",
+        r"\bcan you\s+(?:draw|make|create|generate|paint|illustrate)\b",
+        r"\b(?:draw|make|create|generate|paint|illustrate)\b.{0,80}\b(?:you and me|us together|a new picture)\b",
     )
     return any(re.search(pattern, value, re.I) for pattern in patterns)
