@@ -1506,7 +1506,14 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
         text, flags=re.I,
     )
     if lookup_intent and len(text) >= 10:
-        web_context = _search_web_context(text)
+        # Include recent user-provided context (for example, a lyric fragment or
+        # title mentioned one turn earlier) so follow-up requests can be searched.
+        search_context = " ".join(
+            str(row[1])[:180] for row in reversed(history_rows[-6:])
+            if row[0] == "user" and row[1]
+        )
+        search_query = (search_context + " " + text).strip()[-700:]
+        web_context = _search_web_context(search_query)
         if web_context:
             time_note += "\n\nFRESH WEB SEARCH RESULTS (retrieved just now; use as evidence, not canon):\n" + web_context + (
                 "\nIf these results identify a song, artist, meme, or public fact, answer from them. "
