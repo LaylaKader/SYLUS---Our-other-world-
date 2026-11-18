@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import {Bell, Bird, BookHeart, Camera, ChevronDown, CircleHelp, Clock3, Crown, Heart, Image, LockKeyhole, Menu, MessageCircle, MoreHorizontal, Send, Settings, ShieldCheck, Sparkles, Star, X, RefreshCw} from 'lucide-react';
+import {Bell, Bird, BookHeart, Camera, ChevronDown, CircleHelp, Clock3, Crown, Heart, Image, LockKeyhole, Menu, MessageCircle, MoreHorizontal, Send, Settings, ShieldCheck, Sparkles, Star, X, RefreshCw, Phone, PhoneOff, Mic, MicOff} from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? window.location.origin : '');
 const fallbackStickerOptions = [
@@ -119,6 +119,15 @@ function App() {
   const sylusAvatarInput = useRef(null);
   const umiAvatarInput = useRef(null);
   const messageListRef = useRef(null);
+  const [callOpen, setCallOpen] = useState(false);
+  const [callActive, setCallActive] = useState(false);
+  const [callListening, setCallListening] = useState(false);
+  const [callBusy, setCallBusy] = useState(false);
+  const [callStatus, setCallStatus] = useState('A private voice channel with Sylus.');
+  const [callTranscript, setCallTranscript] = useState('');
+  const callActiveRef = useRef(false);
+  const callProcessingRef = useRef(false);
+  const callRecognitionRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
