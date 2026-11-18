@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from typing import Literal
 from uuid import UUID, uuid4
-from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, Response, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -1436,7 +1436,7 @@ def list_private_stickers(_: None = Depends(require_owner)):
     return [{"id": str(row[0]), "label": row[1], "filename": row[2], "is_favorite": row[3], "created_at": row[4], "src": f"/v1/stickers/{row[0]}"} for row in rows]
 
 @app.post("/v1/stickers")
-def create_private_sticker(file: UploadFile = File(...), label: str = "New sticker", _: None = Depends(require_owner)):
+def create_private_sticker(file: UploadFile = File(...), label: str = Form(default="New sticker"), _: None = Depends(require_owner)):
     if file.content_type != "image/png":
         raise HTTPException(status_code=415, detail="Stickers must be transparent PNG files.")
     data = file.file.read(8 * 1024 * 1024 + 1)
