@@ -381,15 +381,18 @@ def delete_visual_identity(identity_id: UUID, _: None = Depends(require_owner)):
 
 @app.post("/v1/visual-memory/identities/{identity_id}/images")
 def upload_visual_reference(identity_id: UUID, file: UploadFile = File(...), _: None = Depends(require_owner)):
-    allowed = {"image/jpeg":("jpg",b"\\xff\\xd8\\xff"),"image/png":("png",b"\\x89PNG\\r\\n\\x1a\\n"),"image/webp":("webp",b"RIFF")}
-    if file.content_type not in allowed:
-        raise HTTPException(status_code=415, detail="Please upload a JPG, PNG, or WebP image.")
     data = file.file.read(8*1024*1024+1)
     if len(data)>8*1024*1024:
-        raise HTTPException(status_code=413, detail="Reference images must be 8 MB or smaller.")
-    extension, signature = allowed[file.content_type]
-    if not data.startswith(signature) or (file.content_type=="image/webp" and data[8:12]!=b"WEBP"):
-        raise HTTPException(status_code=415, detail="The uploaded file does not match its image type.")
+        raise HTTPException(status_code=413, detail='Reference images must be 8 MB or smaller.')
+    detected = None
+    if data.startswith(bytes((255,216,255))): detected=('image/jpeg','jpg')
+    elif data.startswith(bytes((137,80,78,71,13,10,26,10))): detected=('image/png','png')
+    elif data.startswith(b'RIFF') and data[8:12]==b'WEBP': detected=('image/webp','webp')
+    elif data.startswith((b'GIF87a',b'GIF89a')): detected=('image/gif','gif')
+    elif len(data)>=12 and data[4:8]==b'ftyp' and data[8:12] in (b'avif',b'avis'): detected=('image/avif','avif')
+    elif len(data)>=12 and data[4:8]==b'ftyp' and data[8:12] in (b'heic',b'heix',b'hevc',b'hevx',b'mif1',b'msf1'): detected=('image/heic','heic')
+    if not detected: raise HTTPException(status_code=415, detail='Unsupported image format. Use JPG, PNG, WebP, GIF, AVIF, or HEIC.')
+    file.content_type, extension = detected
     with connection() as conn:
         identity=conn.execute("SELECT display_name,category FROM visual_identities WHERE id=%s",(identity_id,)).fetchone()
         if not identity: raise HTTPException(status_code=404,detail="Visual identity not found.")
