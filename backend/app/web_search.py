@@ -7,10 +7,9 @@ from __future__ import annotations
 
 import html
 import ipaddress
-import json
 import logging
 import re
-from urllib.parse import parse_qs, quote_plus, urlparse
+from urllib.parse import parse_qs, urlparse
 import httpx
 
 
@@ -46,7 +45,7 @@ def _unwrap_ddg(url: str) -> str:
 
 
 def _clean(value: str) -> str:
-    return re.sub(r"\\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", value or ""))).strip()
+    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", value or ""))).strip()
 
 
 def search_links(query: str, limit: int = 6) -> list[dict]:
@@ -61,7 +60,7 @@ def search_links(query: str, limit: int = 6) -> list[dict]:
         )
         response.raise_for_status()
         page = response.text
-        blocks = re.findall(r'<div class="result[^"]*"[^>]*>(.*?)</div>\\s*</div>', page, flags=re.I | re.S)
+        blocks = re.findall(r'<div class="result[^"]*"[^>]*>(.*?)</div>\s*</div>', page, flags=re.I | re.S)
         found, seen = [], set()
         for block in blocks:
             title_match = re.search(r'<a[^>]*class="result__a"[^>]*>(.*?)</a>', block, flags=re.I | re.S)
@@ -97,7 +96,7 @@ def search_images(query: str, limit: int = 6) -> list[dict]:
             follow_redirects=True,
         )
         landing.raise_for_status()
-        match = re.search(r'"vqd"\\s*:\\s*"([^"]+)"', landing.text)
+        match = re.search(r'"vqd"\s*:\s*"([^"]+)"', landing.text)
         if not match:
             match = re.search(r"vqd=([0-9-]+)", landing.text)
         if not match:
@@ -133,12 +132,12 @@ def classify_search_request(text: str) -> tuple[str, str] | None:
     value = (text or "").strip()
     if not value:
         return None
-    wants_image = re.search(r"\\b(?:show|find|search|look for|get|send)\\b.{0,100}\\b(?:images?|pictures?|photos?|memes?|wallpapers?|fan ?art)\\b|\\b(?:images?|pictures?|photos?|memes?|wallpapers?|fan ?art)\\b.{0,100}\\b(?:of|for|about|please)\\b", value, re.I)
-    wants_video = re.search(r"\\b(?:find|search|show|look for|send)\\b.{0,100}\\b(?:videos?|clips?|trailers?|youtube)\\b|\\b(?:videos?|clips?|trailers?)\\b.{0,80}\\b(?:of|for|about)\\b", value, re.I)
-    wants_link = re.search(r"\\b(?:search|look up|find|browse|give me|send me|share)\\b.{0,100}\\b(?:websites?|webpages?|links?|articles?|sources?|pages?)\\b|\\b(?:latest|current|recent)\\b.{0,80}\\b(?:news|updates|price|release|event)\\b", value, re.I)
-    explicit_search = re.search(r"\\b(?:search the web|google it|look it up online|find online|search online|browse the web)\\b", value, re.I)
+    wants_image = re.search(r"\b(?:show|find|search|look for|get|send)\b.{0,100}\b(?:images?|pictures?|photos?|memes?|wallpapers?|fan ?art)\b|\b(?:images?|pictures?|photos?|memes?|wallpapers?|fan ?art)\b.{0,100}\b(?:of|for|about|please)\b", value, re.I)
+    wants_video = re.search(r"\b(?:find|search|show|look for|send)\b.{0,100}\b(?:videos?|clips?|trailers?|youtube)\b|\b(?:videos?|clips?|trailers?)\b.{0,80}\b(?:of|for|about)\b", value, re.I)
+    wants_link = re.search(r"\b(?:search|look up|find|browse|give me|send me|share)\b.{0,100}\b(?:websites?|webpages?|links?|articles?|sources?|pages?)\b|\b(?:latest|current|recent)\b.{0,80}\b(?:news|updates|price|release|event)\b", value, re.I)
+    explicit_search = re.search(r"\b(?:search the web|google it|look it up online|find online|search online|browse the web)\b", value, re.I)
     if wants_image:
-        query = re.sub(r"^(?:please\\s+)?(?:show|find|search|look for|get|send me)\\s+", "", value, flags=re.I)
+        query = re.sub(r"^(?:please\s+)?(?:show|find|search|look for|get|send me)\s+", "", value, flags=re.I)
         return "image", query[:220]
     if wants_video:
         return "video", value[:220]
