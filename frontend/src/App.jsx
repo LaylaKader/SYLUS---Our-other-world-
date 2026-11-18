@@ -298,6 +298,13 @@ function App() {
     try{const r=await fetch(`${apiUrl.replace(/\/$/, '')}/v1/visual-memory/identities/${identityId}/images`,{method:'POST',credentials:'include',body:form});if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Reference upload failed.');}await refreshVisualLibrary();setNotice('Reference image saved privately.');}
     catch(error){setNotice(error.message);}finally{setVisualBusy(false);}
   }
+  async function saveVisualIdentityNotes(id, notes) {
+    try {
+      const r=await fetch(`${apiUrl.replace(/\/$/, '')}/v1/visual-memory/identities/${id}`,{method:'PATCH',headers,credentials:'include',body:JSON.stringify({notes})});
+      if(!r.ok) throw new Error('Could not save appearance notes.');
+      await refreshVisualLibrary(); setNotice('Visual notes saved.');
+    } catch(error) { setNotice(error.message); }
+  }
   async function deleteVisualImage(id) {
     if(!window.confirm('Delete this reference image permanently?'))return;
     try{const r=await fetch(`${apiUrl.replace(/\/$/, '')}/v1/visual-memory/images/${id}`,{method:'DELETE',headers,credentials:'include'});if(!r.ok)throw new Error('Could not delete the reference image.');await refreshVisualLibrary();}
@@ -1186,7 +1193,8 @@ function App() {
               </div>)}
             </div>
             <label className="secondary-button" style={{display:'inline-flex',alignItems:'center',cursor:'pointer'}}>Add reference photo<input className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" disabled={!connected||visualBusy} onChange={e=>{uploadVisualReference(person.id,e.target.files?.[0]);e.target.value='';}}/></label>
-            {person.notes && <p className="field-help">{person.notes}</p>}
+            <textarea className="settings-input memory-textarea" rows={2} value={visualNoteDrafts[person.id] ?? person.notes ?? ''} onChange={e=>setVisualNoteDrafts(v=>({...v,[person.id]:e.target.value}))} placeholder="Appearance notes for Sylus to remember (hair, style, usual outfit)…"/>
+            <button className="text-action" onClick={()=>saveVisualIdentityNotes(person.id,visualNoteDrafts[person.id] ?? person.notes ?? '')}>Save notes</button>
           </article>)}
           <form onSubmit={createVisualIdentity} style={{marginTop:16}}>
             <div className="card-kicker">ADD ANOTHER PERSON</div>
