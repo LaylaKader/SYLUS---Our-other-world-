@@ -561,7 +561,7 @@ function App() {
   }
 
   function startCallRecognition() {
-    if (!callActiveRef.current || callProcessingRef.current) return;
+    if (!callActiveRef.current || callProcessingRef.current || callMicPausedRef.current) return;
     const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!Recognition) {
       setCallStatus('Speech recognition is unavailable here. Try Chrome on Android, or use text chat.');
