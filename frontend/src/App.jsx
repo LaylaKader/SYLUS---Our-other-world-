@@ -801,7 +801,7 @@ function App() {
         setCallStatus('Sylus is quiet for a moment. I’m listening again.');
       } else {
         setCallStatus('Sylus is speaking…');
-        await speakCallReply(replies.map(item => item.text).join(' '));
+        await speakCallReply(replies.join(' '));
       }
     } catch (error) {
       setCallStatus(error.message || 'The voice conversation was interrupted.');
