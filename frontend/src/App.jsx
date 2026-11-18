@@ -95,12 +95,12 @@ function App() {
   const [imagePrompt, setImagePrompt] = useState('');
   const [generatingImage, setGeneratingImage] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
-  const [audioUrls, setAudioUrls] = useState({});
+  const [audioBuffers, setAudioBuffers] = useState({});
   const [audioErrors, setAudioErrors] = useState({});
-  const [visionBusy, setVisionBusy] = useState(false);
+  const [playingAudioId, setPlayingAudioId] = useState(null);
   const [speakingMessageId, setSpeakingMessageId] = useState(null);
-  const [autoPlayAudioId, setAutoPlayAudioId] = useState(null);
-  const audioElements = useRef({});
+  const audioContextRef = useRef(null);
+  const audioSourceRef = useRef(null);
   const [memoryFormOpen, setMemoryFormOpen] = useState(false);
   const [memoryCategory, setMemoryCategory] = useState('Preference');
   const [memoryContent, setMemoryContent] = useState('');
@@ -123,14 +123,6 @@ function App() {
     }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
-
-  useEffect(() => {
-    if (!autoPlayAudioId) return;
-    const player = audioElements.current[autoPlayAudioId];
-    if (!player) return;
-    player.load();
-    player.play().catch(() => setNotice('The audio file is ready, but Android blocked automatic playback. Press Play on the audio control.'));
-  }, [audioUrls, autoPlayAudioId]);
 
   useEffect(() => {
     if (active === 'chat' && messageListRef.current) {
@@ -433,56 +425,88 @@ function App() {
     finally { setVisionBusy(false); }
   }
 
+  async function playVoiceBuffer(messageId, buffer) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) throw new Error('This browser does not support audio playback.');
+    let context = audioContextRef.current;
+    if (!context || context.state === 'closed') {
+      context = new AudioContextClass();
+      audioContextRef.current = context;
+    }
+    if (context.state === 'suspended') await context.resume();
+    if (audioSourceRef.current) {
+      try { audioSourceRef.current.stop(); } catch {}
+      audioSourceRef.current = null;
+    }
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.connect(context.destination);
+    source.onended = () => {
+      if (audioSourceRef.current === source) {
+        audioSourceRef.current = null;
+        setPlayingAudioId(null);
+      }
+    };
+    audioSourceRef.current = source;
+    source.start(0);
+    setPlayingAudioId(messageId);
+  }
+
   async function readAloud(message) {
     if (!message || speakingMessageId) return;
-    const existing = audioUrls[message.id];
-    if (existing && !audioErrors[message.id]) {
-      const player = document.getElementById(`message-audio-${message.id}`);
-      if (player) {
-        try { await player.play(); }
-        catch { setNotice('The audio is ready, but playback was blocked. Press Play on the audio control below.'); }
+    if (audioBuffers[message.id]) {
+      if (playingAudioId === message.id && audioSourceRef.current) {
+        try { audioSourceRef.current.stop(); } catch {}
+        audioSourceRef.current = null;
+        setPlayingAudioId(null);
+      } else {
+        try { await playVoiceBuffer(message.id, audioBuffers[message.id]); }
+        catch (error) { setNotice(error.message || 'Could not play this voice.'); }
       }
       return;
     }
-    if (existing && audioErrors[message.id]) {
-      URL.revokeObjectURL(existing);
-      setAudioUrls(current => { const next = { ...current }; delete next[message.id]; return next; });
+    if (audioErrors[message.id]) {
       setAudioErrors(current => { const next = { ...current }; delete next[message.id]; return next; });
     }
     setSpeakingMessageId(message.id);
     try {
-      const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/voice/speech`, { method: 'POST', headers, credentials: 'include', body: JSON.stringify({ text: message.text }) });
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) throw new Error('This browser does not support audio playback. Please use Chrome.');
+      let context = audioContextRef.current;
+      if (!context || context.state === 'closed') {
+        context = new AudioContextClass();
+        audioContextRef.current = context;
+      }
+      // Resume immediately inside the tap handler so Android keeps the audio
+      // context unlocked while the network request is in flight.
+      if (context.state === 'suspended') await context.resume();
+      const response = await fetch(`${apiUrl.replace(/\\/$/, '')}/v1/voice/speech`, { method: 'POST', headers, credentials: 'include', body: JSON.stringify({ text: message.text }) });
       if (!response.ok) { const failure = await response.json().catch(() => ({})); throw new Error(failure.detail || `Voice generation failed (${response.status}).`); }
       const contentType = (response.headers.get('content-type') || '').toLowerCase();
-      if (!contentType.startsWith('audio/mpeg') && !contentType.startsWith('audio/mp3')) throw new Error(`Voice endpoint returned ${contentType || 'an unknown content type'}, not playable MP3 audio.`);
+      if (!contentType.startsWith('audio/mpeg') && !contentType.startsWith('audio/mp3')) throw new Error(`Voice endpoint returned ${contentType || 'an unknown content type'}, not MP3 audio.`);
       const audioBytes = await response.arrayBuffer();
       const signature = new Uint8Array(audioBytes.slice(0, 3));
       const hasId3 = signature.length === 3 && signature[0] === 0x49 && signature[1] === 0x44 && signature[2] === 0x33;
       const frame = new Uint8Array(audioBytes.slice(0, 2));
       const hasMpegFrame = frame.length === 2 && frame[0] === 0xFF && (frame[1] & 0xE0) === 0xE0;
-      if (audioBytes.byteLength < 256 || (!hasId3 && !hasMpegFrame)) throw new Error('The voice server returned an invalid MP3 audio stream. Please try again.');
-      // Decode MP3 with Android Chrome's Web Audio decoder, then give the media
-      // element a simple PCM WAV file instead of the provider's compressed stream.
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      if (!AudioContextClass) throw new Error('This browser does not support audio decoding. Please open the app in Chrome.');
-      const audioContext = new AudioContextClass();
+      if (audioBytes.byteLength < 256 || (!hasId3 && !hasMpegFrame)) throw new Error('The voice provider returned an invalid audio stream. Please retry.');
       let decoded;
       try {
-        decoded = await audioContext.decodeAudioData(audioBytes.slice(0));
+        decoded = await context.decodeAudioData(audioBytes.slice(0));
       } catch (decodeError) {
-        throw new Error(`Android could not decode the generated MP3 (${decodeError?.name || 'decode error'}). Please retry voice.`);
-      } finally {
-        await audioContext.close().catch(() => {});
+        throw new Error(`The browser could not decode the voice audio (${decodeError?.name || 'decode error'}). I can switch voice engines if this persists.`);
       }
-      if (!decoded || !decoded.length) throw new Error('The generated voice contained no decodable audio. Please retry voice.');
-      const blob = audioBufferToWavBlob(decoded);
-      const url = URL.createObjectURL(blob);
-      setAutoPlayAudioId(null);
-      setAudioUrls(current => ({ ...current, [message.id]: url }));
-      setAudioErrors(current => { const next = { ...current }; delete next[message.id]; return next; });
-      setNotice(`Voice decoded and ready · ${Math.max(1, Math.round(blob.size / 1024))} KB WAV. Press Play below.`);
-    } catch (error) { setNotice(error.message || 'Could not generate voice audio.'); }
-    finally { setSpeakingMessageId(null); }
+      if (!decoded || !decoded.length) throw new Error('The generated voice contained no playable audio.');
+      setAudioBuffers(current => ({ ...current, [message.id]: decoded }));
+      await playVoiceBuffer(message.id, decoded);
+      setNotice(`Sylus is speaking · ${Math.round(decoded.duration)} seconds.`);
+    } catch (error) {
+      const detail = error.message || 'Could not generate or play voice audio.';
+      setAudioErrors(current => ({ ...current, [message.id]: detail }));
+      setNotice(detail);
+    } finally {
+      setSpeakingMessageId(null);
+    }
   }
 
   async function uploadImage(file) {
@@ -681,7 +705,7 @@ function App() {
             <div className="empty-kicker">A NEW CHAPTER</div><h2>Well, look who’s here.</h2><p>{connected && chatReady ? 'The connection is ready. Send a message when you like.' : connected ? 'Your private sign-in works. The server still needs its chat model key before Sylus can reply.' : 'When the private connection is ready, this is where our story continues.'}</p>
             <div className="empty-divider"><span/><Sparkles size={12}/><span/></div>
             <div className="empty-footnote"><LockKeyhole size={12}/> Your conversations stay yours.</div>
-          </div> : <div className="message-list" ref={messageListRef} aria-live="polite" aria-relevant="additions text">{messages.map(m => <div className={`message-row ${m.role === 'user' ? 'mine' : 'theirs'}`} key={m.id}><div className="message-avatar">{m.role === 'user' ? (umiAvatar ? <img src={umiAvatar} alt="Your avatar"/> : 'U') : (sylusAvatar ? <img src={sylusAvatar} alt="Sylus avatar"/> : <Crown size={15}/>)}</div><div className="message-content"><div className="message-author">{m.role === 'user' ? 'YOU' : 'SYLUS'} <span>{new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span></div>{editingMessageId === m.id ? <div className="message-edit-box"><textarea value={editingMessageText} onChange={e => setEditingMessageText(e.target.value)} rows={3} maxLength={12000}/><div className="message-edit-actions"><button className="text-action" onClick={() => setEditingMessageId(null)}>Cancel</button><button className="text-action" disabled={messageActionBusy || !editingMessageText.trim()} onClick={() => saveMessageEdit(m.id)}>{messageActionBusy ? 'Saving…' : 'Save & rewind'}</button></div></div> : <div className="message-bubble">{renderMessageText(m.text)}{m.media_url && <img className="chat-image" src={m.media_url} alt="Image shared in our private conversation" loading="lazy"/>}</div>}{m.role === 'assistant' && <button className="text-action read-aloud-button" disabled={!timeContext?.voice_ready || speakingMessageId === m.id} onClick={() => readAloud(m)}>{speakingMessageId === m.id ? 'Preparing voice…' : !timeContext?.voice_ready ? 'Voice setup needed' : audioErrors[m.id] ? 'Retry voice' : audioUrls[m.id] ? 'Play voice again' : 'Read aloud'}</button>}{audioErrors[m.id] && <p className="field-help" role="alert">{audioErrors[m.id]}</p>}{audioUrls[m.id] && <audio id={`message-audio-${m.id}`} ref={element => { if (element) audioElements.current[m.id] = element; else delete audioElements.current[m.id]; }} className="message-audio" controls preload="auto" playsInline src={audioUrls[m.id]} onLoadedMetadata={e => { const player = e.currentTarget; const duration = player.duration; if (Number.isFinite(duration) && duration > 0) setNotice(`Audio loaded · ${Math.round(duration)} seconds.`); else setNotice('Audio player loaded, but the browser could not read its duration.'); }} onCanPlay={e => { if (autoPlayAudioId === m.id) e.currentTarget.play().catch(() => setNotice('Audio is ready. Press Play to listen.')); }} onPlay={() => setAutoPlayAudioId(current => current === m.id ? null : current)} onError={e => { const mediaError = e.currentTarget.error; const detail = `The audio file was generated, but this browser could not play it (media error ${mediaError?.code ?? 'unknown'}). Try Retry voice; if it repeats, send me this error.`; setAudioErrors(current => ({ ...current, [m.id]: detail })); setNotice(detail); }} />}<div className="message-actions">{m.role === 'assistant' && <></>}{m.role === 'user' && editingMessageId !== m.id && <><button className="text-action" disabled={messageActionBusy} onClick={() => beginEditMessage(m)}>Edit</button><button className="text-action danger-action" disabled={messageActionBusy} onClick={() => deleteMessage(m.id)}>Delete</button></>}<button className="text-action" disabled={messageActionBusy} onClick={() => rewindToMessage(m.id)}>Rewind here</button></div></div></div>)}
+          </div> : <div className="message-list" ref={messageListRef} aria-live="polite" aria-relevant="additions text">{messages.map(m => <div className={`message-row ${m.role === 'user' ? 'mine' : 'theirs'}`} key={m.id}><div className="message-avatar">{m.role === 'user' ? (umiAvatar ? <img src={umiAvatar} alt="Your avatar"/> : 'U') : (sylusAvatar ? <img src={sylusAvatar} alt="Sylus avatar"/> : <Crown size={15}/>)}</div><div className="message-content"><div className="message-author">{m.role === 'user' ? 'YOU' : 'SYLUS'} <span>{new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span></div>{editingMessageId === m.id ? <div className="message-edit-box"><textarea value={editingMessageText} onChange={e => setEditingMessageText(e.target.value)} rows={3} maxLength={12000}/><div className="message-edit-actions"><button className="text-action" onClick={() => setEditingMessageId(null)}>Cancel</button><button className="text-action" disabled={messageActionBusy || !editingMessageText.trim()} onClick={() => saveMessageEdit(m.id)}>{messageActionBusy ? 'Saving…' : 'Save & rewind'}</button></div></div> : <div className="message-bubble">{renderMessageText(m.text)}{m.media_url && <img className="chat-image" src={m.media_url} alt="Image shared in our private conversation" loading="lazy"/>}</div>}{m.role === 'assistant' && <button className="text-action read-aloud-button" disabled={!timeContext?.voice_ready || speakingMessageId === m.id} onClick={() => readAloud(m)}>{speakingMessageId === m.id ? 'Preparing voice…' : !timeContext?.voice_ready ? 'Voice setup needed' : audioErrors[m.id] ? 'Retry voice' : audioBuffers[m.id] ? (playingAudioId === m.id ? 'Pause voice' : 'Play voice again') : 'Read aloud'}</button>}{audioErrors[m.id] && <p className="field-help" role="alert">{audioErrors[m.id]}</p>}{audioBuffers[m.id] && <div className="message-audio-controls"><button className="text-action" onClick={() => readAloud(m)}>{playingAudioId === m.id ? 'Pause voice' : 'Play voice'}</button><span className="field-help">{Math.round(audioBuffers[m.id].duration)} sec</span></div>}<div className="message-actions">{m.role === 'assistant' && <></>}{m.role === 'user' && editingMessageId !== m.id && <><button className="text-action" disabled={messageActionBusy} onClick={() => beginEditMessage(m)}>Edit</button><button className="text-action danger-action" disabled={messageActionBusy} onClick={() => deleteMessage(m.id)}>Delete</button></>}<button className="text-action" disabled={messageActionBusy} onClick={() => rewindToMessage(m.id)}>Rewind here</button></div></div></div>)}
           {composerNotice && <div className="composer-feedback" role="alert">{composerNotice}</div>}{replyStatus === 'waiting' && <div className="chat-presence waiting" role="status"><span className="presence-dot"/><span>Waiting for you to finish…</span></div>}{sending && <div className="typing-row" role="status" aria-label="Sylus is thinking"><div className="message-avatar"><Crown size={15}/></div><div className="typing-bubble"><span/><span/><span/></div><span className="presence-caption">Sylus is thinking</span></div>}{replyStatus === 'silent' && <div className="chat-presence quiet" role="status"><span className="presence-dot"/><span>Sylus is quiet for now.</span></div>}{replyStatus === 'error' && <div className="chat-presence failed" role="alert"><span className="presence-dot"/><span>Message delivery failed. {replyError || 'Please try again.'}</span></div>}
         </div>}
         </div>
