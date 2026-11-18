@@ -99,8 +99,7 @@ function App() {
   const [privateStickers, setPrivateStickers] = useState([]);
   const [stickerPickerTab, setStickerPickerTab] = useState('favorites');
   const [favoriteStickerIds, setFavoriteStickerIds] = useState(() => { try { return JSON.parse(window.localStorage.getItem('sylus-favorite-stickers') || '[]'); } catch { return []; } });
-  const allStickerOptions = useMemo(() => [...stickerOptions, ...privateStickers.map(item => ({ ...item, src: `${apiUrl.replace(/\\/$/, '')}${item.src}`, custom: true }))], [stickerOptions, privateStickers, apiUrl]);
-  const stickerById = useMemo(() => Object.fromEntries(allStickerOptions.map(sticker => [sticker.id, sticker])), [allStickerOptions]);
+
   const [messages, setMessages] = useState([]);
   const [ownerPassword, setOwnerPassword] = useState('');
   const [connected, setConnected] = useState(false);
@@ -108,6 +107,8 @@ function App() {
   const [checking, setChecking] = useState(false);
   const [notice, setNotice] = useState('Preview mode · private connection not configured');
   const [apiUrl, setApiUrl] = useState(API_BASE);
+  const allStickerOptions = useMemo(() => [...stickerOptions, ...privateStickers.map(item => ({ ...item, src: `${apiUrl.replace(/\\/$/, '')}${item.src}`, custom: true }))], [stickerOptions, privateStickers, apiUrl]);
+  const stickerById = useMemo(() => Object.fromEntries(allStickerOptions.map(sticker => [sticker.id, sticker])), [allStickerOptions]);
   const [memories, setMemories] = useState([]);
   const [bond, setBond] = useState(null);
   const [proactiveSettings, setProactiveSettings] = useState(null);
