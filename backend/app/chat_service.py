@@ -400,7 +400,7 @@ def split_reply_bubbles(answer: str) -> list[str]:
     for _ in range(2):
         cleaned = candidate
         if cleaned.startswith("```"):
-            cleaned = re.sub(r"^\`\`\`(?:json)?\s*|\s*\`\`\`$", "", cleaned, flags=re.I).strip()
+            cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", cleaned, flags=re.I).strip()
         start, end = cleaned.find("{"), cleaned.rfind("}")
         if start < 0 or end <= start:
             candidate = cleaned
