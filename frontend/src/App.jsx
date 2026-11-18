@@ -326,27 +326,33 @@ function App() {
   }
 
   useEffect(() => {
-    if (!connected || !proactiveSettings?.messages_enabled) return undefined;
+    const messagesOn = Boolean(proactiveSettings?.messages_enabled);
+    const callsOn = Boolean(proactiveSettings?.calls_enabled);
+    if (!connected || (!messagesOn && !callsOn)) return undefined;
     let stopped = false;
     const poll = async () => {
       try {
-        const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/proactive/poll`, { method: 'POST', headers, credentials: 'include' });
-        if (response.ok) {
-          const result = await response.json();
-          if (!stopped && result.sent && result.messages?.length) {
-            setMessages(current => {
-              const known = new Set(current.map(message => message.id));
-              return [...current, ...result.messages.filter(message => !known.has(message.id))];
-            });
-            setNotice('Sylus sent you a message.');
+        if (messagesOn) {
+          const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/proactive/poll`, { method: 'POST', headers, credentials: 'include' });
+          if (response.ok) {
+            const result = await response.json();
+            if (!stopped && result.sent && result.messages?.length) {
+              setMessages(current => {
+                const known = new Set(current.map(message => message.id));
+                return [...current, ...result.messages.filter(message => !known.has(message.id))];
+              });
+              setNotice('Sylus sent you a message.');
+            }
           }
         }
-        const callResponse = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/proactive/call-poll`, { method: 'POST', headers, credentials: 'include' });
-        if (callResponse.ok) {
-          const callResult = await callResponse.json();
-          if (!stopped && callResult.sent) {
-            setIncomingCall(true);
-            setNotice('Sylus is calling.');
+        if (callsOn) {
+          const callResponse = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/proactive/call-poll`, { method: 'POST', headers, credentials: 'include' });
+          if (callResponse.ok) {
+            const callResult = await callResponse.json();
+            if (!stopped && callResult.sent) {
+              setIncomingCall(true);
+              setNotice('Sylus is calling.');
+            }
           }
         }
       } catch { /* A missed poll is harmless; the next interval retries. */ }
@@ -354,7 +360,7 @@ function App() {
     poll();
     const interval = window.setInterval(poll, 60000);
     return () => { stopped = true; window.clearInterval(interval); };
-  }, [connected, proactiveSettings?.messages_enabled, apiUrl, headers]);
+  }, [connected, proactiveSettings?.messages_enabled, proactiveSettings?.calls_enabled, apiUrl, headers]);
 
   async function refreshVisualLibrary() {
     try { const r = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/visual-memory`, { headers, credentials: 'include' }); if (r.ok) setVisualLibrary(await r.json()); } catch {}
