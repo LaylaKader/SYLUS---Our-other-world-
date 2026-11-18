@@ -1481,7 +1481,8 @@ def delete_private_sticker(sticker_id: UUID, _: None = Depends(require_owner)):
     if not row:
         raise HTTPException(status_code=404, detail="Sticker not found.")
     return {"deleted": True, "id": str(row[0])}
-\n@app.post("/v1/media/generate", response_model=MessageOut)
+
+@app.post("/v1/media/generate", response_model=MessageOut)
 def generate_private_image(payload: ImageGenerateIn, _: None = Depends(require_owner)):
     if not (settings.cloudflare_account_id and settings.cloudflare_api_token):
         raise HTTPException(status_code=503, detail="Image generation is not configured. Add the Cloudflare AI credentials in the private server settings; no paid fallback will be used.")
