@@ -39,7 +39,7 @@ function cleanAssistantText(value) {
       if (typeof parsed === 'string') { candidate = parsed.trim(); continue; }
       if (Array.isArray(parsed?.messages)) {
         const parts = parsed.messages.filter(item => typeof item === 'string' && item.trim()).map(item => item.trim());
-        if (parts.length) return parts.join('\\n\\n');
+        if (parts.length) return parts.join('\n\n');
       }
       const single = parsed?.response || parsed?.reply || parsed?.content || parsed?.text;
       if (typeof single === 'string' && single.trim()) { candidate = single.trim(); continue; }
