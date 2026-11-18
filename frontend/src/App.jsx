@@ -419,14 +419,14 @@ function App() {
       const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/voice/speech`, { method: 'POST', headers, credentials: 'include', body: JSON.stringify({ text: message.text }) });
       if (!response.ok) { const failure = await response.json().catch(() => ({})); throw new Error(failure.detail || `Voice generation failed (${response.status}).`); }
       const contentType = (response.headers.get('content-type') || '').toLowerCase();
-      if (!contentType.startsWith('audio/wav') && !contentType.startsWith('audio/x-wav')) throw new Error(`Voice endpoint returned ${contentType || 'an unknown content type'}, not playable WAV audio.`);
+      if (!contentType.startsWith('audio/mpeg') && !contentType.startsWith('audio/mp3')) throw new Error(`Voice endpoint returned ${contentType || 'an unknown content type'}, not playable MP3 audio.`);
       const audioBytes = await response.arrayBuffer();
-      const signature = new Uint8Array(audioBytes.slice(0, 12));
-      const isWav = signature.length === 12
-        && signature[0] === 0x52 && signature[1] === 0x49 && signature[2] === 0x46 && signature[3] === 0x46
-        && signature[8] === 0x57 && signature[9] === 0x41 && signature[10] === 0x56 && signature[11] === 0x45;
-      if (audioBytes.byteLength < 512 || !isWav) throw new Error('The voice server returned an invalid WAV audio stream. Please try again.');
-      const blob = new Blob([audioBytes], { type: 'audio/wav' });
+      const signature = new Uint8Array(audioBytes.slice(0, 3));
+      const hasId3 = signature.length === 3 && signature[0] === 0x49 && signature[1] === 0x44 && signature[2] === 0x33;
+      const frame = new Uint8Array(audioBytes.slice(0, 2));
+      const hasMpegFrame = frame.length === 2 && frame[0] === 0xFF && (frame[1] & 0xE0) === 0xE0;
+      if (audioBytes.byteLength < 256 || (!hasId3 && !hasMpegFrame)) throw new Error('The voice server returned an invalid MP3 audio stream. Please try again.');
+      const blob = new Blob([audioBytes], { type: 'audio/mpeg' });
       const url = URL.createObjectURL(blob);
       setAutoPlayAudioId(null);
       setAudioUrls(current => ({ ...current, [message.id]: url }));
