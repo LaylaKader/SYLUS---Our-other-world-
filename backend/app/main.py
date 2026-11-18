@@ -1160,6 +1160,12 @@ def poll_proactive_call_invite() -> dict:
     return {"sent": False, "reason": "push_delivery_failed", **result}
 
 
+@app.post("/v1/proactive/call-poll")
+def owner_poll_proactive_call(_: None = Depends(require_owner)):
+    """Foreground call invitation check; background scheduler uses the same decision engine."""
+    return poll_proactive_call_invite()
+
+
 @app.post("/internal/proactive/run")
 def scheduled_proactive_messages(authorization: str | None = Header(default=None)):
     """Authenticated scheduler entry point; the same safeguards as the owner poll still apply."""
@@ -1553,13 +1559,15 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
         tz_name = DEFAULT_TIMEZONE
     now_utc = datetime.now(timezone.utc)
     now_local = now_utc.astimezone(local_zone)
+    n109_now = now_utc.astimezone(ZoneInfo("Asia/Shanghai"))
     gap = ""
     if previous:
         seconds = max(0, int((now_utc - previous[0]).total_seconds()))
         gap = f" Time since the owner's previous message: {seconds} seconds."
     time_note = (
         f"Current owner-local time: {now_local.strftime('%A, %Y-%m-%d %H:%M:%S')} ({tz_name}). "
-        f"Current UTC: {now_utc.isoformat()}.{gap} Use this context naturally when relevant; do not announce it unnecessarily."
+        f"Current UTC: {now_utc.isoformat()}. Simulated N109 local clock: {n109_now.strftime('%A, %Y-%m-%d %H:%M:%S')} (UTC+08:00; internal fictional clock, not official canon). "
+        f"The N109 and Umi's worlds keep separate clocks. Use this context naturally when relevant; do not announce it unnecessarily.{gap}"
     )
     # Search only when Umi explicitly asks whether a named title/song/person exists.
     lookup_intent = re.search(
