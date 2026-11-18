@@ -440,7 +440,7 @@ def get_call_transcript(session_id: UUID, _: None = Depends(require_owner)):
 def finish_call_session(session_id: UUID, payload: CallFinishIn, _: None = Depends(require_owner)):
     with connection() as conn:
         row=conn.execute(
-            "UPDATE call_sessions SET ended_at=COALESCE(ended_at,now()), "
+            "UPDATE call_sessions SET ended_at=COALESCE(ended_at,now()), last_activity_at=now(), "
             "duration_seconds=GREATEST(duration_seconds,GREATEST(0,EXTRACT(EPOCH FROM (COALESCE(ended_at,now())-started_at))::int),%s) "
             "WHERE id=%s RETURNING id,started_at,ended_at,duration_seconds",
             (payload.duration_seconds,session_id),
@@ -484,7 +484,7 @@ def call_turn(payload: CallTurnIn, _: None = Depends(require_owner)):
     additions=[{"role":"user","text":spoken,"at":now_iso}]
     additions.extend({"role":"assistant","text":bubble,"at":now_iso} for bubble in bubbles)
     with connection() as conn:
-        conn.execute("UPDATE call_sessions SET transcript=transcript || %s::jsonb WHERE id=%s",
+        conn.execute("UPDATE call_sessions SET transcript=transcript || %s::jsonb, last_activity_at=now() WHERE id=%s",
                      (json.dumps(additions),payload.session_id))
     refresh_bond()
     return {"session_id":str(payload.session_id),"user_text":spoken,"assistant_messages":bubbles,"transcript_additions":additions}
@@ -966,15 +966,26 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
         ).fetchone()
         if not row or not row[0]:
             return {"sent": False, "reason": "disabled", "messages": []}
+        conn.execute(
+            "UPDATE call_sessions SET ended_at=now(), last_activity_at=now(), "
+            "duration_seconds=GREATEST(duration_seconds,EXTRACT(EPOCH FROM (now()-started_at))::int) "
+            "WHERE ended_at IS NULL AND last_activity_at < now()-interval '30 minutes'"
+        )
+        active_call = conn.execute(
+            "SELECT 1 FROM call_sessions WHERE ended_at IS NULL AND last_activity_at >= now()-interval '30 minutes' LIMIT 1"
+        ).fetchone()
+        if active_call:
+            return {"sent": False, "reason": "voice_call_in_progress", "messages": []}
         last_user = conn.execute(
-            "SELECT id, created_at FROM messages WHERE role = 'user' AND archived_at IS NULL "
-            "ORDER BY created_at DESC LIMIT 1"
+            "SELECT EXISTS(SELECT 1 FROM messages WHERE role='user' AND archived_at IS NULL) "
+            "OR EXISTS(SELECT 1 FROM call_sessions WHERE transcript @> '[{\"role\":\"user\"}]'::jsonb)"
         ).fetchone()
         last_activity = conn.execute(
-            "SELECT created_at FROM messages WHERE role IN ('user','assistant') AND archived_at IS NULL "
-            "ORDER BY created_at DESC LIMIT 1"
+            "SELECT GREATEST("
+            "COALESCE((SELECT max(created_at) FROM messages WHERE role IN ('user','assistant') AND archived_at IS NULL), '-infinity'::timestamptz), "
+            "COALESCE((SELECT max(last_activity_at) FROM call_sessions), '-infinity'::timestamptz))"
         ).fetchone()
-        if not last_user or not last_activity:
+        if not last_user or not last_user[0] or not last_activity or not last_activity[0]:
             return {"sent": False, "reason": "no_conversation", "messages": []}
         tz_name = row[5] or DEFAULT_TIMEZONE
         try:
@@ -1078,11 +1089,22 @@ def poll_proactive_call_invite() -> dict:
         )
         if quiet:
             return {"sent": False, "reason": "quiet_hours"}
-        last_activity = conn.execute(
-            "SELECT created_at FROM messages WHERE role IN ('user','assistant') AND archived_at IS NULL "
-            "ORDER BY created_at DESC LIMIT 1"
+        conn.execute(
+            "UPDATE call_sessions SET ended_at=now(), last_activity_at=now(), "
+            "duration_seconds=GREATEST(duration_seconds,EXTRACT(EPOCH FROM (now()-started_at))::int) "
+            "WHERE ended_at IS NULL AND last_activity_at < now()-interval '30 minutes'"
+        )
+        active_call = conn.execute(
+            "SELECT 1 FROM call_sessions WHERE ended_at IS NULL AND last_activity_at >= now()-interval '30 minutes' LIMIT 1"
         ).fetchone()
-        if not last_activity:
+        if active_call:
+            return {"sent": False, "reason": "voice_call_in_progress"}
+        last_activity = conn.execute(
+            "SELECT GREATEST("
+            "COALESCE((SELECT max(created_at) FROM messages WHERE role IN ('user','assistant') AND archived_at IS NULL), '-infinity'::timestamptz), "
+            "COALESCE((SELECT max(last_activity_at) FROM call_sessions), '-infinity'::timestamptz))"
+        ).fetchone()
+        if not last_activity or not last_activity[0]:
             return {"sent": False, "reason": "no_conversation"}
         idle_minutes = (now_utc - last_activity[0]).total_seconds() / 60
         if idle_minutes < row[5]:
