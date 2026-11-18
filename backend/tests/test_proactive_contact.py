@@ -18,7 +18,7 @@ def test_proactive_message_waits_for_one_hour_of_owner_inactivity():
     assert recent["due"] is False
     assert recent["reason"] == "owner_recently_active"
     assert due["due"] is True
-    assert due["reason"] == "initial_message_due"
+    assert due["reason"] == "maximum_inactivity_reached"
     assert due["is_followup"] is False
 
 
