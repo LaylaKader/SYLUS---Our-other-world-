@@ -30,16 +30,13 @@ def extract_link_directive(text: str) -> tuple[str, str | None]:
 
 
 def should_generate_image(text: str) -> bool:
-    """Detect direct requests for a newly created image, not image discussion/search."""
-    value = (text or "").strip().lower()
+    """Only explicit creation requests invoke the generator; ordinary picture requests search online."""
+    value = (text or "").strip()
     if not value:
         return False
-    # "Send/show me a picture of you" means fetch a real Sylus image, not synthesize a lookalike.
-    if re.search(r"\b(?:send|show|get|find|search)\b.{0,80}\b(?:picture|photo|image)\b.{0,60}\b(?:of you|of yourself|of sylus|of him)\b", value, re.I):
-        return False
     patterns = (
-        r"\b(?:send|make|create|generate|draw|paint)\b.{0,100}\b(?:me\s+)?(?:an?\s+)?(?:image|picture|photo|illustration|artwork|portrait|drawing)\b",
-        r"\b(?:send me|show me)\s+(?:it|that|the image|the picture|the photo)\b",
-        r"\bcan you\s+(?:draw|make|create|generate|paint)\b",
+        r"\\b(?:make|create|generate|draw|paint|illustrate)\\b.{0,100}\\b(?:me\\s+)?(?:an?\\s+)?(?:image|picture|photo|illustration|artwork|portrait|drawing)\\b",
+        r"\\bcan you\\s+(?:draw|make|create|generate|paint|illustrate)\\b",
+        r"\\b(?:draw|make|create|generate|paint|illustrate)\\b.{0,80}\\b(?:you and me|us together|a new picture)\\b",
     )
     return any(re.search(pattern, value, re.I) for pattern in patterns)
