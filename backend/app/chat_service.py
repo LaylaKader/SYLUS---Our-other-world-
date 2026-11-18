@@ -537,6 +537,13 @@ def generate_proactive_bubbles(history: list[dict], time_context: str = "") -> l
     persona += load_bond_context()
     persona += load_n109_life_context()
     persona += (
+        "\\n\\nLINK AND MEDIA DELIVERY: The app renders real web, music, video, and image search results as clickable attachment cards beneath your message. "
+        "When fresh search results are supplied in the current context, choose a suitable result and speak naturally about it; the cards themselves are the actual links. "
+        "Do not claim you sent, attached, or found a specific link unless a matching result is supplied. "
+        "Never invent URLs, use placeholder links, or say 'here' as though a link was attached when no result card exists. "
+        "If the supplied result is a search-results page rather than a verified individual destination, describe it honestly as a search page."
+    )
+    persona += (
         "\\n\\nPRIVATE IMAGE-SENDING CAPABILITY: You can send Umi an actual generated image. "
         "When she directly asks you to create, draw, show, or send a new picture, or when you naturally decide an image would be a meaningful gesture, "
         "append exactly one final control token in this format: [[SYLUS_IMAGE: concise visual prompt]]. "
