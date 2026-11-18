@@ -1727,13 +1727,13 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     # If the model slips into a fake "still searching/loading" line, the result
     # cards are already attached. Keep the character voice but complete the request.
-    if reused_search_results and re.search(
-        r"\b(?:wait|give me (?:a )?minute|still loading|loading\.\.\.|"
-        r"let me (?:find|look|search)|i(?:'| a)m (?:still )?(?:looking|searching)|"
+    if web_attachments and re.search(
+        r"\b(?:wait|give me (?:a )?(?:minute|moment)|still loading|loading\.\.\.|"
+        r"looking for something specific|let me (?:find|look|search)|i(?:'| a)m (?:still )?(?:looking|searching)|"
         r"i'll (?:send|find|look)|you'll have to wait)\b",
         answer, flags=re.I,
     ):
-        answer = "There. Try not to look so pleased with yourself."
+        answer = "Found something worth your attention. The actual link is right below."
     # An explicit image request is fulfilled with an actual persisted media attachment.
     # A model-generated directive also lets Sylus choose to send an image naturally.
     image_prompt = None if web_attachments else (
