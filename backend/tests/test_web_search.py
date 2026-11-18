@@ -5,6 +5,10 @@ def test_image_search_intent():
     assert classify_search_request("Can you show me pictures of Sylus?")[0] == "image"
 
 
+def test_visual_description_question_triggers_images():
+    assert classify_search_request("What does Sylus look like?")[0] == "image"
+
+
 def test_meme_search_intent():
     assert classify_search_request("Find me a meme about being sleepy") [0] == "image"
 
