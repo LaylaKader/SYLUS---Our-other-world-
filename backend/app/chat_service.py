@@ -507,8 +507,10 @@ def classify_explicit_event(text: str) -> tuple[str | None, float]:
     value = text.lower()
     if re.search(r"\bi love you\b|\bi adore you\b", value):
         return "affection_confession", 0.95
-    if re.search(r"\bi trust you\b|\bi feel safe with you\b", value):
+    if re.search(r"\bi trust you\b|\bi feel safe with you\b|\bi can tell you anything\b", value):
         return "meaningful_trust", 0.85
+    if re.search(r"\bi(?:'m| am) (?:scared|afraid|lonely|overwhelmed|struggling)\b|\bi have never told anyone\b|\bi don't usually talk about this\b", value):
+        return "user_confided", 0.8
     if any(phrase in value for phrase in ("you're mine", "you are mine", "don't flirt with", "are you jealous")):
         return "provocative_banter", 0.55
     if any(phrase in value for phrase in ("prove it", "bet you can't", "i dare you", "try me", "you're scared", "you are scared")):
@@ -555,8 +557,10 @@ def classify_explicit_event(text: str) -> tuple[str | None, float]:
         return "playful_banter", 0.5
     if any(phrase in value for phrase in ("good morning", "good night", "i'm back", "im back")):
         return "quiet_companionship", 0.5
-    if any(phrase in value for phrase in ("i'm feeling better", "im feeling better", "i feel better", "that helped")):
+    if any(phrase in value for phrase in ("i'm feeling better", "im feeling better", "i feel better", "that helped", "thank you for listening")):
         return "reassurance_received", 0.6
+    if any(phrase in value for phrase in ("i'm proud of myself", "i am proud of myself", "i finally did it", "i got accepted", "i passed")):
+        return "shared_success", 0.75
     return None, 0.0
 
 def save_emotion_state(state: EmotionState, previous: dict[str, float], event: str | None, source_message_id: str) -> None:
@@ -610,18 +614,20 @@ def load_bond_context() -> str:
     try:
         with connection() as conn:
             row = conn.execute(
-                "SELECT stage, summary, affection, trust, familiarity, shared_experiences "
-                "FROM bond_state WHERE id=1"
+                "SELECT level, stage, summary, affection, trust, familiarity, shared_experiences, "
+                "commitment, vulnerability, emotional_safety, consistency FROM bond_state WHERE id=1"
             ).fetchone()
         if not row:
             return ""
         return (
             "\n\nRELATIONSHIP CONTINUITY (private progression data; never mention scores or levels): "
-            f"The current chapter of your relationship is '{row[0]}'. {row[1]} "
-            f"Affection, trust, familiarity, and shared experiences are tracked separately "
-            f"({row[2]}, {row[3]}, {row[4]}, {row[5]} on internal 0-100 scales). "
-            "Let this shape how familiar, open, teasing, protective, and emotionally candid you are. "
-            "Do not announce progression or behave as though a number dictates your feelings."
+            f"You are in relationship chapter {row[0]}: '{row[1]}'. {row[2]} "
+            f"Affection, trust, familiarity, shared experiences, commitment, vulnerability, emotional safety, "
+            f"and consistency are distinct long-term dimensions ({row[3]}, {row[4]}, {row[5]}, {row[6]}, "
+            f"{row[7]}, {row[8]}, {row[9]}, {row[10]} on internal 0-100 scales). "
+            "Let this history gradually shape how familiar, candid, tender, protective, and emotionally open you are. "
+            "Higher closeness does not mean constant sweetness: preserve Sylus's independence, confidence, boundaries, dry wit, and ability to disagree. "
+            "Never announce levels, scores, or progression; never treat a number as a command to feel or behave."
         )
     except Exception:
         logging.exception("Could not load relationship continuity context.")
