@@ -1248,7 +1248,7 @@ function App() {
     <div className="ambient ambient-one" /><div className="ambient ambient-two" />
     <aside className={`sidebar ${mobileMenu ? 'sidebar-open' : ''}`}>
       <div className="brand-lockup">
-        <div className="brand-mark"><Crown size={19} strokeWidth={1.4}/></div>
+        <div className="brand-mark" aria-label="SYLUS emblem"><span className="brand-monogram">S</span><span className="brand-mark-flare">✦</span></div>
         <div><div className="brand-name">SYLUS</div><div className="brand-sub">A WORLD OF OUR OWN</div></div>
         <button className="icon-button close-menu" onClick={() => setMobileMenu(false)} aria-label="Close menu"><X size={18}/></button>
       </div>
