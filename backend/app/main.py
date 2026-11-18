@@ -1405,9 +1405,9 @@ def discuss_uploaded_image(asset_id: UUID, _: None = Depends(require_owner)):
     return {"assistant_messages": [MessageOut(id=str(row[0]), role=row[1], text=row[2], created_at=row[3]) for row in rows]}
 
 
-@app.post("/v1/media/upload", response_model=MessageOut)
+@app.post("/v1/media/upload", response_model=ChatTurnOut)
 def upload_image(file: UploadFile = File(...), _: None = Depends(require_owner)):
-    allowed = {"image/jpeg": ("jpg", b"\xff\xd8\xff"), "image/png": ("png", b"\x89PNG\r\n\x1a\n"), "image/webp": ("webp", b"RIFF")}
+    allowed = {"image/jpeg": ("jpg", b"\\xff\\xd8\\xff"), "image/png": ("png", b"\\x89PNG\\r\\n\\x1a\\n"), "image/webp": ("webp", b"RIFF")}
     if file.content_type not in allowed:
         raise HTTPException(status_code=415, detail="Please upload a JPG, PNG, or WebP image.")
     data = file.file.read(8 * 1024 * 1024 + 1)
@@ -1425,9 +1425,54 @@ def upload_image(file: UploadFile = File(...), _: None = Depends(require_owner))
             "INSERT INTO media_assets (message_id, content_type, filename, data) VALUES (%s, %s, %s, %s) RETURNING id",
             (message[0], file.content_type, (file.filename or f"image.{extension}")[:160], data),
         ).fetchone()
-    # Image understanding is server-triggered so it cannot be skipped by a stale or cached frontend.
-    _analyze_uploaded_image(asset[0], data, file.content_type, message[0])
-    return MessageOut(id=str(message[0]), role=message[1], text=message[2], created_at=message[3], media_url=f"/v1/media/{asset[0]}")
+    # Every uploaded image is a conversational turn. Vision enriches the reply when
+    # available; if it is unavailable, Sylus still responds to the act of sharing.
+    analyzed = _analyze_uploaded_image(asset[0], data, file.content_type, message[0])
+    if not analyzed:
+        with connection() as conn:
+            history_rows = conn.execute(
+                "SELECT role, body, created_at, metadata->>'image_context' FROM messages "
+                "WHERE id <> %s AND role IN ('user','assistant') AND archived_at IS NULL "
+                "ORDER BY created_at DESC LIMIT 16", (message[0],),
+            ).fetchall()
+        history = [
+            {"role": row[0], "body": row[1][:1800], "created_at": row[2].isoformat(), "image_context": row[3]}
+            for row in reversed(history_rows)
+        ]
+        fallback_text = (
+            "Umi has just shared an image with you. The image is attached to her message, "
+            "but visual inspection is unavailable right now. Respond naturally to her sharing it, "
+            "as Sylus in an ongoing personal conversation. Do not claim to know what is pictured, "
+            "do not describe unseen details, and do not tell her she must ask a question first."
+        )
+        try:
+            reply = generate_reply(
+                fallback_text, str(message[0]), history,
+                time_context="Umi has just shared an image in the current conversation. Visual inspection is unavailable; respond socially without guessing its contents.",
+            )
+            with connection() as conn:
+                for bubble in split_reply_bubbles(reply):
+                    conn.execute("INSERT INTO messages (role, body) VALUES ('assistant', %s)", (bubble,))
+        except (ProviderNotConfigured, ProviderRequestFailed) as exc:
+            logging.warning("Image was saved but a conversational reply could not be generated: %s", str(exc)[:300])
+    with connection() as conn:
+        assistant_rows = conn.execute(
+            "SELECT id, role, body, created_at FROM messages WHERE role='assistant' AND created_at >= %s "
+            "ORDER BY created_at ASC LIMIT 6", (message[3],),
+        ).fetchall()
+    user_out = MessageOut(
+        id=str(message[0]), role=message[1], text=message[2], created_at=message[3],
+        media_url=f"/v1/media/{asset[0]}",
+    )
+    assistant_out = [
+        MessageOut(id=str(row[0]), role=row[1], text=row[2], created_at=row[3])
+        for row in assistant_rows
+    ]
+    return ChatTurnOut(
+        user_message=user_out, user_messages=[user_out],
+        assistant_message=assistant_out[-1] if assistant_out else None,
+        assistant_messages=assistant_out,
+    )
 
 @app.get("/v1/media/{asset_id}")
 def get_private_image(asset_id: UUID, _: None = Depends(require_owner)):
