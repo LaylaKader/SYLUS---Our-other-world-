@@ -562,7 +562,7 @@ def correct_call_transcript(payload: CallTranscriptCorrectIn, _: None = Depends(
 @app.get("/v1/messages", response_model=list[MessageOut])
 def list_messages(_: None = Depends(require_owner)):
     with connection() as conn:
-        rows = conn.execute("SELECT m.id, m.role, m.body, m.created_at, a.id FROM messages m LEFT JOIN media_assets a ON a.message_id = m.id WHERE m.role IN ('user','assistant') AND m.archived_at IS NULL ORDER BY m.created_at ASC").fetchall()
+        rows = conn.execute("SELECT m.id, m.role, m.body, m.created_at, a.id FROM messages m LEFT JOIN media_assets a ON a.message_id = m.id WHERE m.role IN ('user','assistant') AND m.archived_at IS NULL ORDER BY m.created_at ASC, m.ctid ASC").fetchall()
     return [MessageOut(id=str(r[0]), role=r[1], text=r[2], created_at=r[3], media_url=f'/v1/media/{r[4]}' if r[4] else None) for r in rows]
 
 @app.delete("/v1/messages")
