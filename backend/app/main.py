@@ -981,31 +981,26 @@ def accept_vision_license(_: None = Depends(require_owner)):
         conn.execute("INSERT INTO provider_acceptances (provider) VALUES ('cloudflare_meta_vision') ON CONFLICT (provider) DO NOTHING")
     return {"vision_ready": True}
 
-@app.post("/v1/media/{asset_id}/discuss")
-def discuss_uploaded_image(asset_id: UUID, _: None = Depends(require_owner)):
+def _analyze_uploaded_image(asset_id: UUID, image_bytes: bytes, content_type: str, message_id: UUID) -> bool:
+    """Analyze the actual uploaded pixels on the server, independent of frontend behavior."""
     with connection() as conn:
         accepted = conn.execute("SELECT 1 FROM provider_acceptances WHERE provider = 'cloudflare_meta_vision'").fetchone()
-        asset = conn.execute(
-            "SELECT a.data, a.content_type, a.message_id FROM media_assets a JOIN messages m ON m.id = a.message_id "
-            "WHERE a.id = %s AND m.archived_at IS NULL", (asset_id,),
-        ).fetchone()
         if not accepted:
-            raise HTTPException(status_code=428, detail="Accept Meta's model license in Settings before asking Sylus to interpret images.")
-        if not asset:
-            raise HTTPException(status_code=404, detail="Image not found.")
+            logging.warning("Image uploaded but vision license has not been accepted; asset=%s", asset_id)
+            return False
         history_rows = conn.execute(
             "SELECT role, body, created_at, metadata->>'image_context' FROM messages WHERE id <> %s AND role IN ('user','assistant') "
-            "AND archived_at IS NULL ORDER BY created_at DESC LIMIT 18", (asset[2],),
+            "AND archived_at IS NULL ORDER BY created_at DESC LIMIT 18", (message_id,),
         ).fetchall()
-    image_data = "data:" + asset[1] + ";base64," + base64.b64encode(bytes(asset[0])).decode("ascii")
+    image_data = "data:" + content_type + ";base64," + base64.b64encode(image_bytes).decode("ascii")
     try:
         vision_response = httpx.post(
             "https://api.cloudflare.com/client/v4/accounts/" + settings.cloudflare_account_id + "/ai/run/@cf/meta/llama-3.2-11b-vision-instruct",
             headers={"Authorization": f"Bearer {settings.cloudflare_api_token}", "Content-Type": "application/json"},
             json={"messages": [{"role": "user", "content": [
-                {"type": "text", "text": "You are Sylus’s private visual-analysis system. Inspect the actual image pixels carefully and create concise, evidence-grounded visual notes that will be retained so Sylus can answer both immediate and later questions about this exact image. Return plain text with short labeled lines, NOT JSON and NOT a user-facing caption. Include: (1) overall scene and main subject; (2) any recognizable fictional character only when supported by visible evidence; (3) clothing and accessories, including each clearly visible garment and its exact colors, patterns, material appearance, and placement; (4) other notable objects and where they appear; (5) readable text, transcribed exactly when legible; (6) notable facial expression, pose, art style, lighting, and background; (7) uncertainty or details too small/obscured to verify. Be specific enough to answer questions such as “what colour is the outfit?”, “what is written here?”, “who is pictured?”, and “what is that object?”. Separate direct observation from interpretation. Never infer real-world identity, sensitive traits, relationships, or unseen context. Never guess a color or text that is not clearly visible. If the image is unclear, say so. Keep notes compact but information-rich (roughly 6–10 short lines)."},
+                {"type": "text", "text": "You are Sylus’s private visual-analysis system. Inspect the actual image pixels carefully. Do not infer from the filename, conversation, or what the user might expect. Return plain text with short labeled lines, NOT JSON and NOT a user-facing caption. Describe: main subject and scene; recognizable fictional character only when visually supported; each visible garment and its exact color; flowers/plants and their distinguishing features; notable objects; readable text exactly; pose, expression, lighting, and background. For colors, distinguish gold/yellow, red, orange, cream, and brown carefully. For flowers, do not identify a species from color alone: use petal shape, arrangement, leaves, and visible structure; state uncertainty if these are insufficient. Separate direct observations from interpretation. Never guess. If the image is unclear, say what cannot be verified. Keep notes compact but specific (6–10 lines)."},
                 {"type": "image_url", "image_url": {"url": image_data}},
-            ]}], "max_tokens": 512, "temperature": 0.2},
+            ]}], "max_tokens": 600, "temperature": 0.1},
             timeout=90.0,
         )
         vision_response.raise_for_status()
@@ -1015,47 +1010,66 @@ def discuss_uploaded_image(asset_id: UUID, _: None = Depends(require_owner)):
             vision_result.get("response", "") if isinstance(vision_result, dict)
             else vision_result if isinstance(vision_result, str) else ""
         )
-        if not visual_description:
-            logging.error("Cloudflare vision returned no text. Response keys: %s", list(vision_payload.keys()))
+        if not visual_description.strip():
             raise ValueError("The vision model returned no description.")
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, ValueError) as exc:
         status = getattr(getattr(exc, "response", None), "status_code", None)
-        detail = getattr(getattr(exc, "response", None), "text", "")[:500]
-        logging.error("Cloudflare vision request failed (HTTP %s): %s", status or "unknown", detail)
-        raise HTTPException(status_code=502, detail=f"Image understanding failed (provider HTTP {status or 'error'}). The image remains saved privately.") from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=502, detail="Image understanding returned an empty result. The image remains saved privately.") from exc
-    history = [
-        {"role": r[0], "body": r[1][:1800], "created_at": r[2].isoformat(), "image_context": r[3]}
-        for r in reversed(history_rows)
-    ]
+        logging.error("Automatic image analysis failed asset=%s provider_status=%s error=%s", asset_id, status, str(exc)[:400])
+        return False
+
     with connection() as conn:
         conn.execute(
-            "UPDATE messages SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('image_context', %s::text) WHERE id = %s",
-            (visual_description[:3500], asset[2]),
+            "UPDATE messages SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('image_context', %s::text, 'image_analysis_status', 'complete') WHERE id = %s",
+            (visual_description[:3500], message_id),
         )
+        history_rows = conn.execute(
+            "SELECT role, body, created_at, metadata->>'image_context' FROM messages WHERE id <> %s AND role IN ('user','assistant') "
+            "AND archived_at IS NULL ORDER BY created_at DESC LIMIT 18", (message_id,),
+        ).fetchall()
+    history = [
+        {"role": row[0], "body": row[1][:1800], "created_at": row[2].isoformat(), "image_context": row[3]}
+        for row in reversed(history_rows)
+    ]
     user_text = (
-        "Umi has just shown you an image. Your private visual impression: "
+        "Umi has just shared an image. Your private visual observations from the actual pixels are below. "
+        "Use them as reliable evidence, but do not recite them as a caption. React naturally to her sharing it. "
+        "If she asks what something is, answer from the observations and admit uncertainty rather than guessing.\n\n"
         + visual_description[:3500]
-        + "\nReact to her act of sharing it as Sylus would in a private conversation. "
-        "Give a genuine personal reaction, not a caption or inventory. If she asks who is pictured, identify the person or character when the visual evidence supports it; be candid if uncertain."
     )
     try:
-        answer = generate_reply(user_text, str(asset[2]), history, time_context="Umi has just shared an image in the current conversation.")
+        answer = generate_reply(user_text, str(message_id), history, time_context="Umi has just shared an image in the current conversation.")
+        bubbles = split_reply_bubbles(answer)
+        with connection() as conn:
+            for bubble in bubbles:
+                conn.execute("INSERT INTO messages (role, body) VALUES ('assistant', %s)", (bubble,))
+        logging.info("Automatic image analysis and reaction completed asset=%s notes_chars=%s bubbles=%s", asset_id, len(visual_description), len(bubbles))
     except (ProviderRequestFailed, ProviderNotConfigured) as exc:
-        raise HTTPException(status_code=502, detail="I could inspect the image, but Sylus could not reply. The image remains saved privately.") from exc
-    bubbles = split_reply_bubbles(answer)
+        logging.warning("Image was analyzed and saved, but Sylus could not generate a reaction asset=%s error=%s", asset_id, str(exc)[:300])
+    return True
+
+
+@app.post("/v1/media/{asset_id}/discuss")
+def discuss_uploaded_image(asset_id: UUID, _: None = Depends(require_owner)):
     with connection() as conn:
-        rows = [
-            conn.execute(
-                "INSERT INTO messages (role, body) VALUES ('assistant', %s) RETURNING id, role, body, created_at",
-                (bubble,),
-            ).fetchone()
-            for bubble in bubbles
-        ]
-    return {"assistant_messages": [
-        MessageOut(id=str(r[0]), role=r[1], text=r[2], created_at=r[3]) for r in rows
-    ]}
+        asset = conn.execute(
+            "SELECT a.data, a.content_type, a.message_id FROM media_assets a JOIN messages m ON m.id = a.message_id "
+            "WHERE a.id = %s AND m.archived_at IS NULL", (asset_id,),
+        ).fetchone()
+        if not asset:
+            raise HTTPException(status_code=404, detail="Image not found.")
+        existing = conn.execute("SELECT metadata->>'image_context' FROM messages WHERE id = %s", (asset[2],)).fetchone()
+    if existing and existing[0]:
+        return {"assistant_messages": []}
+    completed = _analyze_uploaded_image(asset_id, bytes(asset[0]), asset[1], asset[2])
+    if not completed:
+        raise HTTPException(status_code=503, detail="Sylus could not inspect this image. Check that image understanding is enabled in Settings and try again.")
+    with connection() as conn:
+        rows = conn.execute(
+            "SELECT id, role, body, created_at FROM messages WHERE role = 'assistant' AND created_at >= "
+            "(SELECT created_at FROM messages WHERE id = %s) ORDER BY created_at ASC LIMIT 4", (asset[2],),
+        ).fetchall()
+    return {"assistant_messages": [MessageOut(id=str(row[0]), role=row[1], text=row[2], created_at=row[3]) for row in rows]}
+
 
 @app.post("/v1/media/upload", response_model=MessageOut)
 def upload_image(file: UploadFile = File(...), _: None = Depends(require_owner)):
@@ -1077,6 +1091,8 @@ def upload_image(file: UploadFile = File(...), _: None = Depends(require_owner))
             "INSERT INTO media_assets (message_id, content_type, filename, data) VALUES (%s, %s, %s, %s) RETURNING id",
             (message[0], file.content_type, (file.filename or f"image.{extension}")[:160], data),
         ).fetchone()
+    # Image understanding is server-triggered so it cannot be skipped by a stale or cached frontend.
+    _analyze_uploaded_image(asset[0], data, file.content_type, message[0])
     return MessageOut(id=str(message[0]), role=message[1], text=message[2], created_at=message[3], media_url=f"/v1/media/{asset[0]}")
 
 @app.get("/v1/media/{asset_id}")
