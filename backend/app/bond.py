@@ -65,7 +65,7 @@ def refresh_bond() -> dict:
     """Backfill unseen user events once, then return the durable relationship state."""
     with connection() as conn:
         rows = conn.execute(
-            "SELECT id, body, created_at FROM messages WHERE role='user' ORDER BY created_at ASC"
+            "SELECT id, body, created_at FROM messages WHERE role='user' AND archived_at IS NULL ORDER BY created_at ASC"
         ).fetchall()
         # Revisit all retained messages, including history before the progression rebasing.
         # Stable event fingerprints make this backfill idempotent.
@@ -126,7 +126,7 @@ def refresh_bond() -> dict:
 
         user_count = len(rows) + call_user_count
         turns = min(user_count, conn.execute(
-            "SELECT count(*) FROM messages WHERE role='assistant'"
+            "SELECT count(*) FROM messages WHERE role='assistant' AND archived_at IS NULL"
         ).fetchone()[0] + call_assistant_count)
         active_days = len({r[2].date() for r in rows if r[2]} | call_days)
         # Familiarity and consistency reward time spent together, but both have diminishing returns.
