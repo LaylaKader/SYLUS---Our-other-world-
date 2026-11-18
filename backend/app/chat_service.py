@@ -511,6 +511,8 @@ def classify_explicit_event(text: str) -> tuple[str | None, float]:
         return "meaningful_trust", 0.85
     if any(phrase in value for phrase in ("you're mine", "you are mine", "don't flirt with", "are you jealous")):
         return "provocative_banter", 0.55
+    if any(phrase in value for phrase in ("prove it", "bet you can't", "i dare you", "try me", "you're scared", "you are scared")):
+        return "competitive_challenge", 0.70
     if any(phrase in value for phrase in ("i'm sorry", "im sorry", "forgive me", "i didn't mean to hurt")):
         return "conflict_repair", 0.65
     if any(phrase in value for phrase in (
