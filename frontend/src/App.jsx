@@ -160,6 +160,7 @@ function App() {
   const [visualCategoryDraft, setVisualCategoryDraft] = useState('other');
   const [visualNameDraft, setVisualNameDraft] = useState('');
   const [visualNotesDraft, setVisualNotesDraft] = useState('');
+  const [visualNoteDrafts, setVisualNoteDrafts] = useState({});
   const [visualBusy, setVisualBusy] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedMessageIds, setSelectedMessageIds] = useState([]);
