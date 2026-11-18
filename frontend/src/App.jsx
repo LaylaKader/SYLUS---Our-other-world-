@@ -101,6 +101,7 @@ function App() {
   const [autoReadEnabled, setAutoReadEnabled] = useState(() => { try { return window.localStorage.getItem('sylus-auto-read') === 'true'; } catch { return false; } });
   const autoReadQueueRef = useRef([]);
   const autoReadSeenRef = useRef(new Set());
+  const autoReadBaselineRef = useRef(false);
   const [speakingMessageId, setSpeakingMessageId] = useState(null);
   const audioContextRef = useRef(null);
   const audioSourceRef = useRef(null);
@@ -514,7 +515,12 @@ function App() {
 
   useEffect(() => {
     try { window.localStorage.setItem('sylus-auto-read', autoReadEnabled ? 'true' : 'false'); } catch {}
-    if (!autoReadEnabled) { autoReadQueueRef.current = []; return; }
+    if (!autoReadEnabled || !chatReady) { autoReadQueueRef.current = []; return; }
+    if (!autoReadBaselineRef.current) {
+      messages.filter(message => message.role === 'assistant').forEach(message => autoReadSeenRef.current.add(message.id));
+      autoReadBaselineRef.current = true;
+      return;
+    }
     for (const message of messages) {
       if (message.role === 'assistant' && !autoReadSeenRef.current.has(message.id)) {
         autoReadSeenRef.current.add(message.id);
@@ -526,7 +532,7 @@ function App() {
       const nextMessage = messages.find(message => message.id === nextId);
       if (nextMessage) readAloud(nextMessage);
     }
-  }, [messages, autoReadEnabled, speakingMessageId, playingAudioId, audioBuffers, audioErrors]);
+  }, [messages, autoReadEnabled, chatReady, speakingMessageId, playingAudioId, audioBuffers, audioErrors]);
 
   async function refreshApp() {
     setNotice('Refreshing the app…');
@@ -738,7 +744,7 @@ function App() {
       </header>
 
       {active === 'chat' && <section className="chat-view">
-        <div className="chat-heading"><div><div className="eyebrow"><span className="eyebrow-line"/> THE N109 CONNECTION</div><h1>Our conversations<span className="heading-period">.</span></h1><p className="subheading">A quiet corner of the world, just for us.</p><div className="chat-quick-actions"><button className={`secondary-button auto-read-toggle ${autoReadEnabled ? "active" : ""}`} onClick={() => setAutoReadEnabled(value => !value)} disabled={!connected || !timeContext?.voice_ready} aria-pressed={autoReadEnabled}>{autoReadEnabled ? "Auto-read · On" : "Auto-read · Off"}</button><span className="field-help">Automatically speaks new replies</span></div></div><button className="more-button reset-chat-button" aria-label="Erase chat and memories" title="Permanently erase chat and memories" onClick={resetChat} disabled={!connected || messageActionBusy}><MoreHorizontal size={20}/></button></div>
+        <div className="chat-heading"><div><div className="eyebrow"><span className="eyebrow-line"/> THE N109 CONNECTION</div><h1>Our conversations<span className="heading-period">.</span></h1><p className="subheading">A quiet corner of the world, just for us.</p><div className="chat-quick-actions"><button className={`secondary-button auto-read-toggle ${autoReadEnabled ? "active" : ""}`} onClick={() => { if (!autoReadEnabled) { messages.filter(message => message.role === 'assistant').forEach(message => autoReadSeenRef.current.add(message.id)); autoReadBaselineRef.current = true; } else { autoReadQueueRef.current = []; } setAutoReadEnabled(value => !value); }} disabled={!connected || !timeContext?.voice_ready} aria-pressed={autoReadEnabled}>{autoReadEnabled ? "Auto-read · On" : "Auto-read · Off"}</button><span className="field-help">Automatically speaks new replies</span></div></div><button className="more-button reset-chat-button" aria-label="Erase chat and memories" title="Permanently erase chat and memories" onClick={resetChat} disabled={!connected || messageActionBusy}><MoreHorizontal size={20}/></button></div>
         <div className="chat-stage">
           {messages.length === 0 ? <div className="empty-state">
             <div className="sigil-wrap"><div className="sigil-ring ring-one"/><div className="sigil-ring ring-two"/><div className="sigil-center"><Crown size={31} strokeWidth={1}/></div><span className="sigil-star star-a">✧</span><span className="sigil-star star-b">✦</span><span className="sigil-star star-c">·</span></div>
