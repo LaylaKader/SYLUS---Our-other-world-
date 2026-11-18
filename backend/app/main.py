@@ -1574,9 +1574,9 @@ def _generate_and_store_assistant_image(prompt: str, caption: str = "For you.") 
         raise HTTPException(status_code=502, detail="The image generator could not create the picture this time.") from exc
     if image_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
         content_type, extension = "image/png", "png"
-    if image_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+    elif image_bytes.startswith(b"\xff\xd8\xff"):
         content_type, extension = "image/jpeg", "jpg"
-    if image_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+    elif image_bytes.startswith(b"RIFF") and image_bytes[8:12] == b"WEBP":
         content_type, extension = "image/webp", "webp"
     else:
         content_type, extension = "image/png", "png"
