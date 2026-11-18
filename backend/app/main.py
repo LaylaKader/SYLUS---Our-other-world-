@@ -1182,8 +1182,8 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
     )
     return {"sent": True, "messages": messages, "push": push_result}
 
-def poll_proactive_call_invite() -> dict:
-    """Use a rare, un-timed call impulse; explicit owner pauses still take precedence."""
+def poll_proactive_call_invite(*, allow_foreground: bool = False) -> dict:
+    """Offer spontaneous calls; foreground tabs can receive invites without push setup."""
     now_utc = datetime.now(timezone.utc)
     with connection() as conn:
         row = conn.execute(
@@ -1207,7 +1207,7 @@ def poll_proactive_call_invite() -> dict:
         if active_call:
             return {"sent": False, "reason": "voice_call_in_progress"}
         subscriptions = conn.execute("SELECT count(*) FROM push_subscriptions").fetchone()[0]
-        if not subscriptions:
+        if not subscriptions and not allow_foreground:
             return {"sent": False, "reason": "no_push_subscription"}
         last_invite = row[3]
         if last_invite:
@@ -1219,9 +1219,9 @@ def poll_proactive_call_invite() -> dict:
                 "COALESCE((SELECT max(last_activity_at) FROM call_sessions), '-infinity'::timestamptz))"
             ).fetchone()[0]
             elapsed_seconds = max(0.0, (now_utc - last_activity).total_seconds()) if last_activity else 0.0
-        # Roughly one spontaneous call invitation every three days on average.
+        # Roughly one spontaneous call invitation per day on average.
         # This is a probability, not a cooldown or a clock-based restriction.
-        chance = 1.0 - math.exp(-elapsed_seconds / (72 * 60 * 60))
+        chance = 1.0 - math.exp(-elapsed_seconds / (24 * 60 * 60))
         conn.execute(
             "UPDATE proactive_contact_settings SET last_call_invite_at=%s, updated_at=now() WHERE id=1",
             (now_utc,),
@@ -1232,17 +1232,20 @@ def poll_proactive_call_invite() -> dict:
         "Sylus is calling",
         "A moment for just us? Tap to open the private voice channel.",
         url="/?incoming-call=1",
-    )
+    ) if subscriptions else {"accepted": 0, "failed": 0}
     if result.get("accepted", 0) > 0:
         logging.info("Sylus call invitation accepted by %s push provider(s).", result["accepted"])
-        return {"sent": True, "accepted": result["accepted"]}
+        return {"sent": True, "accepted": result["accepted"], "delivery": "push"}
+    if allow_foreground:
+        logging.info("Sylus call invitation delivered to the active foreground session.")
+        return {"sent": True, "accepted": 0, "delivery": "foreground"}
     return {"sent": False, "reason": "push_delivery_failed", **result}
 
 
 @app.post("/v1/proactive/call-poll")
 def owner_poll_proactive_call(_: None = Depends(require_owner)):
-    """Foreground call invitation check; background scheduler uses the same decision engine."""
-    return poll_proactive_call_invite()
+    """Foreground call invitation check; the active tab can receive it without push."""
+    return poll_proactive_call_invite(allow_foreground=True)
 
 
 @app.post("/internal/proactive/run")
