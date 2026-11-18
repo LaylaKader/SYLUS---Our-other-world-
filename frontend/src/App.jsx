@@ -620,6 +620,7 @@ function App() {
   }
 
   async function sendCallUtterance(spokenText) {
+    setCallBusy(true);
     setCallStatus('Sylus is listening…');
     try {
       const response = await fetch(apiUrl.replace(/\/$/, '') + '/v1/chat', {
@@ -643,6 +644,7 @@ function App() {
     } catch (error) {
       setCallStatus(error.message || 'The voice conversation was interrupted.');
     } finally {
+      setCallBusy(false);
       callProcessingRef.current = false;
       if (callActiveRef.current) window.setTimeout(() => startCallRecognition(), 550);
     }
@@ -691,6 +693,7 @@ function App() {
   useEffect(() => {
     try { window.localStorage.setItem('sylus-auto-read', autoReadEnabled ? 'true' : 'false'); } catch {}
     if (!autoReadEnabled || !chatReady) { autoReadQueueRef.current = []; return; }
+    if (callActiveRef.current) { messages.filter(message => message.role === 'assistant').forEach(message => autoReadSeenRef.current.add(message.id)); autoReadQueueRef.current = []; return; }
     if (!autoReadBaselineRef.current) {
       messages.filter(message => message.role === 'assistant').forEach(message => autoReadSeenRef.current.add(message.id));
       autoReadBaselineRef.current = true;
