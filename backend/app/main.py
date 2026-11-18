@@ -1013,13 +1013,53 @@ def apply_spoken_call_boundary(text: str, timezone_name: str) -> None:
         )
 
 
+def proactive_contact_decision(
+    now_utc: datetime,
+    last_activity: datetime,
+    last_proactive_at: datetime | None,
+    cycle_count: int,
+    pause_until: datetime | None,
+    min_idle_minutes: int = 60,
+    min_interval_minutes: int = 15,
+) -> dict:
+    """Deterministic idle contact cycle with spaced follow-ups."""
+    idle_minutes = max(0.0, (now_utc - last_activity).total_seconds() / 60)
+    owner_replied = last_proactive_at is None or last_activity > last_proactive_at
+    count = 0 if owner_replied else cycle_count
+    pause = None if owner_replied else pause_until
+    is_followup = not owner_replied
+
+    if idle_minutes < min_idle_minutes:
+        return {"due": False, "reason": "owner_recently_active", "is_followup": False,
+                "cycle_count": count, "pause_until": pause, "idle_minutes": idle_minutes}
+    if pause and pause > now_utc:
+        return {"due": False, "reason": "cycle_pause", "is_followup": True,
+                "cycle_count": count, "pause_until": pause, "idle_minutes": idle_minutes}
+    if pause and pause <= now_utc:
+        count, pause, is_followup = 0, None, True
+    if is_followup and last_proactive_at:
+        if count >= 3:
+            pause = last_proactive_at + timedelta(hours=1)
+            if pause > now_utc:
+                return {"due": False, "reason": "cycle_pause", "is_followup": True,
+                        "cycle_count": count, "pause_until": pause, "idle_minutes": idle_minutes}
+            count, pause = 0, None
+        if (now_utc - last_proactive_at).total_seconds() < min_interval_minutes * 60:
+            return {"due": False, "reason": "followup_spacing", "is_followup": True,
+                    "cycle_count": count, "pause_until": pause, "idle_minutes": idle_minutes}
+    return {"due": True, "reason": "followup_due" if is_followup else "initial_message_due",
+            "is_followup": is_followup, "cycle_count": count, "pause_until": pause,
+            "idle_minutes": idle_minutes}
+
+
 @app.post("/v1/proactive/poll")
 def poll_proactive_messages(_: None = Depends(require_owner)):
-    """Use a stochastic contact impulse, not minimum-idle timers or cooldowns."""
+    """Start after the idle threshold, send spaced follow-ups, then pause for an hour."""
     now_utc = datetime.now(timezone.utc)
     with connection() as conn:
         row = conn.execute(
-            "SELECT messages_enabled, timezone, last_proactive_at "
+            "SELECT messages_enabled, min_idle_minutes, min_interval_minutes, timezone, "
+            "last_proactive_at, proactive_cycle_count, proactive_pause_until "
             "FROM proactive_contact_settings WHERE id = 1 FOR UPDATE"
         ).fetchone()
         if not row or not row[0]:
@@ -1046,18 +1086,27 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
         ).fetchone()
         if not last_user or not last_user[0] or not last_activity or not last_activity[0]:
             return {"sent": False, "reason": "no_conversation", "messages": []}
-        last_decision = row[2] if row[2] and row[2] > last_activity[0] else last_activity[0]
-        elapsed_seconds = max(0.0, (now_utc - last_decision).total_seconds())
-        # Poisson-style timing: about 2 natural message opportunities per day on average.
-        # This is not a minimum interval; every poll has a small chance, at any hour.
-        chance = 1.0 - math.exp(-elapsed_seconds / (12 * 60 * 60))
-        conn.execute(
-            "UPDATE proactive_contact_settings SET last_proactive_at=%s, updated_at=now() WHERE id=1",
-            (now_utc,),
+
+        decision = proactive_contact_decision(
+            now_utc, last_activity[0], row[4], int(row[5] or 0), row[6],
+            int(row[1] or 60), int(row[2] or 15),
         )
-        if random.random() >= chance:
-            return {"sent": False, "reason": "no_natural_impulse", "messages": []}
-        tz_name = row[1] or DEFAULT_TIMEZONE
+        if not decision["due"]:
+            if decision["cycle_count"] != int(row[5] or 0) or decision["pause_until"] != row[6]:
+                conn.execute(
+                    "UPDATE proactive_contact_settings SET proactive_cycle_count=%s, "
+                    "proactive_pause_until=%s, updated_at=now() WHERE id=1",
+                    (decision["cycle_count"], decision["pause_until"]),
+                )
+            return {"sent": False, "reason": decision["reason"], "messages": []}
+
+        # Reserve this slot before generation so foreground/background polls cannot duplicate it.
+        conn.execute(
+            "UPDATE proactive_contact_settings SET last_proactive_at=%s, "
+            "proactive_cycle_count=%s, proactive_pause_until=%s, updated_at=now() WHERE id=1",
+            (now_utc, decision["cycle_count"], decision["pause_until"]),
+        )
+        tz_name = row[3] or DEFAULT_TIMEZONE
         try:
             local_zone = ZoneInfo(tz_name)
         except Exception:
@@ -1087,11 +1136,17 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
         {"role": r[0], "body": r[1][:1800], "created_at": r[2].isoformat(), "image_context": r[3]}
         for r in reversed(history_rows)
     ]
+    contact_note = (
+        f"The owner has been inactive for about {int(decision['idle_minutes'])} minutes. "
+        + ("You have already sent a message since her last reply. This is a separate follow-up; "
+           "do not repeat yourself or pressure her.\n" if decision["is_followup"] else
+           "This is your opportunity to initiate a conversation naturally.\n")
+    )
     time_note = (
         f"Current owner-local time: {local_now.strftime('%A, %Y-%m-%d %H:%M:%S')} ({tz_name}). "
         f"Simulated N109 clock: {n109_now.strftime('%A, %H:%M')} (UTC+08:00; an internal fictional clock, not official canon). "
         f"Possible N109 daily rhythm at this hour: {rhythm}. This is atmosphere, not a report of a specific event. "
-        "The two worlds have separate clocks. Reach out at any hour if it feels natural; do not follow a fixed schedule."
+        "The two worlds have separate clocks. Reach out naturally, in your own voice. " + contact_note
     )
     try:
         bubbles = generate_proactive_bubbles(history, time_context=time_note)[:1]
@@ -1108,14 +1163,24 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
             ).fetchone()
             for bubble in bubbles
         ]
+        if decision["is_followup"]:
+            next_count = min(3, decision["cycle_count"] + 1)
+            next_pause = now_utc + timedelta(hours=1) if next_count >= 3 else None
+        else:
+            next_count, next_pause = 0, None
+        conn.execute(
+            "UPDATE proactive_contact_settings SET proactive_cycle_count=%s, "
+            "proactive_pause_until=%s, updated_at=now() WHERE id=1",
+            (next_count, next_pause),
+        )
     messages = [MessageOut(id=str(r[0]), role=r[1], text=r[2], created_at=r[3]) for r in created_rows]
     push_result = send_push_notification("Sylus", bubbles[0])
     logging.info(
-        "Proactive message saved; push provider accepted=%s failed=%s.",
+        "Proactive message saved; followup_count=%s pause_until=%s push_accepted=%s push_failed=%s.",
+        next_count, next_pause.isoformat() if next_pause else None,
         push_result.get("accepted", 0), push_result.get("failed", 0),
     )
     return {"sent": True, "messages": messages, "push": push_result}
-
 
 def poll_proactive_call_invite() -> dict:
     """Use a rare, un-timed call impulse; explicit owner pauses still take precedence."""
