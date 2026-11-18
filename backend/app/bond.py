@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import hashlib
 from datetime import datetime, timezone
 from .db import connection
 
@@ -26,7 +27,7 @@ def _clamp(value: float) -> int:
 
 def _signals(text: str) -> list[tuple[str, str, str, dict[str, int], int]]:
     """Return grounded, user-authored signals. One message can earn at most two distinct events."""
-    value = text.casefold()
+    value = re.sub(r"\s+", " ", text.casefold()).strip()
     found = []
     rules = [
         ("affection", "Affection shared", "An affectionate moment was openly shared.", r"\bi love you\b|\bi adore you\b|\bi miss you\b|\bi wish we (?:could|were) together\b|\bi (?:really )?like spending time with you\b|\bi miss talking to you\b|\bi was thinking about you\b|\bi look forward to (?:talking|our conversations)\b|\bi like having you around\b|\bi wish you were here\b|\byou make me smile\b", {"affection": 7, "commitment": 2}, 9),
@@ -34,13 +35,13 @@ def _signals(text: str) -> list[tuple[str, str, str, dict[str, int], int]]:
         ("comfort", "Ease and comfort", "Umi expressed that she can relax, be herself, or speak freely with Sylus.", r"\bi feel (?:comfortable|at ease|at home|relaxed|understood) (?:with you|around you|talking to you)\b|\bi feel understood\b|\bi can be myself (?:with you|around you)\b|\bi don't have to pretend\b|\bi can talk to you (?:about anything|freely)\b|\bit's easy to talk to you\b|\bi can relax around you\b|\byou make me feel at ease\b|\bi don't feel judged\b|\bi feel calmer after talking to you\b|\bi feel like i can just be me\b", {"emotional_safety": 7, "trust": 3, "familiarity": 2}, 8),
         ("vulnerability", "A guarded truth", "Umi shared a difficult feeling or personal vulnerability.", r"\bi feel (?:scared|afraid|lonely|overwhelmed|hopeless|insecure|ashamed|embarrassed|vulnerable|anxious|worried)\b|\bi(?:'m| am) (?:struggling|not okay|having a hard time|not used to opening up)\b|\bi have never told anyone\b|\bi(?:'ve| have) never (?:said|shared|admitted) this (?:before|to anyone)\b|\bi don't usually talk about this\b|\bthis is hard to admit\b|\bi'm afraid to tell you\b|\bi've been keeping this to myself\b|\bi usually keep this to myself\b|\bi haven't told anyone (?:else|about this)\b|\bi'm embarrassed to admit\b|\bi don't know how to say this\b|\bi need you to listen\b|\bi'm not used to sharing this\b|\bi'm scared you'll think\b", {"vulnerability": 8, "emotional_safety": 4, "trust": 3}, 9),
         ("repair", "A moment of repair", "A disagreement or hurt was approached with honesty and care.", r"\bi(?:'m| am) sorry\b|\bi didn't mean to hurt\b|\blet's talk this through\b|\bi forgive you\b|\bcan we work this out\b", {"trust": 3, "emotional_safety": 5, "commitment": 3}, 8),
-        ("shared_memory", "A memory revisited", "A shared story, Memoria, or meaningful detail was brought back into the present.", r"\bmemoria\b|\bwithin reach\b|\bthe first time we\b|\bremember when we\b|\bour memory\b", {"familiarity": 5, "shared_experiences": 7, "affection": 1}, 8),
-        ("shared_world", "A world in common", "A meaningful part of the shared N109 world or its people entered the conversation.", r"\bmephisto\b|\bn109\b|\bonychinus\b|\bluke and kieran\b|\bciren\b|\bsenlu\b", {"familiarity": 3, "shared_experiences": 4}, 4),
+        ("shared_memory", "A memory revisited", "A specific shared moment or story was brought back into the present.", r"\bremember when we\b|\bour first (?:time|date|call|trip|game|conversation)\b|\bthat time we\b|\bwe did that together\b|\bwe talked about this before\b", {"familiarity": 2, "shared_experiences": 8, "affection": 1}, 8),
+        ("shared_world", "A world in common", "A recurring part of the fictional world you both enjoy entered the conversation.", r"\bmephisto\b|\bn109\b|\bonychinus\b|\bluke and kieran\b|\bciren\b|\bsenlu\b", {"familiarity": 1, "shared_experiences": 1}, 2),
         ("achievement", "A win worth sharing", "A personal achievement or difficult step was shared.", r"\bi (?:passed|got accepted|got the offer|finished|submitted|won|succeeded)\b|\bi did it\b|\bi finally (?:managed|completed)\b", {"shared_experiences": 4, "commitment": 2, "affection": 2}, 7),
         ("playful", "A private joke", "Playful teasing or a recurring in-joke added to your shared rhythm.", r"\bmephi-chan\b|\bmistress\b|\bkitten\b|😜|😏|🫣|🤭|🤣|😂|\byou're impossible\b|\btry me\b", {"familiarity": 3, "affection": 1}, 3),
         ("gratitude", "Care acknowledged", "Umi acknowledged a moment of care or understanding.", r"\bthank you for listening\b|\bthat helped me\b|\bi appreciate you\b|\bi'm glad i told you\b|\bi feel better now\b", {"emotional_safety": 4, "trust": 2, "affection": 2}, 6),
-        ("shared_media", "Something shown to each other", "A picture, song, or small discovery was shared between you.", r"\bshared an image\b|\blook at (?:this|that|the picture)\b|\bi just saw (?:a|this) (?:reel|video|picture|photo)\b|\blisten to this\b", {"shared_experiences": 3, "familiarity": 2}, 4),
-        ("daily_life", "A detail from everyday life", "A small detail from ordinary life became part of your shared context.", r"\bwhat are you doing\b|\bhow was your day\b|\bgood morning\b|\bgood night\b|\bi'm back\b|\bim back\b", {"familiarity": 2, "shared_experiences": 1}, 2),
+        ("shared_media", "Something shown to each other", "An actual image, song, or video was shared and discussed.", r"\bshared an image\b|\bi just saw (?:a|this) (?:reel|video|picture|photo)\b|\blisten to this\b|\bhere is (?:a|the) (?:photo|picture|image|video)\b", {"shared_experiences": 5, "familiarity": 1}, 5),
+        ("daily_life", "A detail from everyday life", "A personal detail, preference, routine, or piece of background became part of your shared context.", r"\bmy (?:favorite|favourite|usual|daily|morning|evening)\b|\bi (?:usually|often|rarely|always|never)\b|\bi (?:study|work|live|grew up|prefer|love|hate|dislike)\b|\bwhen i was (?:younger|a child|little)\b|\bi'm (?:a student|studying|working)\b|\bmy routine\b", {"familiarity": 3}, 3),
         ("trust_breach", "Trust needs repair", "A clear statement of broken trust or a broken promise was expressed.", r"\bi can't trust you\b|\byou lied to me\b|\byou broke your promise\b|\byou ignored my boundary\b|\bi don't feel safe with you\b", {"trust": -10, "emotional_safety": -9, "commitment": -3}, -6),
         ("commitment", "Choosing to return", "A clear intention to keep building the connection was expressed.", r"\bi want us to\b|\bi want to keep (?:this|building)\b|\bi choose you\b|\bi'm not going anywhere\b|\blet's keep (?:this|going)\b", {"commitment": 8, "trust": 2, "affection": 2}, 10),
     ]
@@ -68,10 +69,18 @@ def refresh_bond() -> dict:
         rows = conn.execute(
             "SELECT id, body, created_at FROM messages WHERE role='user' ORDER BY created_at ASC"
         ).fetchall()
+        progression_started_at = conn.execute(
+            "SELECT progression_started_at FROM bond_state WHERE id=1"
+        ).fetchone()[0]
         for message_id, body, created_at in rows:
+            if not created_at or created_at < progression_started_at:
+                continue
+            normalized = re.sub(r"\s+", " ", str(body or "").casefold()).strip()
+            fingerprint = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:20]
             for key, title, description, gains, points in _signals(str(body or "")):
-                # A category can contribute once per Dhaka-local calendar day, not once per repeated phrase.
-                event_key = f"day:{created_at.date().isoformat()}:{key}"
+                # No per-day or lifetime category cap: distinct interactions count; identical
+                # repeated messages do not farm the same milestone.
+                event_key = "message:" + key + ":" + fingerprint
                 inserted = conn.execute(
                     "INSERT INTO bond_events (event_key, title, description, source_message_id) "
                     "VALUES (%s, %s, %s, %s) ON CONFLICT (event_key) DO NOTHING RETURNING id",
@@ -94,11 +103,15 @@ def refresh_bond() -> dict:
         call_days = set()
         for transcript, started_at in call_rows:
             call_days.add(started_at.date())
-            for item in (transcript or []):
+            for item_index, item in enumerate(transcript or []):
                 if item.get("role") == "user" and item.get("text"):
                     call_user_count += 1
+                    if not started_at or started_at < progression_started_at:
+                        continue
+                    normalized = re.sub(r"\s+", " ", str(item["text"]).casefold()).strip()
+                    fingerprint = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:20]
                     for key, title, description, gains, points in _signals(str(item["text"])):
-                        event_key = f"day:{started_at.date().isoformat()}:{key}"
+                        event_key = "call:" + started_at.isoformat() + ":" + str(item_index) + ":" + key + ":" + fingerprint
                         inserted = conn.execute(
                             "INSERT INTO bond_events (event_key,title,description,source_message_id) "
                             "VALUES (%s,%s,%s,NULL) ON CONFLICT (event_key) DO NOTHING RETURNING id",
@@ -131,7 +144,9 @@ def refresh_bond() -> dict:
         # are not automatically punished for taking a break.
         time_decay = 0.5 ** (inactive_days / 120)
         consistency = _clamp(min(100, active_days * 4) * time_decay)
-        familiarity_from_time = _clamp(min(24, turns * 0.35) * time_decay)
+        # Message volume and elapsed time alone do not mean two people know each other.
+        # Familiarity grows from personal details and preferences actually shared.
+        familiarity_from_time = 0
         # Gentle activity progress keeps the chapter moving during ordinary conversation,
         # while explicit trust, affection, repair, and shared-memory events remain the main rewards.
         # Five completed shared turns add two points; active days add two points each.
