@@ -569,6 +569,8 @@ def load_emotion_state() -> EmotionState:
 def classify_explicit_event(text: str) -> tuple[str | None, float]:
     """Recognize clear conversational signals without pretending to read minds."""
     value = text.lower()
+    if re.search(r"\b(?:know more|tell me more|curious about|wanna know|want to know|can i ask|do you mind me asking)\b.{0,100}\b(?:your evol|evol|abilities|power|past|childhood|life|work|n109|mephisto)\b|\b(?:your evol|your abilities|your power|your past|your life)\b.{0,100}\b(?:tell me|explain|ask you|know more)\b", value):
+        return "personal_curiosity", 0.7
     if re.search(r"\bi love you\b|\bi adore you\b", value):
         return "affection_confession", 0.95
     if re.search(r"\bi trust you\b", value):
