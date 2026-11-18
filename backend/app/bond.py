@@ -30,11 +30,13 @@ def _signals(text: str) -> list[tuple[str, str, str, dict[str, int], int]]:
     value = re.sub(r"\s+", " ", text.casefold()).strip()
     found = []
     rules = [
+        ("personal_curiosity", "Curiosity about each other", "Umi showed genuine interest in Sylus's abilities, history, or life beyond their conversations.", r"\b(?:tell me|teach me|i want to know|i'd like to know|i wanna know|can i ask|do you mind if i ask|i'm curious about|im curious about)\b.{0,90}\b(?:your evol|your abilities|your power|your past|your childhood|your life|your work|your world|n109|mephisto|your interests)\b|\b(?:your evol|your abilities|your power|your past|your childhood|your life|your work|your world)\b.{0,90}\b(?:tell me|explain|know more|ask you)\b", {"familiarity": 3, "shared_experiences": 2, "affection": 1}, 5),
         ("affection", "Affection shared", "An affectionate moment was openly shared.", r"\bi love you\b|\bi adore you\b|\bi miss you\b|\bi wish we (?:could|were) together\b|\bi (?:really )?like spending time with you\b|\bi miss talking to you\b|\bi was thinking about you\b|\bi look forward to (?:talking|our conversations)\b|\bi like having you around\b|\bi wish you were here\b|\byou make me smile\b", {"affection": 7, "commitment": 2}, 9),
         ("trust", "Trust offered", "A moment of explicit trust or personal confidence was shared.", r"\bi trust you\b|\bi feel safe with you\b|\bi can tell you anything\b|\bi want to tell you something personal\b|\bi can be honest with you\b|\bi don't feel judged by you\b|\bi know i can rely on you\b|\bi came to you because\b|\bi feel okay telling you\b|\bi don't have to hide (?:this|anything|myself)\b", {"trust": 8, "emotional_safety": 6, "vulnerability": 3}, 10),
         ("comfort", "Ease and comfort", "Umi expressed that she can relax, be herself, or speak freely with Sylus.", r"\bi feel (?:comfortable|at ease|at home|relaxed|understood) (?:with you|around you|talking to you)\b|\bi feel understood\b|\bi can be myself (?:with you|around you)\b|\bi don't have to pretend\b|\bi can talk to you (?:about anything|freely)\b|\bit's easy to talk to you\b|\bi can relax around you\b|\byou make me feel at ease\b|\bi don't feel judged\b|\bi feel calmer after talking to you\b|\bi feel like i can just be me\b", {"emotional_safety": 7, "trust": 3}, 8),
         ("vulnerability", "A guarded truth", "Umi shared a difficult feeling or personal vulnerability.", r"\bi feel (?:scared|afraid|lonely|overwhelmed|hopeless|insecure|ashamed|embarrassed|vulnerable|anxious|worried)\b|\bi(?:'m| am) (?:struggling|not okay|having a hard time|not used to opening up)\b|\bi have never told anyone\b|\bi(?:'ve| have) never (?:said|shared|admitted) this (?:before|to anyone)\b|\bi don't usually talk about this\b|\bthis is hard to admit\b|\bi'm afraid to tell you\b|\bi've been keeping this to myself\b|\bi usually keep this to myself\b|\bi haven't told anyone (?:else|about this)\b|\bi'm embarrassed to admit\b|\bi don't know how to say this\b|\bi need you to listen\b|\bi'm not used to sharing this\b|\bi'm scared you'll think\b", {"vulnerability": 8, "emotional_safety": 4, "trust": 3}, 9),
         ("repair", "A moment of repair", "A disagreement or hurt was approached with honesty and care.", r"\bi(?:'m| am) sorry\b|\bi didn't mean to hurt\b|\blet's talk this through\b|\bi forgive you\b|\bcan we work this out\b", {"trust": 3, "emotional_safety": 5, "commitment": 3}, 8),
+        ("personal_detail", "A detail from everyday life", "Umi shared a specific preference, routine, interest, or piece of personal background.", r"\bmy (?:favorite|favourite|usual|daily|morning|evening|routine|hobby|interest|plan)\b|\bi (?:usually|often|rarely|prefer|enjoy|love|hate|study|work|live|grew up|am interested in|am into)\b|\bwhen i was (?:younger|a child|little)\b|\bi'm (?:a student|studying|working|learning)\b", {"familiarity": 2, "shared_experiences": 1}, 3),
         ("shared_memory", "A memory revisited", "A specific shared moment or story was brought back into the present.", r"\bremember when we\b|\bour first (?:time|date|call|trip|game|conversation)\b|\bthat time we\b|\bwe did that together\b|\bthe time you and i\b", {"familiarity": 1, "shared_experiences": 4}, 5),
         ("achievement", "A win worth sharing", "A personal achievement or difficult step was shared with Sylus.", r"\bi (?:passed|got accepted|got the offer|finished|submitted|won|succeeded)\b|\bi did it\b|\bi finally (?:managed|completed)\b", {"shared_experiences": 2, "commitment": 2, "affection": 1}, 5),
         ("gratitude", "Care acknowledged", "Umi acknowledged a moment of care or understanding.", r"\bthank you for listening\b|\bthat helped me\b|\bi appreciate you\b|\bi'm glad i told you\b|\bi feel better now\b", {"emotional_safety": 3, "trust": 1, "affection": 1}, 4),
@@ -45,16 +47,14 @@ def _signals(text: str) -> list[tuple[str, str, str, dict[str, int], int]]:
         if re.search(pattern, value, re.I):
             found.append((key, title, description, gains, points))
     # Avoid rewarding a single message for many overlapping keywords.
-    priority = {"trust_breach": 0, "trust": 1, "comfort": 2, "vulnerability": 3, "repair": 4, "commitment": 5, "affection": 6, "gratitude": 7, "achievement": 8, "shared_memory": 9}
+    priority = {"trust_breach": 0, "trust": 1, "comfort": 2, "vulnerability": 3, "repair": 4, "commitment": 5, "affection": 6, "gratitude": 7, "achievement": 8, "personal_curiosity": 9, "personal_detail": 10, "shared_memory": 11}
     return sorted(found, key=lambda item: priority.get(item[0], 99))[:2]
 
-STAGE_MIN_DAYS = [0, 1, 4, 8, 14, 24, 40, 60, 90, 120, 180, 270]
-
-def _stage(points: int, age_days: float) -> tuple[int, str, str, int, int]:
+def _stage(points: int) -> tuple[int, str, str, int, int]:
     current = STAGES[0]
     next_stage = STAGES[1]
     for index, item in enumerate(STAGES):
-        if points >= item[1] and age_days >= STAGE_MIN_DAYS[index]:
+        if points >= item[1]:
             current = item
             next_stage = STAGES[min(index + 1, len(STAGES) - 1)]
         else:
@@ -129,21 +129,14 @@ def refresh_bond() -> dict:
             "SELECT count(*) FROM messages WHERE role='assistant' AND archived_at IS NULL"
         ).fetchone()[0] + call_assistant_count)
         active_days = len({r[2].date() for r in rows if r[2]} | call_days)
-        # Familiarity and consistency reward time spent together, but both have diminishing returns.
+        # Time together adds a gentle sense of continuity, but emotional moments drive the bond.
         activity_timestamps = [r[2] for r in rows if r[2]] + [r[1] for r in call_rows if r[1]]
         last_activity = max(activity_timestamps, default=None)
         inactive_days = max(0, (datetime.now(timezone.utc).date() - last_activity.date()).days) if last_activity else 0
-        # Consistency and familiarity soften gradually during long absences; trust and affection
-        # are not automatically punished for taking a break.
-        time_decay = 0.5 ** (inactive_days / 120)
+        time_decay = 0.5 ** (inactive_days / 180)
         consistency = _clamp(min(100, active_days * 4) * time_decay)
-        # Message volume and elapsed time alone do not mean two people know each other.
-        # Familiarity grows from personal details and preferences actually shared.
-        familiarity_from_time = min(35, active_days * 3)
-        # Gentle activity progress keeps the chapter moving during ordinary conversation,
-        # while explicit trust, affection, repair, and shared-memory events remain the main rewards.
-        # Time together contributes gently; message volume alone does not accelerate chapters.
-        activity_points = min(20, active_days * 2)
+        familiarity_from_time = min(100, active_days * 1.5)
+        activity_points = active_days * 2
         conn.execute(
             "UPDATE bond_state SET familiarity=GREATEST(%s,LEAST(100,ROUND(familiarity*%s)::int)), consistency=%s, "
             "bond_points=GREATEST(bond_points, %s), total_user_messages=%s, total_shared_turns=%s WHERE id=1",
@@ -155,39 +148,9 @@ def refresh_bond() -> dict:
             "total_user_messages, total_shared_turns, updated_at, progression_started_at FROM bond_state WHERE id=1"
         ).fetchone()
         points = int(state[8] or 0)
-        started_at = state[16] or datetime.now(timezone.utc)
-        if started_at.tzinfo is None:
-            started_at = started_at.replace(tzinfo=timezone.utc)
-        age_days = max(0.0, (datetime.now(timezone.utc) - started_at).total_seconds() / 86400)
-        unlocked_index = max(index for index, minimum_days in enumerate(STAGE_MIN_DAYS) if age_days >= minimum_days)
-        point_cap = STAGES[min(unlocked_index + 1, len(STAGES) - 1)][1] - 1 if unlocked_index < 11 else 10**9
-        metric_caps = (
-            min(100, 25 + int(age_days * 2)),
-            min(100, 12 + int(age_days * 1.5)),
-            min(100, 20 + int(age_days * 2.5)),
-            min(100, 15 + int(age_days * 2)),
-            min(100, 8 + int(age_days * 0.7)),
-            min(100, 8 + int(age_days * 1.0)),
-            min(100, 12 + int(age_days * 1.5)),
-        )
-        conn.execute(
-            "UPDATE bond_state SET affection=LEAST(affection,%s), trust=LEAST(trust,%s), "
-            "familiarity=LEAST(familiarity,%s), shared_experiences=LEAST(shared_experiences,%s), "
-            "commitment=LEAST(commitment,%s), vulnerability=LEAST(vulnerability,%s), "
-            "emotional_safety=LEAST(emotional_safety,%s), bond_points=LEAST(bond_points,%s) WHERE id=1",
-            (*metric_caps, point_cap),
-        )
-        state = conn.execute(
-            "SELECT affection, trust, familiarity, shared_experiences, commitment, vulnerability, "
-            "emotional_safety, consistency, bond_points, level, stage, summary, milestones, "
-            "total_user_messages, total_shared_turns, updated_at, progression_started_at FROM bond_state WHERE id=1"
-        ).fetchone()
-        points = int(state[8] or 0)
-        level, stage, summary, floor_points, next_points = _stage(points, age_days)
+        level, stage, summary, floor_points, next_points = _stage(points)
         points_progress = 100 if level == 12 else _clamp((points-floor_points) / max(1, next_points-floor_points) * 100)
-        next_stage_min_days = STAGE_MIN_DAYS[level] if level < 12 else age_days
-        time_progress = 100 if level == 12 else _clamp(age_days / max(1, next_stage_min_days) * 100)
-        progress = min(points_progress, time_progress)
+        progress = points_progress
         milestones = conn.execute(
             "SELECT event_key, title, description, created_at FROM bond_events ORDER BY created_at DESC"
         ).fetchall()
@@ -205,7 +168,6 @@ def refresh_bond() -> dict:
         "commitment":state[4], "vulnerability":state[5], "emotional_safety":state[6],
         "consistency":consistency, "bond_points":points, "level":level, "level_progress":progress,
         "points_to_next_level":max(0,next_points-points) if level < 12 else 0,
-        "days_to_next_level":max(0, int(__import__("math").ceil(next_stage_min_days-age_days))) if level < 12 else 0,
         "stage":stage, "summary":summary, "next_stage":STAGES[level][2] if level < 12 else "The deepest bond",
         "all_stages":[{"level":item[0],"name":item[2],"threshold":item[1]} for item in STAGES],
         "milestones":milestone_list,
