@@ -310,7 +310,7 @@ function App() {
         </article>
       ) : (
         <a className="web-link-card" href={item.url} target="_blank" rel="noopener noreferrer" key={item.url + index}>
-          <span className="web-link-kind">{item.type === 'video' ? '▶ VIDEO' : '↗ WEB'}</span>
+          <span className="web-link-kind">{item.type === 'video' ? '▶ VIDEO' : item.type === 'music' ? '♫ MUSIC' : '↗ WEB'}</span>
           <strong>{item.title || 'Open result'}</strong>
           {item.description && <span className="web-link-description">{item.description}</span>}
           <span className="web-link-source">{item.source || new URL(item.url).hostname}</span>
