@@ -135,7 +135,7 @@ def refresh_bond() -> dict:
         # Gentle activity progress keeps the chapter moving during ordinary conversation,
         # while explicit trust, affection, repair, and shared-memory events remain the main rewards.
         # Five completed shared turns add two points; active days add two points each.
-        activity_points = min(60, active_days * 2 + (turns // 5) * 2)
+        activity_points = min(100, active_days * 2 + (turns // 5) * 2)
         conn.execute(
             "UPDATE bond_state SET familiarity=GREATEST(%s,LEAST(100,ROUND(familiarity*%s)::int)), consistency=%s, "
             "bond_points=GREATEST(bond_points, %s), total_user_messages=%s, total_shared_turns=%s WHERE id=1",
