@@ -207,7 +207,13 @@ function App() {
       const savedUsers = turn.user_messages?.length ? turn.user_messages : (turn.user_message ? [turn.user_message] : []);
       const sylusBubbles = turn.assistant_messages?.length ? turn.assistant_messages : (turn.assistant_message ? [turn.assistant_message] : []);
       const pendingIds = new Set(batch.map(item => item.id));
-      setMessages(current => [...current.filter(message => !pendingIds.has(message.id)), ...savedUsers, ...sylusBubbles]);
+      setMessages(current => {
+        const firstPending = current.findIndex(message => pendingIds.has(message.id));
+        const remaining = current.filter(message => !pendingIds.has(message.id));
+        const insertion = firstPending < 0 ? remaining.length : Math.min(firstPending, remaining.length);
+        remaining.splice(insertion, 0, ...savedUsers, ...sylusBubbles);
+        return remaining;
+      });
       setNotice('Private conversation saved');
       if (sylusBubbles.length) setReplyStatus('');
       else setReplyStatus('silent');
@@ -220,8 +226,9 @@ function App() {
       setReplyStatus('error');
       setReplyError(message);
       setComposerNotice(message);
+      const pendingIds = new Set(batch.map(item => item.id));
+      setMessages(current => current.filter(item => !pendingIds.has(item.id)));
       setDraft(current => current ? current : batch.map(item => item.text).join('\n'));
-      // Keep the unsent messages visible so a connection failure never looks like deliberate silence.
     } finally {
       setSending(false);
       if (messageQueue.current.length) {
