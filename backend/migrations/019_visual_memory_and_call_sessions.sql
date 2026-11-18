@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS call_sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   ended_at TIMESTAMPTZ,
+  last_activity_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   duration_seconds INTEGER NOT NULL DEFAULT 0 CHECK (duration_seconds >= 0),
   transcript JSONB NOT NULL DEFAULT '[]'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
