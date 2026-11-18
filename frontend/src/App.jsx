@@ -41,7 +41,8 @@ function App() {
   const [checking, setChecking] = useState(false);
   const [notice, setNotice] = useState('Preview mode · private connection not configured');
   const [apiUrl, setApiUrl] = useState(API_BASE);
-  const [memories, setMemories] = useState([]);\n  const [bond, setBond] = useState(null);
+  const [memories, setMemories] = useState([]);
+  const [bond, setBond] = useState(null);
   const [proactiveSettings, setProactiveSettings] = useState(null);
   const [pushStatus, setPushStatus] = useState(null);
   const [pushBusy, setPushBusy] = useState(false);
