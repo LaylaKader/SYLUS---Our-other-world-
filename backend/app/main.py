@@ -583,7 +583,17 @@ def erase_all_private_data(_: None = Depends(require_owner)):
         conn.execute("DELETE FROM call_sessions")
         conn.execute("DELETE FROM visual_reference_images")
         conn.execute("DELETE FROM visual_identities WHERE category='other'")
-        conn.execute("UPDATE visual_identities SET notes='', status='confirmed', updated_at=now() WHERE category IN ('sylus','owner')")
+        conn.execute(
+            "UPDATE visual_identities SET "
+            "display_name=CASE category WHEN 'sylus' THEN 'Sylus' ELSE 'Umi / MC' END, "
+            "notes='', status='confirmed', updated_at=now() WHERE category IN ('sylus','owner')"
+        )
+        conn.execute(
+            "UPDATE proactive_contact_settings SET messages_enabled=TRUE, calls_enabled=TRUE, "
+            "quiet_start='00:00', quiet_end='00:00', min_idle_minutes=60, min_interval_minutes=15, "
+            "last_proactive_at=NULL, last_call_invite_at=NULL, no_call_until=NULL, no_call_reason=NULL, "
+            "proactive_cycle_count=0, proactive_pause_until=NULL, updated_at=now() WHERE id=1"
+        )
         message_count = conn.execute("DELETE FROM messages RETURNING id").fetchall()
         memory_count = conn.execute("DELETE FROM memories RETURNING id").fetchall()
         conn.execute("DELETE FROM bond_events")
