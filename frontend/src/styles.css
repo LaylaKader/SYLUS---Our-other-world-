@@ -335,3 +335,19 @@ html,body,#root{height:100%;overflow:hidden}
 .sticker-result-card .text-action{display:flex;align-items:center;gap:5px;margin-top:8px}
 .sticker-save-all{margin-top:17px}
 @media(max-width:600px){.sticker-studio-view{padding:32px 18px}.sticker-results-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.sticker-result-preview{height:112px}.sticker-results-heading{align-items:flex-start}}
+
+
+/* Web discovery cards shown naturally inside Sylus's message bubbles. */
+.chat-inline-link{color:#e4bd91;text-decoration:underline;text-decoration-color:rgba(228,189,145,.45);text-underline-offset:3px;overflow-wrap:anywhere}
+.web-result-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:13px;max-width:100%;width:min(100%,520px)}
+.web-image-card,.web-link-card{min-width:0;overflow:hidden;border:1px solid rgba(201,168,117,.2);border-radius:12px;background:rgba(16,13,20,.55)}
+.web-image-open{display:block;height:150px;background:rgba(255,255,255,.035)}
+.web-image-open img{display:block;width:100%;height:100%;object-fit:cover}
+.web-result-caption{display:grid;gap:4px;padding:8px 9px}
+.web-result-caption strong,.web-link-card strong{font-size:11px;line-height:1.45;color:#eadde7;font-weight:500;overflow-wrap:anywhere}
+.web-result-caption span,.web-link-source{font-size:9px;color:#a997aa;overflow-wrap:anywhere}
+.web-link-card{display:flex;flex-direction:column;gap:7px;padding:12px;text-decoration:none;min-height:116px;transition:border-color .18s ease,background .18s ease}
+.web-link-card:hover{border-color:rgba(201,168,117,.5);background:rgba(126,49,75,.12)}
+.web-link-kind{font-size:8px;letter-spacing:.13em;color:#c9a875}
+.web-link-description{font-size:10px;line-height:1.5;color:#b9aebb;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+@media(max-width:480px){.web-result-grid{gap:7px}.web-image-open{height:118px}.web-result-caption{padding:7px}.web-link-card{padding:10px;min-height:110px}}
