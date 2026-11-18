@@ -295,14 +295,23 @@ function App() {
     const poll = async () => {
       try {
         const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/proactive/poll`, { method: 'POST', headers, credentials: 'include' });
-        if (!response.ok) return;
-        const result = await response.json();
-        if (!stopped && result.sent && result.messages?.length) {
-          setMessages(current => {
-            const known = new Set(current.map(message => message.id));
-            return [...current, ...result.messages.filter(message => !known.has(message.id))];
-          });
-          setNotice('Sylus sent you a message.');
+        if (response.ok) {
+          const result = await response.json();
+          if (!stopped && result.sent && result.messages?.length) {
+            setMessages(current => {
+              const known = new Set(current.map(message => message.id));
+              return [...current, ...result.messages.filter(message => !known.has(message.id))];
+            });
+            setNotice('Sylus sent you a message.');
+          }
+        }
+        const callResponse = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/proactive/call-poll`, { method: 'POST', headers, credentials: 'include' });
+        if (callResponse.ok) {
+          const callResult = await callResponse.json();
+          if (!stopped && callResult.sent) {
+            setIncomingCall(true);
+            setNotice('Sylus is calling.');
+          }
         }
       } catch { /* A missed poll is harmless; the next interval retries. */ }
     };
