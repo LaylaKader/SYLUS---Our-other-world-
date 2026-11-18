@@ -18,12 +18,14 @@ self.addEventListener('push', event => {
   let payload = {};
   try { payload = event.data ? event.data.json() : {}; } catch { payload = { body: event.data?.text() || '' }; }
   const title = payload.title || 'Sylus';
+  const incomingCall = (payload.url || '').includes('incoming-call=1');
   const options = {
     body: payload.body || 'A message for you.',
     icon: '/icon.svg',
     badge: '/icon.svg',
-    tag: 'sylus-proactive-message',
-    renotify: false,
+    tag: incomingCall ? 'sylus-incoming-call' : 'sylus-proactive-message',
+    renotify: incomingCall,
+    requireInteraction: incomingCall,
     data: { url: payload.url || '/' }
   };
   event.waitUntil(self.registration.showNotification(title, options));
