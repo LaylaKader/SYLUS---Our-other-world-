@@ -69,7 +69,7 @@ def _emotion_shaped_gains(
 
 
 def _signals(text: str) -> list[tuple[str, str, str, dict[str, int], int]]:
-    """Return grounded, user-authored signals. One message can earn at most two distinct events."""
+    """Return grounded, user-authored signals; distinct meaningful signals can coexist in one turn."""
     value = re.sub(r"\s+", " ", text.casefold()).strip()
     found = []
     rules = [
@@ -91,7 +91,7 @@ def _signals(text: str) -> list[tuple[str, str, str, dict[str, int], int]]:
             found.append((key, title, description, gains, points))
     # Avoid rewarding a single message for many overlapping keywords.
     priority = {"trust_breach": 0, "trust": 1, "comfort": 2, "vulnerability": 3, "repair": 4, "commitment": 5, "affection": 6, "gratitude": 7, "achievement": 8, "personal_curiosity": 9, "personal_detail": 10, "shared_memory": 11}
-    return sorted(found, key=lambda item: priority.get(item[0], 99))[:2]
+    return sorted(found, key=lambda item: priority.get(item[0], 99))
 
 def _stage(points: int) -> tuple[int, str, str, int, int]:
     current = STAGES[0]
@@ -124,13 +124,11 @@ def refresh_bond() -> dict:
         # Revisit all retained messages, including history before the progression rebasing.
         # Stable event fingerprints make this backfill idempotent.
         for message_id, body, created_at in rows:
-            normalized = re.sub(r"\s+", " ", str(body or "").casefold()).strip()
-            fingerprint = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:20]
             for key, title, description, gains, points in _signals(str(body or "")):
                 gains, points = _emotion_shaped_gains(gains, points, key, emotion_by_message.get(str(message_id)))
-                # No per-day or lifetime category cap: distinct interactions count; identical
-                # repeated messages do not farm the same milestone.
-                event_key = "message:" + key + ":" + fingerprint
+                # Every distinct message is its own interaction; repeated affection or trust
+                # can deepen a relationship when it is genuinely expressed again.
+                event_key = "message:" + str(message_id) + ":" + key
                 inserted = conn.execute(
                     "INSERT INTO bond_events (event_key, title, description, source_message_id) "
                     "VALUES (%s, %s, %s, %s) ON CONFLICT (event_key) DO NOTHING RETURNING id",
