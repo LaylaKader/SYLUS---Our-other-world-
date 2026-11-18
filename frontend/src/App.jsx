@@ -150,6 +150,19 @@ function App() {
   const [callBusy, setCallBusy] = useState(false);
   const [callStatus, setCallStatus] = useState('A private voice channel with Sylus.');
   const [callTranscript, setCallTranscript] = useState('');
+  const [callCorrectionEnabled, setCallCorrectionEnabled] = useState(() => { try { return window.localStorage.getItem('sylus-call-correction') !== 'false'; } catch { return true; } });
+  const [callSessionId, setCallSessionId] = useState(null);
+  const callStartedAtRef = useRef(null);
+  const [callHistory, setCallHistory] = useState([]);
+  const [expandedCallId, setExpandedCallId] = useState(null);
+  const [callTranscriptDetails, setCallTranscriptDetails] = useState({});
+  const [visualLibrary, setVisualLibrary] = useState([]);
+  const [visualCategoryDraft, setVisualCategoryDraft] = useState('other');
+  const [visualNameDraft, setVisualNameDraft] = useState('');
+  const [visualNotesDraft, setVisualNotesDraft] = useState('');
+  const [visualBusy, setVisualBusy] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedMessageIds, setSelectedMessageIds] = useState([]);
   const callActiveRef = useRef(false);
   const callProcessingRef = useRef(false);
   const callRecognitionRef = useRef(null);
@@ -256,6 +269,48 @@ function App() {
     return () => { stopped = true; window.clearInterval(interval); };
   }, [connected, proactiveSettings?.messages_enabled, apiUrl, headers]);
 
+  async function refreshVisualLibrary() {
+    try { const r = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/visual-memory`, { headers, credentials: 'include' }); if (r.ok) setVisualLibrary(await r.json()); } catch {}
+  }
+  async function refreshCallHistory() {
+    try { const r = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/calls`, { headers, credentials: 'include' }); if (r.ok) setCallHistory(await r.json()); } catch {}
+  }
+  async function loadCallTranscript(id) {
+    if (expandedCallId === id) { setExpandedCallId(null); return; }
+    try {
+      const r = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/calls/${id}/transcript`, { headers, credentials: 'include' });
+      if (!r.ok) throw new Error('Could not load this call transcript.');
+      setCallTranscriptDetails(v => ({...v,[id]:await r.json()}));
+      setExpandedCallId(id);
+    } catch (error) { setNotice(error.message); }
+  }
+  async function createVisualIdentity(event) {
+    event?.preventDefault?.(); if (!visualNameDraft.trim()) return; setVisualBusy(true);
+    try {
+      const r=await fetch(`${apiUrl.replace(/\/$/, '')}/v1/visual-memory/identities`,{method:'POST',headers,credentials:'include',body:JSON.stringify({display_name:visualNameDraft.trim(),category:visualCategoryDraft,notes:visualNotesDraft})});
+      if(!r.ok) throw new Error('Could not create that reference collection.');
+      setVisualNameDraft('');setVisualNotesDraft('');await refreshVisualLibrary();setNotice('Visual reference collection created.');
+    } catch(error){setNotice(error.message);} finally{setVisualBusy(false);}
+  }
+  async function uploadVisualReference(identityId,file) {
+    if(!file||!identityId)return;const form=new FormData();form.append('file',file);setVisualBusy(true);
+    try{const r=await fetch(`${apiUrl.replace(/\/$/, '')}/v1/visual-memory/identities/${identityId}/images`,{method:'POST',credentials:'include',body:form});if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Reference upload failed.');}await refreshVisualLibrary();setNotice('Reference image saved privately.');}
+    catch(error){setNotice(error.message);}finally{setVisualBusy(false);}
+  }
+  async function deleteVisualImage(id) {
+    if(!window.confirm('Delete this reference image permanently?'))return;
+    try{const r=await fetch(`${apiUrl.replace(/\/$/, '')}/v1/visual-memory/images/${id}`,{method:'DELETE',headers,credentials:'include'});if(!r.ok)throw new Error('Could not delete the reference image.');await refreshVisualLibrary();}
+    catch(error){setNotice(error.message);}
+  }
+  function toggleMessageSelection(id){setSelectedMessageIds(v=>v.includes(id)?v.filter(x=>x!==id):[...v,id]);}
+  async function copySelectedMessages(){
+    const chosen=messages.filter(m=>selectedMessageIds.includes(m.id));
+    const value=chosen.map(m=>[`[${m.role==='user'?'YOU':'SYLUS'} · ${new Date(m.created_at).toLocaleString()}]`,m.text||'',m.media_url?'[Image attached]':''].filter(Boolean).join('\n')).join('\n\n');
+    if(!value)return;
+    try{await navigator.clipboard.writeText(value);setNotice(`Copied ${chosen.length} selected messages.`);setSelectionMode(false);setSelectedMessageIds([]);}
+    catch{setNotice('Clipboard access was blocked by the browser.');}
+  }
+
   async function connect(login = true) {
     if (!apiUrl.trim()) { setNotice('Add your private API address first.'); return; }
     setChecking(true);
@@ -282,6 +337,8 @@ function App() {
       if (bondResponse.ok) setBond(await bondResponse.json());
       const callsResponse = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/calls/settings`, { headers, credentials: 'include' });
       if (callsResponse.ok) setCallSettings(await callsResponse.json());
+      await refreshVisualLibrary();
+      await refreshCallHistory();
       const proactiveResponse = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/proactive/settings`, { headers, credentials: 'include' });
       if (proactiveResponse.ok) setProactiveSettings(await proactiveResponse.json());
       const callResponse = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/calls/settings`, { headers, credentials: 'include' });
@@ -596,17 +653,18 @@ function App() {
     setCallListening(false);
   }
 
-  function commitCallTranscript() {
+  async function commitCallTranscript() {
     if (!callActiveRef.current || callProcessingRef.current) return;
-    const phrase = callFinalTranscriptRef.current.trim();
-    if (!phrase) return;
+    const phrase = callFinalTranscriptRef.current.trim(); if (!phrase) return;
     callFinalTranscriptRef.current = '';
     if (callSilenceTimerRef.current) window.clearTimeout(callSilenceTimerRef.current);
-    callSilenceTimerRef.current = null;
-    setCallTranscript(phrase);
-    callProcessingRef.current = true;
-    stopCallRecognition();
-    sendCallUtterance(phrase);
+    callSilenceTimerRef.current = null; callProcessingRef.current = true; stopCallRecognition();
+    let corrected=phrase;
+    if(callCorrectionEnabled){
+      setCallStatus('Cleaning up the transcription…');
+      try{const r=await fetch(apiUrl.replace(/\/$/, '')+'/v1/calls/correct-transcript',{method:'POST',headers,credentials:'include',body:JSON.stringify({text:phrase})});if(r.ok){const v=await r.json();if(v.text?.trim())corrected=v.text.trim();}}catch{}
+    }
+    setCallTranscript(corrected);sendCallUtterance(corrected);
   }
 
   function startCallRecognition() {
@@ -719,9 +777,10 @@ function App() {
     setCallBusy(true);
     setCallStatus('Sending what I heard…');
     try {
-      const response = await fetch(apiUrl.replace(/\/$/, '') + '/v1/chat', {
+      if (!callSessionId) throw new Error('The call session was not saved. Please end and restart the call.');
+      const response = await fetch(apiUrl.replace(/\/$/, '') + '/v1/calls/turn', {
         method: 'POST', headers, credentials: 'include',
-        body: JSON.stringify({ texts: [spokenText] })
+        body: JSON.stringify({ session_id: callSessionId, text: spokenText })
       });
       if (!response.ok) {
         const failure = await response.json().catch(() => ({}));
@@ -729,13 +788,12 @@ function App() {
       }
       setCallStatus('Sylus is thinking…');
       const turn = await response.json();
-      const userMessages = turn.user_messages?.length ? turn.user_messages : (turn.user_message ? [turn.user_message] : []);
-      const replies = (turn.assistant_messages?.length ? turn.assistant_messages : (turn.assistant_message ? [turn.assistant_message] : [])).map(message => ({ ...message, text: cleanAssistantText(message.text) })).filter(message => message.text);
-      setMessages(current => [...current, ...userMessages, ...replies]);
+      const replies = (turn.assistant_messages || []).map(cleanAssistantText).filter(Boolean);
       const callsResponse = await fetch(apiUrl.replace(/\/$/, '') + '/v1/calls/settings', { headers, credentials: 'include' });
       if (callsResponse.ok) setCallSettings(await callsResponse.json());
       const bondResponse = await fetch(apiUrl.replace(/\/$/, '') + '/v1/bond', { headers, credentials: 'include' });
       if (bondResponse.ok) setBond(await bondResponse.json());
+      await refreshCallHistory();
       if (!callActiveRef.current) return;
       if (!replies.length) {
         setCallStatus('Sylus is quiet for a moment. I’m listening again.');
@@ -752,13 +810,16 @@ function App() {
     }
   }
 
-  function beginVoiceCall() {
+  async function beginVoiceCall() {
     if (!connected || !chatReady || !timeContext?.voice_ready) {
       setCallStatus('Connect the private server and configure Sylus’s voice before starting a call.');
       setCallOpen(true);
       return;
     }
     setCallOpen(true);
+    setCallStatus('Opening a private call record…');
+    try{const r=await fetch(apiUrl.replace(/\/$/, '')+'/v1/calls/start',{method:'POST',headers,credentials:'include'});if(!r.ok)throw new Error('Could not start a call record.');const s=await r.json();setCallSessionId(s.id);callStartedAtRef.current=Date.now();}
+    catch(error){setCallStatus(error.message);return;}
     autoReadQueueRef.current = [];
     if (audioSourceRef.current) { try { audioSourceRef.current.stop(); } catch {} audioSourceRef.current = null; }
     setPlayingAudioId(null);
@@ -797,7 +858,7 @@ function App() {
     setCallStatus('Microphone paused. Tap Speak when you want to continue.');
   }
 
-  function endVoiceCall() {
+  async function endVoiceCall() {
     callActiveRef.current = false;
     callMicPausedRef.current = false;
     callProcessingRef.current = false;
@@ -813,7 +874,11 @@ function App() {
     setCallActive(false);
     setCallListening(false);
     setCallBusy(false);
-    setCallStatus('Call ended. Your conversation remains in the chat history.');
+    const sessionId=callSessionId;
+    const duration=callStartedAtRef.current?Math.max(0,Math.floor((Date.now()-callStartedAtRef.current)/1000)):0;
+    if(sessionId){try{await fetch(apiUrl.replace(/\/$/, '')+`/v1/calls/${sessionId}/finish`,{method:'POST',headers,credentials:'include',body:JSON.stringify({duration_seconds:duration})});}catch{}}
+    callStartedAtRef.current=null;setCallSessionId(null);await refreshCallHistory();
+    setCallStatus('Call ended. Its duration is saved separately from your text conversation.');
   }
 
   useEffect(() => () => {
@@ -1036,6 +1101,7 @@ function App() {
   async function disconnect() {
     try { await fetch(`${apiUrl.replace(/\/$/, '')}/v1/session`, { method: 'DELETE', headers, credentials: 'include' }); } catch {}
     setOwnerPassword(''); setConnected(false); setChatReady(false); setMessages([]); messageQueue.current = []; if (queueTimer.current) window.clearTimeout(queueTimer.current); setReplyStatus(''); setReplyError(''); setMemories([]); setTimeContext(null);
+    setVisualLibrary([]); setCallHistory([]); setCallTranscriptDetails({}); setCallSessionId(null);
     setNotice('Signed out · private data remains on the server');
   }
 
