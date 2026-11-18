@@ -308,6 +308,11 @@ def _search_query_from_history(text: str, history: list[dict] | None) -> tuple[s
     # Only borrow the old intent for a short conversational refinement, not a new topic.
     if len(refinement.split()) > 22:
         return None
+    if kind == "music" and re.search(
+        r"\b(?:something|anything|whatever)\b.{0,60}\b(?:fits|suits) me\b|\b(?:your choice|surprise me|you choose)\b",
+        refinement, re.I
+    ):
+        return kind, "beautiful atmospheric romantic music recommendations"
     return kind, (original_query + " " + refinement).strip()[:260]
 
 
