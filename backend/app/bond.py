@@ -120,7 +120,9 @@ def refresh_bond() -> dict:
         "commitment":state[4], "vulnerability":state[5], "emotional_safety":state[6],
         "consistency":consistency, "bond_points":points, "level":level, "level_progress":progress,
         "points_to_next_level":max(0,next_points-points) if level < 12 else 0,
-        "stage":stage, "summary":summary, "milestones":milestone_list,
+        "stage":stage, "summary":summary, "next_stage":STAGES[level][2] if level < 12 else "The deepest bond",
+        "all_stages":[{"level":item[0],"name":item[2],"threshold":item[1]} for item in STAGES],
+        "milestones":milestone_list,
         "total_user_messages":state[13], "total_shared_turns":state[14],
         "updated_at":updated.isoformat(),
     }
