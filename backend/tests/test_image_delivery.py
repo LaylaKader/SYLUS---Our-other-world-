@@ -13,7 +13,7 @@ def test_no_directive_keeps_normal_reply():
 
 
 def test_direct_image_requests_trigger_generation():
-    assert should_generate_image("Send me an image of you.")
+    assert should_generate_image("Make me an image of you.")
     assert should_generate_image("Can you draw us together?")
     assert should_generate_image("Send me the image")
 
@@ -36,3 +36,8 @@ def test_extracts_private_link_directive_without_showing_it():
 
 def test_no_link_directive_keeps_normal_reply():
     assert extract_link_directive("I found something for you.") == ("I found something for you.", None)
+
+
+def test_send_picture_of_sylus_fetches_instead_of_generating():
+    assert not should_generate_image("Send me a picture of you.")
+    assert not should_generate_image("Show me a photo of him.")
