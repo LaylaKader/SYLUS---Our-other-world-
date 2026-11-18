@@ -151,7 +151,6 @@ function App() {
   const [callStatus, setCallStatus] = useState('A private voice channel with Sylus.');
   const [callTranscript, setCallTranscript] = useState('');
   const [callCorrectionEnabled, setCallCorrectionEnabled] = useState(() => { try { return window.localStorage.getItem('sylus-call-correction') !== 'false'; } catch { return true; } });
-  const [callSessionId, setCallSessionId] = useState(null);
   const callSessionIdRef = useRef(null);
   const callStartedAtRef = useRef(null);
   const [callHistory, setCallHistory] = useState([]);
@@ -820,7 +819,7 @@ function App() {
     }
     setCallOpen(true);
     setCallStatus('Opening a private call record…');
-    try{const r=await fetch(apiUrl.replace(/\/$/, '')+'/v1/calls/start',{method:'POST',headers,credentials:'include'});if(!r.ok)throw new Error('Could not start a call record.');const s=await r.json();setCallSessionId(s.id);callSessionIdRef.current=s.id;callStartedAtRef.current=Date.now();}
+    try{const r=await fetch(apiUrl.replace(/\/$/, '')+'/v1/calls/start',{method:'POST',headers,credentials:'include'});if(!r.ok)throw new Error('Could not start a call record.');const s=await r.json();callSessionIdRef.current=s.id;callStartedAtRef.current=Date.now();}
     catch(error){setCallStatus(error.message);return;}
     autoReadQueueRef.current = [];
     if (audioSourceRef.current) { try { audioSourceRef.current.stop(); } catch {} audioSourceRef.current = null; }
@@ -880,7 +879,7 @@ function App() {
     const sessionId=callSessionIdRef.current;
     const duration=callStartedAtRef.current?Math.max(0,Math.floor((Date.now()-callStartedAtRef.current)/1000)):0;
     if(sessionId){try{await fetch(apiUrl.replace(/\/$/, '')+`/v1/calls/${sessionId}/finish`,{method:'POST',headers,credentials:'include',body:JSON.stringify({duration_seconds:duration})});}catch{}}
-    callStartedAtRef.current=null;callSessionIdRef.current=null;setCallSessionId(null);await refreshCallHistory();
+    callStartedAtRef.current=null;callSessionIdRef.current=null;await refreshCallHistory();
     setCallStatus('Call ended. Its duration is saved separately from your text conversation.');
   }
 
