@@ -103,6 +103,7 @@ class EmotionState:
         return mood if score >= .34 else "composed"
 
     def style_directive(self) -> str:
+        mood = self.dominant_mood()
         directives = {
             "angry": "Controlled anger: colder and sharper, but never cruel or threatening.",
             "irritated": "Dry impatience and a restrained edge; remain fair and composed.",
