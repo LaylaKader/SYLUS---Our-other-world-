@@ -21,6 +21,7 @@ from .config import settings
 from .db import connection, open_pool
 from .migrate import run_migrations
 from .chat_service import generate_reply, generate_proactive_bubbles, split_reply_bubbles, load_emotion_state, ProviderNotConfigured, ProviderRequestFailed
+from .bond import refresh_bond
 
 app = FastAPI(title="SYLUS private companion API", version="0.3.0")
 
@@ -239,6 +240,11 @@ def time_context(_: None = Depends(require_owner)):
         "last_user_message_local": last_local.isoformat() if last_local else None,
         "seconds_since_last_user_message": elapsed_seconds,
     }
+
+@app.get("/v1/bond")
+def get_relationship_bond(_: None = Depends(require_owner)):
+    """Return the persistent relationship snapshot and its earned milestones."""
+    return refresh_bond()
 
 @app.get("/v1/messages", response_model=list[MessageOut])
 def list_messages(_: None = Depends(require_owner)):
