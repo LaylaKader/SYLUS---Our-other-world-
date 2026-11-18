@@ -491,8 +491,8 @@ def call_turn(payload: CallTurnIn, _: None = Depends(require_owner)):
 def correct_call_transcript(payload: CallTranscriptCorrectIn, _: None = Depends(require_owner)):
     original=payload.text.strip()
     if not original: return {"text":"","changed":False}
-    fallback=re.sub(r"\\b(silas|sylas|sailas|sailus)\\b","Sylus",original,flags=re.I)
-    fallback=re.sub(r"\\b(hello|hey|hi) silence\\b",lambda m:m.group(1)+" Sylus",fallback,flags=re.I)
+    fallback=re.sub(r"\b(silas|sylas|sailas|sailus)\b","Sylus",original,flags=re.I)
+    fallback=re.sub(r"\b(hello|hey|hi) silence\b",lambda m:m.group(1)+" Sylus",fallback,flags=re.I)
     providers=[]
     if settings.gemini_api_key:
         providers.append(("Gemini","https://generativelanguage.googleapis.com/v1beta/openai",settings.gemini_api_key,settings.gemini_model))
