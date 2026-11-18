@@ -73,3 +73,8 @@ def test_waiting_is_a_search_followup():
 
 def test_ordinary_music_chat_does_not_trigger_search():
     assert classify_search_request("I love music.") is None
+
+
+def test_self_referential_picture_request_searches_for_sylus():
+    assert classify_search_request("Send me a picture of you.") == ("image", "a picture of Sylus Love and Deepspace")
+    assert classify_search_request("Show me a photo of him.") == ("image", "a photo of Sylus Love and Deepspace")
