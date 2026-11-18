@@ -10,16 +10,16 @@ from .db import connection
 STAGES = [
     (1, 0, "A First Encounter", "A beginning. Neither of you knows yet what this connection may become."),
     (2, 20, "Familiar Faces", "The first patterns are taking shape; familiar words and habits are beginning to matter."),
-    (3, 50, "A Private Rhythm", "You are finding a rhythm that belongs to the two of you."),
-    (4, 90, "Trusted Company", "Comfort is growing. Silence and conversation both feel more natural."),
-    (5, 140, "The First Confidences", "Small truths are being entrusted, remembered, and treated with care."),
-    (6, 200, "Closer Than Before", "Shared history is beginning to influence how openly you meet each other."),
-    (7, 280, "A Chosen Constant", "Consistency matters now. This connection has become part of the shape of your days."),
-    (8, 380, "Under the Guard", "More vulnerability is met with understanding; the guarded parts are not always hidden."),
-    (9, 500, "深い絆 · Deepening Bond", "Affection, trust, and shared history are reinforcing one another."),
-    (10, 650, "An Intimate Alliance", "You know how to challenge, reassure, and stand beside one another."),
-    (11, 830, "Beyond the Distance", "The bond has its own language, continuity, and a depth built over time."),
-    (12, 1050, "An Unbreakable Promise", "A rare, deeply established connection shaped by everything you have chosen to share."),
+    (3, 55, "A Private Rhythm", "You are finding a rhythm that belongs to the two of you."),
+    (4, 100, "Trusted Company", "Comfort is growing. Silence and conversation both feel more natural."),
+    (5, 160, "The First Confidences", "Small truths are being entrusted, remembered, and treated with care."),
+    (6, 240, "Closer Than Before", "Shared history is beginning to influence how openly you meet each other."),
+    (7, 340, "A Chosen Constant", "Consistency matters now. This connection has become part of the shape of your days."),
+    (8, 460, "Under the Guard", "More vulnerability is met with understanding; the guarded parts are not always hidden."),
+    (9, 600, "深い絆 · Deepening Bond", "Affection, trust, and shared history are reinforcing one another."),
+    (10, 760, "An Intimate Alliance", "You know how to challenge, reassure, and stand beside one another."),
+    (11, 950, "Beyond the Distance", "The bond has its own language, continuity, and a depth built over time."),
+    (12, 1160, "An Unbreakable Promise", "A rare, deeply established connection shaped by everything you have chosen to share."),
 ]
 
 def _clamp(value: float) -> int:
@@ -35,13 +35,9 @@ def _signals(text: str) -> list[tuple[str, str, str, dict[str, int], int]]:
         ("comfort", "Ease and comfort", "Umi expressed that she can relax, be herself, or speak freely with Sylus.", r"\bi feel (?:comfortable|at ease|at home|relaxed|understood) (?:with you|around you|talking to you)\b|\bi feel understood\b|\bi can be myself (?:with you|around you)\b|\bi don't have to pretend\b|\bi can talk to you (?:about anything|freely)\b|\bit's easy to talk to you\b|\bi can relax around you\b|\byou make me feel at ease\b|\bi don't feel judged\b|\bi feel calmer after talking to you\b|\bi feel like i can just be me\b", {"emotional_safety": 7, "trust": 3}, 8),
         ("vulnerability", "A guarded truth", "Umi shared a difficult feeling or personal vulnerability.", r"\bi feel (?:scared|afraid|lonely|overwhelmed|hopeless|insecure|ashamed|embarrassed|vulnerable|anxious|worried)\b|\bi(?:'m| am) (?:struggling|not okay|having a hard time|not used to opening up)\b|\bi have never told anyone\b|\bi(?:'ve| have) never (?:said|shared|admitted) this (?:before|to anyone)\b|\bi don't usually talk about this\b|\bthis is hard to admit\b|\bi'm afraid to tell you\b|\bi've been keeping this to myself\b|\bi usually keep this to myself\b|\bi haven't told anyone (?:else|about this)\b|\bi'm embarrassed to admit\b|\bi don't know how to say this\b|\bi need you to listen\b|\bi'm not used to sharing this\b|\bi'm scared you'll think\b", {"vulnerability": 8, "emotional_safety": 4, "trust": 3}, 9),
         ("repair", "A moment of repair", "A disagreement or hurt was approached with honesty and care.", r"\bi(?:'m| am) sorry\b|\bi didn't mean to hurt\b|\blet's talk this through\b|\bi forgive you\b|\bcan we work this out\b", {"trust": 3, "emotional_safety": 5, "commitment": 3}, 8),
-        ("shared_memory", "A memory revisited", "A specific shared moment or story was brought back into the present.", r"\bremember when we\b|\bour first (?:time|date|call|trip|game|conversation)\b|\bthat time we\b|\bwe did that together\b|\bwe talked about this before\b|\bwe (?:played|built|made|shared|watched|worked on|decided|planned) (?:it|this|that|together)\b|\bour (?:conversation|game|joke|moment|project|memory|story)\b|\bthe memories we (?:made|shared)\b", {"familiarity": 2, "shared_experiences": 6, "affection": 1}, 7),
-        ("shared_world", "A world in common", "A recurring part of the fictional world you both enjoy entered the conversation.", r"\bmephisto\b|\bn109\b|\bonychinus\b|\bluke and kieran\b|\bciren\b|\bsenlu\b", {"familiarity": 1}, 1),
+        ("shared_memory", "A memory revisited", "A specific shared moment or story was brought back into the present.", r"\bremember when we\b|\bour first (?:time|date|call|trip|game|conversation)\b|\bthat time we\b|\bwe did that together\b|\bthe time you and i\b", {"familiarity": 1, "shared_experiences": 4}, 5),
         ("achievement", "A win worth sharing", "A personal achievement or difficult step was shared with Sylus.", r"\bi (?:passed|got accepted|got the offer|finished|submitted|won|succeeded)\b|\bi did it\b|\bi finally (?:managed|completed)\b", {"shared_experiences": 2, "commitment": 2, "affection": 1}, 5),
-        ("playful", "A private joke", "Playful teasing or a recurring in-joke added to your shared rhythm.", r"\bmephi-chan\b|\bmistress\b|\bkitten\b|😜|😏|🫣|🤭|🤣|😂|\byou're impossible\b|\btry me\b", {"familiarity": 3, "affection": 1}, 3),
-        ("gratitude", "Care acknowledged", "Umi acknowledged a moment of care or understanding.", r"\bthank you for listening\b|\bthat helped me\b|\bi appreciate you\b|\bi'm glad i told you\b|\bi feel better now\b", {"emotional_safety": 4, "trust": 2, "affection": 2}, 6),
-        ("shared_media", "Something shown to each other", "An actual image, song, or video was shared and discussed.", r"\bshared an image\b|\bi just saw (?:a|this) (?:reel|video|picture|photo)\b|\blisten to this\b|\bhere is (?:a|the) (?:photo|picture|image|video)\b", {"shared_experiences": 5, "familiarity": 1}, 5),
-        ("daily_life", "A detail from everyday life", "A personal detail, preference, routine, or piece of background became part of your shared context.", r"\bmy (?:favorite|favourite|usual|daily|morning|evening)\b|\bi (?:usually|often|rarely|always|never)\b|\bi (?:study|work|live|grew up|prefer|enjoy|am interested in|am into)\b|\bwhen i was (?:younger|a child|little)\b|\bi'm (?:a student|studying|working)\b|\bmy routine\b", {"familiarity": 3}, 3),
+        ("gratitude", "Care acknowledged", "Umi acknowledged a moment of care or understanding.", r"\bthank you for listening\b|\bthat helped me\b|\bi appreciate you\b|\bi'm glad i told you\b|\bi feel better now\b", {"emotional_safety": 3, "trust": 1, "affection": 1}, 4),
         ("trust_breach", "Trust needs repair", "A clear statement of broken trust or a broken promise was expressed.", r"\bi can't trust you\b|\byou lied to me\b|\byou broke your promise\b|\byou ignored my boundary\b|\bi don't feel safe with you\b", {"trust": -10, "emotional_safety": -9, "commitment": -3}, -6),
         ("commitment", "Choosing to return", "A clear intention to keep building the connection was expressed.", r"\bi want us to\b|\bi want to keep (?:this|building)\b|\bi choose you\b|\bi'm not going anywhere\b|\blet's keep (?:this|going)\b", {"commitment": 8, "trust": 2, "affection": 2}, 10),
     ]
@@ -49,14 +45,16 @@ def _signals(text: str) -> list[tuple[str, str, str, dict[str, int], int]]:
         if re.search(pattern, value, re.I):
             found.append((key, title, description, gains, points))
     # Avoid rewarding a single message for many overlapping keywords.
-    priority = {"trust_breach": 0, "trust": 1, "comfort": 2, "vulnerability": 3, "repair": 4, "commitment": 5, "affection": 6, "gratitude": 7, "achievement": 8, "shared_memory": 9, "shared_media": 10, "shared_world": 11, "daily_life": 12, "playful": 13}
+    priority = {"trust_breach": 0, "trust": 1, "comfort": 2, "vulnerability": 3, "repair": 4, "commitment": 5, "affection": 6, "gratitude": 7, "achievement": 8, "shared_memory": 9}
     return sorted(found, key=lambda item: priority.get(item[0], 99))[:2]
 
-def _stage(points: int) -> tuple[int, str, str, int, int]:
+STAGE_MIN_DAYS = [0, 1, 4, 8, 14, 24, 40, 60, 90, 120, 180, 270]
+
+def _stage(points: int, age_days: float) -> tuple[int, str, str, int, int]:
     current = STAGES[0]
     next_stage = STAGES[1]
     for index, item in enumerate(STAGES):
-        if points >= item[1]:
+        if points >= item[1] and age_days >= STAGE_MIN_DAYS[index]:
             current = item
             next_stage = STAGES[min(index + 1, len(STAGES) - 1)]
         else:
@@ -126,29 +124,6 @@ def refresh_bond() -> dict:
                 elif item.get("role") == "assistant":
                     call_assistant_count += 1
 
-        # Saved memories are durable evidence of details and moments already shared.
-        # Only relationship/interest memories tied to Sylus or the shared cast qualify.
-        memory_rows = conn.execute(
-            "SELECT id, category, content FROM memories WHERE archived_at IS NULL ORDER BY created_at ASC"
-        ).fetchall()
-        for memory_id, category, content in memory_rows:
-            memory_text = str(content or "")
-            if category not in ("Relationship", "Preference", "Important detail"):
-                continue
-            if not re.search(r"\b(sylus|mephisto|mephi-chan|luke|kieran|n109|onychinus|ciren|senlu)\b|\b(memory card|hot.?spring|partner in crime)\b", memory_text, re.I):
-                continue
-            event_key = "memory:" + str(memory_id)
-            inserted = conn.execute(
-                "INSERT INTO bond_events (event_key,title,description,source_message_id) "
-                "VALUES (%s,%s,%s,NULL) ON CONFLICT (event_key) DO NOTHING RETURNING id",
-                (event_key,"A shared detail remembered","A saved detail reflects something personal or meaningful already shared between you."),
-            ).fetchone()
-            if inserted:
-                conn.execute(
-                    "UPDATE bond_state SET familiarity=LEAST(100,familiarity+2), "
-                    "shared_experiences=LEAST(100,shared_experiences+2), bond_points=bond_points+3, updated_at=now() WHERE id=1"
-                )
-
         user_count = len(rows) + call_user_count
         turns = min(user_count, conn.execute(
             "SELECT count(*) FROM messages WHERE role='assistant'"
@@ -164,11 +139,11 @@ def refresh_bond() -> dict:
         consistency = _clamp(min(100, active_days * 4) * time_decay)
         # Message volume and elapsed time alone do not mean two people know each other.
         # Familiarity grows from personal details and preferences actually shared.
-        familiarity_from_time = 0
+        familiarity_from_time = min(35, active_days * 3)
         # Gentle activity progress keeps the chapter moving during ordinary conversation,
         # while explicit trust, affection, repair, and shared-memory events remain the main rewards.
-        # Five completed shared turns add two points; active days add two points each.
-        activity_points = min(100, active_days * 2 + (turns // 5) * 2)
+        # Time together contributes gently; message volume alone does not accelerate chapters.
+        activity_points = min(20, active_days * 2)
         conn.execute(
             "UPDATE bond_state SET familiarity=GREATEST(%s,LEAST(100,ROUND(familiarity*%s)::int)), consistency=%s, "
             "bond_points=GREATEST(bond_points, %s), total_user_messages=%s, total_shared_turns=%s WHERE id=1",
@@ -177,10 +152,14 @@ def refresh_bond() -> dict:
         state = conn.execute(
             "SELECT affection, trust, familiarity, shared_experiences, commitment, vulnerability, "
             "emotional_safety, consistency, bond_points, level, stage, summary, milestones, "
-            "total_user_messages, total_shared_turns, updated_at FROM bond_state WHERE id=1"
+            "total_user_messages, total_shared_turns, updated_at, progression_started_at FROM bond_state WHERE id=1"
         ).fetchone()
         points = int(state[8] or 0)
-        level, stage, summary, floor_points, next_points = _stage(points)
+        started_at = state[16] or datetime.now(timezone.utc)
+        if started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=timezone.utc)
+        age_days = max(0.0, (datetime.now(timezone.utc) - started_at).total_seconds() / 86400)
+        level, stage, summary, floor_points, next_points = _stage(points, age_days)
         progress = 100 if level == 12 else _clamp((points-floor_points) / max(1, next_points-floor_points) * 100)
         milestones = conn.execute(
             "SELECT event_key, title, description, created_at FROM bond_events ORDER BY created_at DESC"
