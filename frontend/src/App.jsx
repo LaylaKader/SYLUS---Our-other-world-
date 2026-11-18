@@ -202,6 +202,8 @@ function App() {
       setNotice('Private conversation saved');
       const memoryResponse = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/memories`, { headers, credentials: 'include' });
       if (memoryResponse.ok) setMemories(await memoryResponse.json());
+      const bondResponse = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/bond`, { headers, credentials: 'include' });
+      if (bondResponse.ok) setBond(await bondResponse.json());
     } catch (error) { setMessages(current => current.filter(message => message.id !== pendingId)); setDraft(text); const message = error.message || 'Message could not be sent. Your text has been kept.'; setNotice(message); setComposerNotice(message); }
     finally { setSending(false); }
   }
