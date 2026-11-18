@@ -158,13 +158,24 @@ class MessageIn(BaseModel):
 class MessageEdit(BaseModel):
     text: str = Field(min_length=1, max_length=12000)
 
+class AttachmentOut(BaseModel):
+    """Structured media/link card rendered directly beneath a chat message."""
+    type: Literal["image", "link", "video", "music"]
+    title: str = ""
+    url: str
+    description: str = ""
+    source: str = ""
+    source_url: str | None = None
+    preview_url: str | None = None
+
+
 class MessageOut(BaseModel):
     id: str
     role: Literal["user", "assistant"]
     text: str
     created_at: datetime
     media_url: str | None = None
-    attachments: list[dict] = Field(default_factory=list)
+    attachments: list[AttachmentOut] = Field(default_factory=list)
 
 class ChatTurnOut(BaseModel):
     user_message: MessageOut
