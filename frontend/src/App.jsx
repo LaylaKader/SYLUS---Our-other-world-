@@ -856,8 +856,11 @@ function App() {
       if (!response.ok) { const failure = await response.json().catch(() => ({})); throw new Error(failure.detail || 'Image upload failed.'); }
       const message = await response.json();
       setMessages(current => [...current, message]);
-      setNotice('Image saved privately. Sylus is checking what is visible…');
-      await discussImage(message);
+      setNotice('Image saved. Sylus is inspecting it…');
+      await refreshMessages();
+      setNotice(timeContext?.vision_ready
+        ? 'Sylus has inspected the image and saved what he can see.'
+        : 'Image saved, but image understanding is not enabled. Enable it in Settings before asking Sylus about the picture.');
     } catch (error) { setNotice(error.message); }
     finally { setUploadingImage(false); if (imageInputRef.current) imageInputRef.current.value = ''; }
   }
