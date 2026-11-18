@@ -102,7 +102,15 @@ class OwnerLogin(BaseModel):
     password: str = Field(min_length=1, max_length=256)
 
 class MessageIn(BaseModel):
-    text: str = Field(min_length=1, max_length=12000)
+    text: str | None = Field(default=None, min_length=1, max_length=12000)
+    texts: list[str] | None = Field(default=None, min_length=1, max_length=4)
+
+    def normalized_texts(self) -> list[str]:
+        values = self.texts if self.texts else ([self.text] if self.text else [])
+        cleaned = [value.strip() for value in values if value and value.strip()]
+        if not cleaned or any(len(value) > 12000 for value in cleaned):
+            raise ValueError('At least one non-empty message is required.')
+        return cleaned
 
 class MessageEdit(BaseModel):
     text: str = Field(min_length=1, max_length=12000)
@@ -842,9 +850,8 @@ def generate_private_image(payload: ImageGenerateIn, _: None = Depends(require_o
 
 @app.post("/v1/chat", response_model=ChatTurnOut)
 def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner)):
-    text = payload.text.strip()
-    if not text:
-        raise HTTPException(status_code=422, detail="Message cannot be blank")
+    texts = payload.normalized_texts()
+    text = "\n".join(texts)
     client_ip = request.client.host if request.client else "unknown"
     attempts = _chat_attempts[client_ip]
     now = time()
@@ -858,10 +865,13 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
     with connection() as conn:
         previous = conn.execute("SELECT created_at FROM messages WHERE role = 'user' AND archived_at IS NULL ORDER BY created_at DESC LIMIT 1").fetchone()
         tz_row = conn.execute("SELECT timezone FROM owner_runtime_context WHERE id = 1").fetchone()
-        user_row = conn.execute("INSERT INTO messages (role, body) VALUES ('user', %s) RETURNING id, role, body, created_at", (text,)).fetchone()
+        user_rows = [
+            conn.execute("INSERT INTO messages (role, body) VALUES ('user', %s) RETURNING id, role, body, created_at", (part,)).fetchone()
+            for part in texts
+        ]
         history_rows = conn.execute(
-            "SELECT role, body, created_at, metadata->>'image_context' FROM messages WHERE id <> %s AND role IN ('user','assistant') AND archived_at IS NULL ORDER BY created_at DESC LIMIT 12",
-            (user_row[0],),
+            "SELECT role, body, created_at, metadata->>'image_context' FROM messages WHERE id <> %s AND role IN ('user','assistant') AND archived_at IS NULL ORDER BY created_at DESC LIMIT 16",
+            (user_rows[0][0],),
         ).fetchall()
     tz_name = tz_row[0] if tz_row else DEFAULT_TIMEZONE
     try:
@@ -883,13 +893,14 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
         {"role": r[0], "body": r[1][:1800], "created_at": r[2].isoformat(), "image_context": r[3]}
         for r in reversed(history_rows)
     ]
+    history.extend({"role": "user", "body": part} for part in texts)
     try:
-        answer = generate_reply(text, str(user_row[0]), history, time_context=time_note)
+        answer = generate_reply(text, str(user_rows[-1][0]), history[:-len(texts)], time_context=time_note)
     except ProviderNotConfigured as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ProviderRequestFailed as exc:
         with connection() as conn:
-            conn.execute("DELETE FROM messages WHERE id = %s AND role = 'user'", (user_row[0],))
+            conn.execute("DELETE FROM messages WHERE id = ANY(%s) AND role = 'user'", ([row[0] for row in user_rows],))
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     bubbles = split_reply_bubbles(answer)
     with connection() as conn:
@@ -900,9 +911,11 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
             ).fetchone()
             for bubble in bubbles
         ]
+    user_messages = [MessageOut(id=str(r[0]), role=r[1], text=r[2], created_at=r[3]) for r in user_rows]
     assistant_messages = [MessageOut(id=str(r[0]), role=r[1], text=r[2], created_at=r[3]) for r in assistant_rows]
     return ChatTurnOut(
-        user_message=MessageOut(id=str(user_row[0]), role=user_row[1], text=user_row[2], created_at=user_row[3]),
+        user_message=user_messages[-1],
+        user_messages=user_messages,
         assistant_message=assistant_messages[-1] if assistant_messages else None,
         assistant_messages=assistant_messages,
     )
