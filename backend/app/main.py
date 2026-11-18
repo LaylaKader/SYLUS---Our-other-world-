@@ -392,19 +392,19 @@ def upload_visual_reference(identity_id: UUID, file: UploadFile = File(...), _: 
     elif len(data)>=12 and data[4:8]==b'ftyp' and data[8:12] in (b'avif',b'avis'): detected=('image/avif','avif')
     elif len(data)>=12 and data[4:8]==b'ftyp' and data[8:12] in (b'heic',b'heix',b'hevc',b'hevx',b'mif1',b'msf1'): detected=('image/heic','heic')
     if not detected: raise HTTPException(status_code=415, detail='Unsupported image format. Use JPG, PNG, WebP, GIF, AVIF, or HEIC.')
-    file.content_type, extension = detected
+    detected_type, extension = detected
     with connection() as conn:
         identity=conn.execute("SELECT display_name,category FROM visual_identities WHERE id=%s",(identity_id,)).fetchone()
         if not identity: raise HTTPException(status_code=404,detail="Visual identity not found.")
         row=conn.execute(
             "INSERT INTO visual_reference_images (identity_id,content_type,filename,data,source) VALUES (%s,%s,%s,%s,'manual') RETURNING id,filename,created_at",
-            (identity_id,file.content_type,(file.filename or f"reference.{extension}")[:160],data),
+            (identity_id,detected_type,(file.filename or f"reference.{extension}")[:160],data),
         ).fetchone()
         accepted=conn.execute("SELECT 1 FROM provider_acceptances WHERE provider='cloudflare_meta_vision'").fetchone()
     analysis_notes=""
-    if file.content_type in {'image/jpeg','image/png','image/webp'} and accepted and settings.cloudflare_account_id and settings.cloudflare_api_token:
+    if detected_type in {'image/jpeg','image/png','image/webp'} and accepted and settings.cloudflare_account_id and settings.cloudflare_api_token:
         try:
-            reference_data="data:"+file.content_type+";base64,"+base64.b64encode(data).decode("ascii")
+            reference_data="data:"+detected_type+";base64,"+base64.b64encode(data).decode("ascii")
             response=httpx.post(
                 "https://api.cloudflare.com/client/v4/accounts/"+settings.cloudflare_account_id+"/ai/run/@cf/meta/llama-3.2-11b-vision-instruct",
                 headers={"Authorization":f"Bearer {settings.cloudflare_api_token}","Content-Type":"application/json"},
