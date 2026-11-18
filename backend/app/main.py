@@ -214,6 +214,8 @@ class ImageGenerateIn(BaseModel):
 
 class ProactiveSettingsUpdate(BaseModel):
     messages_enabled: bool | None = None
+    chance_percent: int | None = Field(default=None, ge=0, le=100)
+    max_idle_minutes: int | None = Field(default=None, ge=1, le=1440)
 
 
 class CallSettingsUpdate(BaseModel):
@@ -890,12 +892,14 @@ def get_proactive_settings(_: None = Depends(require_owner)):
     with connection() as conn:
         row = conn.execute(
             "SELECT messages_enabled, calls_enabled, quiet_start, quiet_end, min_idle_minutes, "
-            "min_interval_minutes, timezone FROM proactive_contact_settings WHERE id = 1"
+            "min_interval_minutes, timezone, chance_percent, max_idle_minutes "
+            "FROM proactive_contact_settings WHERE id = 1"
         ).fetchone()
     return {
         "messages_enabled": bool(row[0]), "calls_enabled": bool(row[1]),
         "quiet_start": row[2].strftime("%H:%M"), "quiet_end": row[3].strftime("%H:%M"),
         "min_idle_minutes": row[4], "min_interval_minutes": row[5], "timezone": row[6],
+        "chance_percent": row[7], "max_idle_minutes": row[8],
     }
 
 
@@ -904,11 +908,14 @@ def update_proactive_settings(payload: ProactiveSettingsUpdate, _: None = Depend
     changes = payload.model_dump(exclude_unset=True)
     if not changes:
         raise HTTPException(status_code=400, detail="No proactive settings supplied.")
-    with connection() as conn:
-        if "messages_enabled" in changes:
+    allowed = {key: value for key, value in changes.items()
+               if key in {"messages_enabled", "chance_percent", "max_idle_minutes"}}
+    if allowed:
+        assignments = ", ".join(f"{key} = %s" for key in allowed)
+        with connection() as conn:
             conn.execute(
-                "UPDATE proactive_contact_settings SET messages_enabled = %s, updated_at = now() WHERE id = 1",
-                (changes["messages_enabled"],),
+                f"UPDATE proactive_contact_settings SET {assignments}, updated_at = now() WHERE id = 1",
+                tuple(allowed.values()),
             )
     return get_proactive_settings(None)
 
@@ -1019,15 +1026,21 @@ def proactive_contact_decision(
     last_proactive_at: datetime | None,
     cycle_count: int,
     pause_until: datetime | None,
-    min_idle_minutes: int = 60,
-    min_interval_minutes: int = 15,
+    min_idle_minutes: int = 0,
+    min_interval_minutes: int = 0,
+    max_idle_minutes: int = 60,
+    chance_percent: int = 50,
+    random_value: float | None = None,
 ) -> dict:
-    """Deterministic idle contact cycle with spaced follow-ups."""
+    """Probabilistic contact within a bounded window; max inactivity is a hard deadline."""
     idle_minutes = max(0.0, (now_utc - last_activity).total_seconds() / 60)
     owner_replied = last_proactive_at is None or last_activity > last_proactive_at
     count = 0 if owner_replied else cycle_count
     pause = None if owner_replied else pause_until
     is_followup = not owner_replied
+    since_last_contact = idle_minutes if owner_replied or not last_proactive_at else max(
+        0.0, (now_utc - last_proactive_at).total_seconds() / 60
+    )
 
     if idle_minutes < min_idle_minutes:
         return {"due": False, "reason": "owner_recently_active", "is_followup": False,
@@ -1047,7 +1060,13 @@ def proactive_contact_decision(
         if (now_utc - last_proactive_at).total_seconds() < min_interval_minutes * 60:
             return {"due": False, "reason": "followup_spacing", "is_followup": True,
                     "cycle_count": count, "pause_until": pause, "idle_minutes": idle_minutes}
-    return {"due": True, "reason": "followup_due" if is_followup else "initial_message_due",
+    forced = since_last_contact >= max_idle_minutes
+    draw = random.random() if random_value is None else random_value
+    if not forced and draw >= max(0, min(100, chance_percent)) / 100:
+        return {"due": False, "reason": "chance_not_met", "is_followup": is_followup,
+                "cycle_count": count, "pause_until": pause, "idle_minutes": idle_minutes}
+    return {"due": True, "reason": "maximum_inactivity_reached" if forced else
+            ("followup_due" if is_followup else "initial_message_due"),
             "is_followup": is_followup, "cycle_count": count, "pause_until": pause,
             "idle_minutes": idle_minutes}
 
@@ -1059,7 +1078,7 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
     with connection() as conn:
         row = conn.execute(
             "SELECT messages_enabled, min_idle_minutes, min_interval_minutes, timezone, "
-            "last_proactive_at, proactive_cycle_count, proactive_pause_until "
+            "last_proactive_at, proactive_cycle_count, proactive_pause_until, max_idle_minutes, chance_percent "
             "FROM proactive_contact_settings WHERE id = 1 FOR UPDATE"
         ).fetchone()
         if not row or not row[0]:
@@ -1089,7 +1108,7 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
 
         decision = proactive_contact_decision(
             now_utc, last_activity[0], row[4], int(row[5] or 0), row[6],
-            int(row[1] or 60), int(row[2] or 15),
+            int(row[1] or 0), int(row[2] or 0), int(row[7] or 60), int(row[8] if row[8] is not None else 50),
         )
         if not decision["due"]:
             if decision["cycle_count"] != int(row[5] or 0) or decision["pause_until"] != row[6]:
