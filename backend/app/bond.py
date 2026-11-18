@@ -91,10 +91,14 @@ def refresh_bond() -> dict:
         # Familiarity and consistency reward time spent together, but both have diminishing returns.
         consistency = _clamp(min(100, active_days * 4))
         familiarity_from_time = _clamp(min(24, turns * 0.35))
+        # Gentle activity progress keeps the chapter moving during ordinary conversation,
+        # while explicit trust, affection, repair, and shared-memory events remain the main rewards.
+        # Five completed shared turns add two points; active days add two points each.
+        activity_points = min(60, active_days * 2 + (turns // 5) * 2)
         conn.execute(
             "UPDATE bond_state SET familiarity=GREATEST(familiarity,%s), consistency=%s, "
             "bond_points=GREATEST(bond_points, %s), total_user_messages=%s, total_shared_turns=%s WHERE id=1",
-            (familiarity_from_time, consistency, min(60, active_days * 2), user_count, turns),
+            (familiarity_from_time, consistency, activity_points, user_count, turns),
         )
         state = conn.execute(
             "SELECT affection, trust, familiarity, shared_experiences, commitment, vulnerability, "
