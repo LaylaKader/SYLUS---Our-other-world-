@@ -49,3 +49,23 @@ def test_result_parser_extracts_search_links():
     parser = _ResultAnchors()
     parser.feed('<a class="result__a" href="https://example.com/page">Example page</a>')
     assert parser.items == [{"href": "https://example.com/page", "text": "Example page"}]
+
+
+def test_music_link_request_is_classified_and_cleaned():
+    assert classify_search_request("Then give me a link of a nice music") == ("music", "music")
+
+
+def test_music_preference_followup_uses_prior_search_intent():
+    from app.web_search import classify_search_request_with_history
+    history = [
+        {"role": "user", "body": "Then give me a link of a nice music"},
+        {"role": "assistant", "body": "Looking for something specific?"},
+    ]
+    assert classify_search_request_with_history(
+        "Something that you think fits me", history
+    ) == ("music", "beautiful atmospheric romantic music recommendations")
+
+
+def test_waiting_is_a_search_followup():
+    from app.web_search import is_search_followup
+    assert is_search_followup("I'm waiting~")
