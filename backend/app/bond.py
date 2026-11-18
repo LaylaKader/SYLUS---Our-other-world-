@@ -25,6 +25,49 @@ STAGES = [
 def _clamp(value: float) -> int:
     return max(0, min(100, int(round(value))))
 
+def _emotion_shaped_gains(
+    gains: dict[str, int], points: int, event_key: str, emotion: dict | None
+) -> tuple[dict[str, int], int]:
+    """Let Sylus's recorded emotional response subtly shape the relationship reward."""
+    state = emotion if isinstance(emotion, dict) else {}
+    def value(name: str) -> float:
+        try:
+            return max(0.0, min(1.0, float(state.get(name, 0.0))))
+        except (TypeError, ValueError):
+            return 0.0
+
+    warmth = value("warmth")
+    affection = value("affection")
+    tenderness = value("tenderness")
+    amusement = value("amusement")
+    curiosity = value("curiosity")
+    pride = value("pride")
+    concern = value("concern")
+    protectiveness = value("protectiveness")
+    respect = value("respect")
+    factor = max(0.8, min(1.3,
+        0.82 + warmth * 0.12 + affection * 0.10 + tenderness * 0.10
+        + respect * 0.08 + curiosity * 0.06 + amusement * 0.05 + pride * 0.05
+    ))
+    adjusted = dict(gains)
+    if event_key in {"affection", "shared_memory"}:
+        adjusted["affection"] = adjusted.get("affection", 0) + round(tenderness * 2)
+    if event_key in {"trust", "comfort", "vulnerability", "repair"}:
+        adjusted["emotional_safety"] = adjusted.get("emotional_safety", 0) + round(
+            (warmth + tenderness + concern + protectiveness) / 2
+        )
+        adjusted["trust"] = adjusted.get("trust", 0) + round(respect * 1.5)
+    if event_key == "personal_curiosity":
+        adjusted["familiarity"] = adjusted.get("familiarity", 0) + round(curiosity * 2)
+        adjusted["shared_experiences"] = adjusted.get("shared_experiences", 0) + round(warmth)
+    if event_key == "achievement":
+        adjusted["affection"] = adjusted.get("affection", 0) + round(pride * 2)
+    if event_key in {"gratitude", "comfort"}:
+        adjusted["affection"] = adjusted.get("affection", 0) + round(warmth)
+    return adjusted, max(1, int(round(points * factor)))
+
+
+
 def _signals(text: str) -> list[tuple[str, str, str, dict[str, int], int]]:
     """Return grounded, user-authored signals. One message can earn at most two distinct events."""
     value = re.sub(r"\s+", " ", text.casefold()).strip()
@@ -67,12 +110,24 @@ def refresh_bond() -> dict:
         rows = conn.execute(
             "SELECT id, body, created_at FROM messages WHERE role='user' AND archived_at IS NULL ORDER BY created_at ASC"
         ).fetchall()
+        emotion_by_message = {}
+        if rows:
+            emotion_rows = conn.execute(
+                "SELECT trigger_message_id, next_state FROM emotion_events "
+                "WHERE trigger_message_id = ANY(%s) ORDER BY created_at ASC",
+                ([row[0] for row in rows],),
+            ).fetchall()
+            emotion_by_message = {
+                str(message_id): (next_state if isinstance(next_state, dict) else {})
+                for message_id, next_state in emotion_rows
+            }
         # Revisit all retained messages, including history before the progression rebasing.
         # Stable event fingerprints make this backfill idempotent.
         for message_id, body, created_at in rows:
             normalized = re.sub(r"\s+", " ", str(body or "").casefold()).strip()
             fingerprint = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:20]
             for key, title, description, gains, points in _signals(str(body or "")):
+                gains, points = _emotion_shaped_gains(gains, points, key, emotion_by_message.get(str(message_id)))
                 # No per-day or lifetime category cap: distinct interactions count; identical
                 # repeated messages do not farm the same milestone.
                 event_key = "message:" + key + ":" + fingerprint
@@ -104,6 +159,7 @@ def refresh_bond() -> dict:
                     normalized = re.sub(r"\s+", " ", str(item["text"]).casefold()).strip()
                     fingerprint = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:20]
                     for key, title, description, gains, points in _signals(str(item["text"])):
+                        gains, points = _emotion_shaped_gains(gains, points, key, None)
                         event_key = "call:" + started_at.isoformat() + ":" + str(item_index) + ":" + key + ":" + fingerprint
                         inserted = conn.execute(
                             "INSERT INTO bond_events (event_key,title,description,source_message_id) "
