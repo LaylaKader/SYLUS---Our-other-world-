@@ -1,8 +1,8 @@
-const CACHE_NAME = 'sylus-shell-v4';
+const CACHE_NAME = 'sylus-shell-v5';
 const SHELL_FILES = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(SHELL_FILES)));
+  event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(SHELL_FILES.map(path => new Request(path, { cache: 'reload' })))));
   self.skipWaiting();
 });
 
