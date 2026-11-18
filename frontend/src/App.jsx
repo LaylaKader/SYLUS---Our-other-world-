@@ -522,6 +522,172 @@ function App() {
     }
   }
 
+  function stopCallRecognition() {
+    try { callRecognitionRef.current?.stop?.(); } catch {}
+    callRecognitionRef.current = null;
+    setCallListening(false);
+  }
+
+  function startCallRecognition() {
+    if (!callActiveRef.current || callProcessingRef.current) return;
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Recognition) {
+      setCallStatus('Speech recognition is unavailable here. Try Chrome on Android, or use text chat.');
+      return;
+    }
+    try {
+      stopCallRecognition();
+      const recognition = new Recognition();
+      callRecognitionRef.current = recognition;
+      recognition.lang = 'en-US';
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.onstart = () => setCallListening(true);
+      recognition.onresult = event => {
+        let finalText = '';
+        let interimText = '';
+        for (let index = event.resultIndex; index < event.results.length; index += 1) {
+          const transcript = event.results[index][0]?.transcript || '';
+          if (event.results[index].isFinal) finalText += transcript;
+          else interimText += transcript;
+        }
+        if (interimText) setCallTranscript(interimText);
+        if (finalText.trim() && !callProcessingRef.current) {
+          setCallTranscript(finalText.trim());
+          callProcessingRef.current = true;
+          setCallListening(false);
+          sendCallUtterance(finalText.trim());
+        }
+      };
+      recognition.onerror = event => {
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          setCallStatus('Microphone permission was denied. Allow microphone access in your browser settings.');
+          callActiveRef.current = false;
+          setCallActive(false);
+        } else if (event.error !== 'no-speech' && event.error !== 'aborted') {
+          setCallStatus('I could not hear that clearly. Try speaking again.');
+        }
+      };
+      recognition.onend = () => {
+        setCallListening(false);
+        if (callActiveRef.current && !callProcessingRef.current) {
+          window.setTimeout(() => startCallRecognition(), 450);
+        }
+      };
+      recognition.start();
+      setCallStatus('Listening. Speak naturally; Sylus will answer aloud.');
+    } catch (error) {
+      setCallStatus(error?.message || 'The microphone could not start. Check browser permission.');
+    }
+  }
+
+  async function speakCallReply(text) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) throw new Error('Audio playback is not supported in this browser.');
+    let context = audioContextRef.current;
+    if (!context || context.state === 'closed') {
+      context = new AudioContextClass();
+      audioContextRef.current = context;
+    }
+    if (context.state === 'suspended') await context.resume();
+    const response = await fetch(apiUrl.replace(/\/$/, '') + '/v1/voice/speech', {
+      method: 'POST', headers, credentials: 'include', body: JSON.stringify({ text })
+    });
+    if (!response.ok) {
+      const failure = await response.json().catch(() => ({}));
+      throw new Error(failure.detail || "Sylus's voice could not be generated (HTTP " + response.status + ').');
+    }
+    const bytes = await response.arrayBuffer();
+    const decoded = await context.decodeAudioData(bytes.slice(0));
+    if (!decoded?.length) throw new Error('The voice response contained no playable audio.');
+    if (audioSourceRef.current) {
+      try { audioSourceRef.current.stop(); } catch {}
+      audioSourceRef.current = null;
+    }
+    await new Promise((resolve, reject) => {
+      const source = context.createBufferSource();
+      source.buffer = decoded;
+      source.connect(context.destination);
+      source.onended = () => {
+        if (audioSourceRef.current === source) audioSourceRef.current = null;
+        setPlayingAudioId(null);
+        resolve();
+      };
+      audioSourceRef.current = source;
+      setPlayingAudioId('voice-call');
+      try { source.start(0); } catch (error) { reject(error); }
+    });
+  }
+
+  async function sendCallUtterance(spokenText) {
+    setCallStatus('Sylus is listening…');
+    try {
+      const response = await fetch(apiUrl.replace(/\/$/, '') + '/v1/chat', {
+        method: 'POST', headers, credentials: 'include',
+        body: JSON.stringify({ texts: [spokenText] })
+      });
+      if (!response.ok) {
+        const failure = await response.json().catch(() => ({}));
+        throw new Error(failure.detail || 'The call could not reach Sylus (HTTP ' + response.status + ').');
+      }
+      const turn = await response.json();
+      const userMessages = turn.user_messages?.length ? turn.user_messages : (turn.user_message ? [turn.user_message] : []);
+      const replies = turn.assistant_messages?.length ? turn.assistant_messages : (turn.assistant_message ? [turn.assistant_message] : []);
+      setMessages(current => [...current, ...userMessages, ...replies]);
+      if (!replies.length) {
+        setCallStatus('Sylus is quiet for a moment. I’m listening again.');
+      } else {
+        setCallStatus('Sylus is speaking…');
+        await speakCallReply(replies.map(item => item.text).join(' '));
+      }
+    } catch (error) {
+      setCallStatus(error.message || 'The voice conversation was interrupted.');
+    } finally {
+      callProcessingRef.current = false;
+      if (callActiveRef.current) window.setTimeout(() => startCallRecognition(), 550);
+    }
+  }
+
+  async function beginVoiceCall() {
+    if (!connected || !chatReady || !timeContext?.voice_ready) {
+      setCallStatus('Connect the private server and configure Sylus’s voice before starting a call.');
+      setCallOpen(true);
+      return;
+    }
+    setCallOpen(true);
+    callActiveRef.current = true;
+    callProcessingRef.current = false;
+    setCallActive(true);
+    setCallTranscript('');
+    try {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (AudioContextClass) {
+        if (!audioContextRef.current || audioContextRef.current.state === 'closed') audioContextRef.current = new AudioContextClass();
+        if (audioContextRef.current.state === 'suspended') await audioContextRef.current.resume();
+      }
+    } catch {}
+    startCallRecognition();
+  }
+
+  function endVoiceCall() {
+    callActiveRef.current = false;
+    callProcessingRef.current = false;
+    stopCallRecognition();
+    if (audioSourceRef.current) {
+      try { audioSourceRef.current.stop(); } catch {}
+      audioSourceRef.current = null;
+    }
+    setPlayingAudioId(null);
+    setCallActive(false);
+    setCallListening(false);
+    setCallStatus('Call ended. Your conversation remains in the chat history.');
+  }
+
+  useEffect(() => () => {
+    callActiveRef.current = false;
+    try { callRecognitionRef.current?.stop?.(); } catch {}
+  }, []);
+
   useEffect(() => {
     try { window.localStorage.setItem('sylus-auto-read', autoReadEnabled ? 'true' : 'false'); } catch {}
     if (!autoReadEnabled || !chatReady) { autoReadQueueRef.current = []; return; }
