@@ -164,6 +164,8 @@ function App() {
   const [visualNotesDraft, setVisualNotesDraft] = useState('');
   const [visualNoteDrafts, setVisualNoteDrafts] = useState({});
   const [visualBusy, setVisualBusy] = useState(false);
+  const [visualUploadStatus, setVisualUploadStatus] = useState({});
+  const callFinalAlternativesRef = useRef([]);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedMessageIds, setSelectedMessageIds] = useState([]);
   const callActiveRef = useRef(false);
@@ -297,10 +299,52 @@ function App() {
     } catch(error){setNotice(error.message);} finally{setVisualBusy(false);}
   }
   async function uploadVisualReference(identityId,file) {
-    if(!file||!identityId)return;const form=new FormData();form.append('file',file);setVisualBusy(true);
-    try{const r=await fetch(`${apiUrl.replace(/\/$/, '')}/v1/visual-memory/identities/${identityId}/images`,{method:'POST',credentials:'include',body:form});if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Reference upload failed.');}await refreshVisualLibrary();setNotice('Reference image saved privately.');}
-    catch(error){setNotice(error.message);}finally{setVisualBusy(false);}
+    if (!file || !identityId) return;
+    setVisualBusy(true);
+    setVisualUploadStatus(current => ({ ...current, [identityId]: 'Preparing image…' }));
+    setNotice('Uploading reference photo…');
+    try {
+      let uploadFile = file;
+      if (!file.type.startsWith('image/')) throw new Error('Please choose an image file.');
+      try {
+        const bitmap = await createImageBitmap(file);
+        const maxSide = 1800;
+        const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+        canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+        const context = canvas.getContext('2d');
+        if (!context) throw new Error('Could not prepare this image on your device.');
+        context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        bitmap.close?.();
+        const blob = await new Promise((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('Could not convert this photo.')), 'image/jpeg', 0.88));
+        uploadFile = new File([blob], (file.name || 'reference').replace(/\\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+      } catch (imageError) {
+        if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('This phone image format could not be read. Please choose a JPG or PNG image.');
+      }
+      if (uploadFile.size > 8 * 1024 * 1024) throw new Error('This image is still larger than 8 MB. Choose a smaller photo.');
+      setVisualUploadStatus(current => ({ ...current, [identityId]: 'Uploading and saving…' }));
+      const form = new FormData();
+      form.append('file', uploadFile, uploadFile.name);
+      const response = await fetch(`${apiUrl.replace(/\\/$/, '')}/v1/visual-memory/identities/${identityId}/images`, {
+        method: 'POST', credentials: 'include', body: form
+      });
+      if (!response.ok) {
+        const failure = await response.json().catch(() => ({}));
+        throw new Error(failure.detail || `Reference upload failed (HTTP ${response.status}).`);
+      }
+      setVisualUploadStatus(current => ({ ...current, [identityId]: 'Saved. Refreshing references…' }));
+      await refreshVisualLibrary();
+      setVisualUploadStatus(current => ({ ...current, [identityId]: 'Photo saved privately.' }));
+      setNotice('Reference photo saved privately.');
+    } catch (error) {
+      setVisualUploadStatus(current => ({ ...current, [identityId]: error.message || 'Upload failed. Please try again.' }));
+      setNotice(error.message || 'Reference upload failed. Please try again.');
+    } finally {
+      setVisualBusy(false);
+    }
   }
+
   async function saveVisualIdentityNotes(id, notes) {
     try {
       const r=await fetch(`${apiUrl.replace(/\/$/, '')}/v1/visual-memory/identities/${id}`,{method:'PATCH',headers,credentials:'include',body:JSON.stringify({notes})});
@@ -668,12 +712,13 @@ function App() {
     if (!callActiveRef.current || callProcessingRef.current) return;
     const phrase = callFinalTranscriptRef.current.trim(); if (!phrase) return;
     callFinalTranscriptRef.current = '';
+    callFinalAlternativesRef.current = [];
     if (callSilenceTimerRef.current) window.clearTimeout(callSilenceTimerRef.current);
     callSilenceTimerRef.current = null; callProcessingRef.current = true; stopCallRecognition();
     let corrected=phrase;
     if(callCorrectionEnabled){
       setCallStatus('Cleaning up the transcription…');
-      try{const r=await fetch(apiUrl.replace(/\/$/, '')+'/v1/calls/correct-transcript',{method:'POST',headers,credentials:'include',body:JSON.stringify({text:phrase,session_id:callSessionIdRef.current})});if(r.ok){const v=await r.json();if(v.text?.trim())corrected=v.text.trim();}}catch{}
+      try{const r=await fetch(apiUrl.replace(/\/$/, '')+'/v1/calls/correct-transcript',{method:'POST',headers,credentials:'include',body:JSON.stringify({text:phrase,alternatives:callFinalAlternativesRef.current.slice(-6),session_id:callSessionIdRef.current})});if(r.ok){const v=await r.json();if(v.text?.trim())corrected=v.text.trim();}}catch{}
     }
     setCallTranscript(corrected);sendCallUtterance(corrected);
   }
@@ -691,7 +736,7 @@ function App() {
       recognition.lang = 'en-US';
       recognition.continuous = true;
       recognition.interimResults = true;
-      recognition.maxAlternatives = 1;
+      recognition.maxAlternatives = 3;
       recognition.onstart = () => {
         setCallListening(true);
         setCallStatus('Listening… speak naturally, then pause when you’re finished.');
@@ -703,6 +748,11 @@ function App() {
           if (!transcript) continue;
           if (event.results[index].isFinal) {
             callFinalTranscriptRef.current = [callFinalTranscriptRef.current, transcript].filter(Boolean).join(' ').trim();
+            for (let alternativeIndex = 0; alternativeIndex < Math.min(event.results[index].length, 3); alternativeIndex += 1) {
+              const candidate = String(event.results[index][alternativeIndex]?.transcript || '').trim();
+              if (candidate && !callFinalAlternativesRef.current.includes(candidate)) callFinalAlternativesRef.current.push(candidate);
+            }
+            callFinalAlternativesRef.current = callFinalAlternativesRef.current.slice(-6);
           } else {
             interimText += (interimText ? ' ' : '') + transcript;
           }
@@ -1162,7 +1212,7 @@ function App() {
               <div><strong>Call with Sylus</strong><div className="field-help">{new Date(call.started_at).toLocaleString()} · {Math.floor((call.duration_seconds||0)/60)} min {(call.duration_seconds||0)%60} sec</div></div>
               <button className="text-action" onClick={() => loadCallTranscript(call.id)}>{expandedCallId===call.id?'Hide transcript':'Transcript call'}</button>
             </div>
-            {expandedCallId===call.id && <div style={{marginTop:12,padding:12,borderRadius:12,background:'rgba(180,150,120,.06)'}}>
+            {expandedCallId===call.id && <div className="call-transcript-scroll" style={{marginTop:12,padding:12,borderRadius:12,background:'rgba(180,150,120,.06)'}}>
               {(callTranscriptDetails[call.id]?.transcript||[]).map((item,index)=><div key={index} style={{marginBottom:10}}>
                 <span className="card-kicker">{item.role==='user'?'YOU':'SYLUS'}</span><p style={{margin:'4px 0',whiteSpace:'pre-wrap'}}>{item.text}</p>
               </div>)}
@@ -1195,7 +1245,8 @@ function App() {
                 <div className="field-help">{image.source==='auto'?'Auto-saved':'Uploaded'}</div>
               </div>)}
             </div>
-            <label className="secondary-button" style={{display:'inline-flex',alignItems:'center',cursor:'pointer'}}>Add reference photo<input className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" disabled={!connected||visualBusy} onChange={e=>{uploadVisualReference(person.id,e.target.files?.[0]);e.target.value='';}}/></label>
+            <label className="secondary-button" style={{display:'inline-flex',alignItems:'center',cursor:'pointer'}}>Add reference photo<input className="visually-hidden" type="file" accept="image/*" disabled={!connected||visualBusy} onChange={e=>{const file=e.target.files?.[0];if(file)uploadVisualReference(person.id,file);e.target.value='';}}/></label>
+            {visualUploadStatus[person.id] && <div className="field-help" role="status" aria-live="polite">{visualUploadStatus[person.id]}</div>}
             <textarea className="settings-input memory-textarea" rows={2} value={visualNoteDrafts[person.id] ?? person.notes ?? ''} onChange={e=>setVisualNoteDrafts(v=>({...v,[person.id]:e.target.value}))} placeholder="Appearance notes for Sylus to remember (hair, style, usual outfit)…"/>
             <button className="text-action" onClick={()=>saveVisualIdentityNotes(person.id,visualNoteDrafts[person.id] ?? person.notes ?? '')}>Save notes</button>
           </article>)}
