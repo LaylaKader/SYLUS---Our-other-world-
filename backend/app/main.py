@@ -422,7 +422,7 @@ def list_call_sessions(_: None = Depends(require_owner)):
     with connection() as conn:
         rows=conn.execute(
             "SELECT id,started_at,ended_at,duration_seconds,jsonb_array_length(transcript) "
-            "FROM call_sessions ORDER BY started_at DESC LIMIT 50"
+            "FROM call_sessions WHERE ended_at IS NOT NULL ORDER BY started_at DESC LIMIT 50"
         ).fetchall()
     return [{"id":str(r[0]),"started_at":r[1].isoformat(),"ended_at":r[2].isoformat() if r[2] else None,
              "duration_seconds":r[3],"transcript_items":r[4]} for r in rows]
@@ -440,7 +440,8 @@ def finish_call_session(session_id: UUID, payload: CallFinishIn, _: None = Depen
     with connection() as conn:
         row=conn.execute(
             "UPDATE call_sessions SET ended_at=COALESCE(ended_at,now()), "
-            "duration_seconds=GREATEST(duration_seconds,%s) WHERE id=%s RETURNING id,started_at,ended_at,duration_seconds",
+            "duration_seconds=GREATEST(duration_seconds,GREATEST(0,EXTRACT(EPOCH FROM (COALESCE(ended_at,now())-started_at))::int),%s) "
+            "WHERE id=%s RETURNING id,started_at,ended_at,duration_seconds",
             (payload.duration_seconds,session_id),
         ).fetchone()
     if not row: raise HTTPException(status_code=404,detail="Call record not found.")
