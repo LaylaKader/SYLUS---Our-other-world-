@@ -330,7 +330,7 @@ def time_context(_: None = Depends(require_owner)):
         "chat_model": ("Gemini-first free provider pool" if settings.gemini_api_key else "Configured free provider pool" if chat_provider_configured() else None),
         "image_generation_ready": bool(settings.cloudflare_account_id and settings.cloudflare_api_token),
         "voice_ready": bool(settings.elevenlabs_api_key and settings.elevenlabs_voice_id),
-        "vision_ready": bool(settings.cloudflare_account_id and settings.cloudflare_api_token and vision_row),
+        "vision_ready": bool(settings.gemini_api_key or (settings.cloudflare_account_id and settings.cloudflare_api_token and vision_row)),
         "last_user_message_utc": last_utc.isoformat() if last_utc else None,
         "last_user_message_local": last_local.isoformat() if last_local else None,
         "seconds_since_last_user_message": elapsed_seconds,
