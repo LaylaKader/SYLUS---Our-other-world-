@@ -132,7 +132,7 @@ def classify_search_request(text: str) -> tuple[str, str] | None:
     value = (text or "").strip()
     if not value:
         return None
-    wants_image = re.search(r"\b(?:show|find|search|look for|get|send)\b.{0,100}\b(?:images?|pictures?|photos?|memes?|wallpapers?|fan ?art)\b|\b(?:images?|pictures?|photos?|memes?|wallpapers?|fan ?art)\b.{0,100}\b(?:of|for|about|please)\b", value, re.I)
+    wants_image = re.search(r"\b(?:show|find|search|look for|get|send)\b.{0,100}\b(?:images?|pictures?|photos?|memes?|wallpapers?|fan ?art)\b|\b(?:images?|pictures?|photos?|memes?|wallpapers?|fan ?art)\b.{0,100}\b(?:of|for|about|please)\b|\b(?:what does|what do)\b.{1,100}\blook like\b|\bcan i see\b.{0,80}\b(?:picture|photo|image)\b", value, re.I)
     wants_video = re.search(r"\b(?:find|search|show|look for|send)\b.{0,100}\b(?:videos?|clips?|trailers?|youtube)\b|\b(?:videos?|clips?|trailers?)\b.{0,80}\b(?:of|for|about)\b", value, re.I)
     wants_link = re.search(r"\b(?:search|look up|find|browse|give me|send me|share)\b.{0,100}\b(?:websites?|webpages?|links?|articles?|sources?|pages?)\b|\b(?:latest|current|recent)\b.{0,80}\b(?:news|updates|price|release|event)\b", value, re.I)
     explicit_search = re.search(r"\b(?:search the web|google it|look it up online|find online|search online|browse the web)\b", value, re.I)
