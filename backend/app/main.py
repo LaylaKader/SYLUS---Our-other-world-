@@ -1216,14 +1216,28 @@ def _analyze_uploaded_image(asset_id: UUID, image_bytes: bytes, content_type: st
             "AND archived_at IS NULL ORDER BY created_at DESC LIMIT 18", (message_id,),
         ).fetchall()
     image_data = "data:" + content_type + ";base64," + base64.b64encode(image_bytes).decode("ascii")
+    # Sylus is a fictional character, so the vision model may compare the incoming image
+    # against owner-approved Sylus references. Real people are not facially identified;
+    # their reference collections are manually labelled by the owner.
+    with connection() as conn:
+        sylus_refs = conn.execute(
+            "SELECT r.content_type, r.data FROM visual_reference_images r "
+            "JOIN visual_identities i ON i.id=r.identity_id "
+            "WHERE i.category='sylus' AND i.status='confirmed' ORDER BY r.created_at DESC LIMIT 4"
+        ).fetchall()
+    vision_content = [{
+        "type": "text",
+        "text": "You are Sylus’s private visual-analysis system. Inspect the first image (the newly shared image) carefully. Compare it against any following owner-approved Sylus reference images, which are labelled as Sylus. Return plain text with short labeled lines, NOT JSON and NOT a user-facing caption. Describe the main subject and scene; recognizable fictional character; garments and exact colors; flowers and distinguishing features; notable objects; readable text; pose, expression, lighting, and background. If the new image strongly matches the Sylus reference images, explicitly write 'Character identification: Sylus (strong visual match).' If plausible but uncertain, write 'Character identification: possibly Sylus' and state evidence. Do not identify a generic silver-haired man as Sylus from hair/clothes alone. Do not identify Umi or any other real person by comparing faces; the owner must label real people manually. Distinguish gold/yellow, red, orange, cream, and brown. Identify flowers by structure, not color alone. Separate direct observations from interpretation. Never guess. Keep notes compact but specific (6–10 lines)."
+    }, {"type":"image_url", "image_url": {"url": image_data}}]
+    for index, ref in enumerate(sylus_refs, start=1):
+        ref_data = "data:" + ref[0] + ";base64," + base64.b64encode(bytes(ref[1])).decode("ascii")
+        vision_content.append({"type":"text","text":f"Owner-approved Sylus reference image {index}."})
+        vision_content.append({"type":"image_url","image_url":{"url":ref_data}})
     try:
         vision_response = httpx.post(
             "https://api.cloudflare.com/client/v4/accounts/" + settings.cloudflare_account_id + "/ai/run/@cf/meta/llama-3.2-11b-vision-instruct",
             headers={"Authorization": f"Bearer {settings.cloudflare_api_token}", "Content-Type": "application/json"},
-            json={"messages": [{"role": "user", "content": [
-                {"type": "text", "text": "You are Sylus’s private visual-analysis system. Inspect the actual image pixels carefully. Do not infer from the filename, conversation, or what the user might expect. Return plain text with short labeled lines, NOT JSON and NOT a user-facing caption. Describe: main subject and scene; recognizable fictional character; each visible garment and its exact color; flowers/plants and their distinguishing features; notable objects; readable text exactly; pose, expression, lighting, and background. CHARACTER IDENTITY CHECK: Sylus from Love and Deepspace is an adult man with silver-white hair, vivid crimson/red eyes, sharp refined facial features, and a composed confident expression, commonly styled in elegant dark clothing with restrained red details. Compare the visible face, hair, eyes, styling, and overall character design. If strongly matched, explicitly write 'Character identification: Sylus (strong visual match).' If plausible but uncertain, write 'Character identification: possibly Sylus' and state the evidence. If not matched or key features are not visible, say so. Do not identify a generic silver-haired man as Sylus from hair and clothes alone. Do not assume the person pictured is Umi. For colors, distinguish gold/yellow, red, orange, cream, and brown carefully. For flowers, do not identify a species from color alone: use petal shape, arrangement, leaves, and visible structure; state uncertainty if these are insufficient. Separate direct observations from interpretation. Never guess. If the image is unclear, say what cannot be verified. Keep notes compact but specific (6–10 lines)."},
-                {"type": "image_url", "image_url": {"url": image_data}},
-            ]}], "max_tokens": 600, "temperature": 0.1},
+            json={"messages": [{"role": "user", "content": vision_content}], "max_tokens": 700, "temperature": 0.1},
             timeout=90.0,
         )
         vision_response.raise_for_status()
@@ -1245,6 +1259,28 @@ def _analyze_uploaded_image(asset_id: UUID, image_bytes: bytes, content_type: st
             "UPDATE messages SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('image_context', %s::text, 'image_analysis_status', 'complete') WHERE id = %s",
             (visual_description[:3500], message_id),
         )
+        # Keep useful image examples in the private library. Sylus matches are filed
+        # under his fictional-character collection; other people remain pending until
+        # the owner supplies a name. No real-person face recognition is performed.
+        if "Character identification: Sylus (strong visual match)." in visual_description:
+            identity = conn.execute("SELECT id FROM visual_identities WHERE category='sylus' LIMIT 1").fetchone()
+            if identity:
+                conn.execute(
+                    "INSERT INTO visual_reference_images (identity_id,content_type,filename,data,source,analysis_notes) "
+                    "VALUES (%s,%s,'auto-sylus-reference',%s,'auto',%s)",
+                    (identity[0],content_type,image_bytes,visual_description[:2000]),
+                )
+        elif re.search(r"\\b(person|man|woman|people|human)\\b", visual_description, re.I):
+            identity = conn.execute(
+                "INSERT INTO visual_identities (display_name,category,status,notes) "
+                "VALUES (%s,'other','pending',%s) RETURNING id",
+                ("Unidentified person · " + datetime.now(timezone.utc).strftime("%Y-%m-%d"), visual_description[:1500]),
+            ).fetchone()
+            conn.execute(
+                "INSERT INTO visual_reference_images (identity_id,content_type,filename,data,source,analysis_notes) "
+                "VALUES (%s,%s,'auto-unidentified-reference',%s,'auto',%s)",
+                (identity[0],content_type,image_bytes,visual_description[:2000]),
+            )
         history_rows = conn.execute(
             "SELECT role, body, created_at, metadata->>'image_context' FROM messages WHERE id <> %s AND role IN ('user','assistant') "
             "AND archived_at IS NULL ORDER BY created_at DESC LIMIT 18", (message_id,),
