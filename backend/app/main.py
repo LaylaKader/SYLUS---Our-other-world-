@@ -5,6 +5,7 @@ import secrets
 import hashlib
 import hmac
 import logging
+import subprocess
 from collections import defaultdict, deque
 from time import time
 from datetime import datetime, timezone
@@ -679,6 +680,17 @@ def create_speech(payload: SpeechIn, _: None = Depends(require_owner)):
         if not audio_bytes or len(audio_bytes) < 256 or not (content_type.startswith("audio/") or is_mp3) or not is_mp3:
             logging.error("Voice provider returned unusable audio: content_type=%s bytes=%s prefix=%s", content_type, len(audio_bytes), audio_bytes[:32].hex())
             raise HTTPException(status_code=502, detail="The voice provider returned an empty or invalid audio stream. Check the voice ID, provider response, and usage allowance.")
+        # Normalize provider output to a baseline MP3 profile for reliable Android/browser playback.
+        normalized = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "mp3", "-i", "pipe:0",
+             "-vn", "-codec:a", "libmp3lame", "-b:a", "128k", "-ar", "44100", "-ac", "1", "-f", "mp3", "pipe:1"],
+            input=audio_bytes, capture_output=True, timeout=25, check=False,
+        )
+        if normalized.returncode != 0 or len(normalized.stdout) < 256:
+            logging.error("Voice audio normalization failed: exit=%s stderr=%s", normalized.returncode, normalized.stderr[:300].decode("utf-8", "replace"))
+            raise HTTPException(status_code=502, detail="The voice provider returned audio, but it could not be prepared for playback. Please try again.")
+        audio_bytes = normalized.stdout
+        logging.info("Voice audio normalized for playback: bytes=%s", len(audio_bytes))
     except httpx.HTTPError as exc:
         status = getattr(getattr(exc, "response", None), "status_code", None)
         logging.error("ElevenLabs speech request failed (HTTP %s): %s", status or "unknown", str(exc)[:300])
