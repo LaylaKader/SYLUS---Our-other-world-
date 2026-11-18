@@ -28,7 +28,7 @@ from .db import connection, open_pool
 from .migrate import run_migrations
 from .chat_service import generate_reply, generate_proactive_bubbles, split_reply_bubbles, load_emotion_state, ProviderNotConfigured, ProviderRequestFailed
 from .bond import refresh_bond
-from .web_search import discover_for_chat
+from .web_search import discover_for_chat, is_search_followup
 
 app = FastAPI(title="SYLUS private companion API", version="0.3.0")
 
@@ -1544,6 +1544,13 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
     with connection() as conn:
         previous = conn.execute("SELECT created_at FROM messages WHERE role = 'user' AND archived_at IS NULL ORDER BY created_at DESC LIMIT 1").fetchone()
         tz_row = conn.execute("SELECT timezone FROM owner_runtime_context WHERE id = 1").fetchone()
+        last_search_row = conn.execute(
+            "SELECT metadata->'attachments' FROM messages "
+            "WHERE role = 'assistant' AND archived_at IS NULL "
+            "AND jsonb_typeof(metadata->'attachments') = 'array' "
+            "AND jsonb_array_length(metadata->'attachments') > 0 "
+            "ORDER BY created_at DESC, ctid DESC LIMIT 1"
+        ).fetchone()
         user_rows = [
             conn.execute("INSERT INTO messages (role, body) VALUES ('user', %s) RETURNING id, role, body, created_at", (part,)).fetchone()
             for part in texts
@@ -1571,11 +1578,20 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
         f"Current UTC: {now_utc.isoformat()}. Simulated N109 local clock: {n109_now.strftime('%A, %Y-%m-%d %H:%M:%S')} (UTC+08:00; internal fictional clock, not official canon). "
         f"The N109 and Umi's worlds keep separate clocks. Use this context naturally when relevant; do not announce it unnecessarily.{gap}"
     )
-    # Discover images, webpages, and videos only when the message naturally asks for them.
-    # Results are rendered as rich cards in chat and persisted with the assistant message.
-    web_attachments, web_context = discover_for_chat(text)
+    # Reuse prior result cards for follow-ups like "show me" or "send me the image".
+    # This avoids launching a meaningless search for the words "the image".
+    previous_attachments = (last_search_row[0] or []) if last_search_row else []
+    if is_search_followup(text) and previous_attachments:
+        web_attachments = previous_attachments
+        web_context = (
+            "The owner is following up on the immediately preceding web/image search. "
+            "The original result cards are attached again to this reply. Show them directly; "
+            "do not claim they are loading, promise to send them later, or perform another search."
+        )
+    else:
+        web_attachments, web_context = discover_for_chat(text)
     if web_context:
-        time_note += "\n\n" + web_context
+        time_note += "\\n\\n" + web_context
     else:
         # Keep the lightweight legacy lookup for song/title/person identification.
         lookup_intent = re.search(
