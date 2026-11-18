@@ -123,7 +123,8 @@ def refresh_bond() -> dict:
         ).fetchone()[0] + call_assistant_count)
         active_days = len({r[2].date() for r in rows if r[2]} | call_days)
         # Familiarity and consistency reward time spent together, but both have diminishing returns.
-        last_activity = max((r[2] for r in rows if r[2]), default=None)
+        activity_timestamps = [r[2] for r in rows if r[2]] + [r[1] for r in call_rows if r[1]]
+        last_activity = max(activity_timestamps, default=None)
         inactive_days = max(0, (datetime.now(timezone.utc).date() - last_activity.date()).days) if last_activity else 0
         # Consistency and familiarity soften gradually during long absences; trust and affection
         # are not automatically punished for taking a break.
@@ -135,9 +136,9 @@ def refresh_bond() -> dict:
         # Five completed shared turns add two points; active days add two points each.
         activity_points = min(60, active_days * 2 + (turns // 5) * 2)
         conn.execute(
-            "UPDATE bond_state SET familiarity=GREATEST(familiarity,%s), consistency=%s, "
+            "UPDATE bond_state SET familiarity=GREATEST(%s,LEAST(100,ROUND(familiarity*%s)::int)), consistency=%s, "
             "bond_points=GREATEST(bond_points, %s), total_user_messages=%s, total_shared_turns=%s WHERE id=1",
-            (familiarity_from_time, consistency, activity_points, user_count, turns),
+            (familiarity_from_time, time_decay, consistency, activity_points, user_count, turns),
         )
         state = conn.execute(
             "SELECT affection, trust, familiarity, shared_experiences, commitment, vulnerability, "
