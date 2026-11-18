@@ -65,7 +65,8 @@ def refresh_bond() -> dict:
         ).fetchall()
         for message_id, body, created_at in rows:
             for key, title, description, gains, points in _signals(str(body or "")):
-                event_key = f"message:{message_id}:{key}"
+                # A category can contribute once per Dhaka-local calendar day, not once per repeated phrase.
+                event_key = f"day:{created_at.date().isoformat()}:{key}"
                 inserted = conn.execute(
                     "INSERT INTO bond_events (event_key, title, description, source_message_id) "
                     "VALUES (%s, %s, %s, %s) ON CONFLICT (event_key) DO NOTHING RETURNING id",
