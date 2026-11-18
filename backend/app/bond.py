@@ -43,7 +43,7 @@ def _signals(text: str) -> list[tuple[str, str, str, dict[str, int], int]]:
         if re.search(pattern, value, re.I):
             found.append((key, title, description, gains, points))
     # Avoid rewarding a single message for many overlapping keywords.
-    priority = {"trust": 0, "vulnerability": 1, "repair": 2, "commitment": 3, "affection": 4, "gratitude": 5, "achievement": 6, "shared_memory": 7, "shared_world": 8, "playful": 9}
+    priority = {"trust_breach": 0, "trust": 1, "vulnerability": 2, "repair": 3, "commitment": 4, "affection": 5, "gratitude": 6, "achievement": 7, "shared_memory": 8, "shared_media": 9, "shared_world": 10, "daily_life": 11, "playful": 12}
     return sorted(found, key=lambda item: priority.get(item[0], 99))[:2]
 
 def _stage(points: int) -> tuple[int, str, str, int, int]:
@@ -74,10 +74,10 @@ def refresh_bond() -> dict:
                 ).fetchone()
                 if inserted:
                     conn.execute(
-                        "UPDATE bond_state SET affection=LEAST(100, affection+%s), trust=LEAST(100, trust+%s), "
-                        "familiarity=LEAST(100, familiarity+%s), shared_experiences=LEAST(100, shared_experiences+%s), "
-                        "commitment=LEAST(100, commitment+%s), vulnerability=LEAST(100, vulnerability+%s), "
-                        "emotional_safety=LEAST(100, emotional_safety+%s), bond_points=bond_points+%s, updated_at=now() WHERE id=1",
+                        "UPDATE bond_state SET affection=GREATEST(0,LEAST(100, affection+%s)), trust=GREATEST(0,LEAST(100, trust+%s)), "
+                        "familiarity=GREATEST(0,LEAST(100, familiarity+%s)), shared_experiences=GREATEST(0,LEAST(100, shared_experiences+%s)), "
+                        "commitment=GREATEST(0,LEAST(100, commitment+%s)), vulnerability=GREATEST(0,LEAST(100, vulnerability+%s)), "
+                        "emotional_safety=GREATEST(0,LEAST(100, emotional_safety+%s)), bond_points=GREATEST(0,bond_points+%s), updated_at=now() WHERE id=1",
                         (gains.get("affection",0), gains.get("trust",0), gains.get("familiarity",0),
                          gains.get("shared_experiences",0), gains.get("commitment",0), gains.get("vulnerability",0),
                          gains.get("emotional_safety",0), points),
@@ -89,8 +89,13 @@ def refresh_bond() -> dict:
         ).fetchone()[0])
         active_days = len({r[2].date() for r in rows if r[2]})
         # Familiarity and consistency reward time spent together, but both have diminishing returns.
-        consistency = _clamp(min(100, active_days * 4))
-        familiarity_from_time = _clamp(min(24, turns * 0.35))
+        last_activity = max((r[2] for r in rows if r[2]), default=None)
+        inactive_days = max(0, (datetime.now(timezone.utc).date() - last_activity.date()).days) if last_activity else 0
+        # Consistency and familiarity soften gradually during long absences; trust and affection
+        # are not automatically punished for taking a break.
+        time_decay = 0.5 ** (inactive_days / 120)
+        consistency = _clamp(min(100, active_days * 4) * time_decay)
+        familiarity_from_time = _clamp(min(24, turns * 0.35) * time_decay)
         # Gentle activity progress keeps the chapter moving during ordinary conversation,
         # while explicit trust, affection, repair, and shared-memory events remain the main rewards.
         # Five completed shared turns add two points; active days add two points each.
