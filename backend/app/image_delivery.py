@@ -1,13 +1,14 @@
-"""Private image-sending intent helpers for the SYLUS chat pipeline."""
+"""Private media-delivery intent helpers for the SYLUS chat pipeline."""
 from __future__ import annotations
 
 import re
 
 _IMAGE_DIRECTIVE = re.compile(r"\[\[SYLUS_IMAGE:\s*(.*?)\]\]", re.I | re.S)
+_LINK_DIRECTIVE = re.compile(r"\[\[SYLUS_LINK:\s*(.*?)\]\]", re.I | re.S)
 
 
 def extract_image_directive(text: str) -> tuple[str, str | None]:
-    """Remove the private tool directive from dialogue and return its prompt."""
+    """Remove the private image-generation directive and return its visual prompt."""
     match = _IMAGE_DIRECTIVE.search(text or "")
     if not match:
         return (text or "").strip(), None
@@ -22,9 +23,9 @@ def extract_link_directive(text: str) -> tuple[str, str | None]:
     match = _LINK_DIRECTIVE.search(text or "")
     if not match:
         return (text or "").strip(), None
-    query = re.sub(r"\\s+", " ", match.group(1)).strip()[:220]
+    query = re.sub(r"\s+", " ", match.group(1)).strip()[:220]
     clean = (text[:match.start()] + text[match.end():]).strip()
-    clean = re.sub(r"\\n{3,}", "\\n\\n", clean)
+    clean = re.sub(r"\n{3,}", "\n\n", clean)
     return clean, query or None
 
 
