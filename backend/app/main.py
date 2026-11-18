@@ -232,7 +232,6 @@ def time_context(_: None = Depends(require_owner)):
         tz_row = conn.execute("SELECT timezone FROM owner_runtime_context WHERE id = 1").fetchone()
         vision_row = conn.execute("SELECT 1 FROM provider_acceptances WHERE provider = 'cloudflare_meta_vision'").fetchone()
     tz_name = tz_row[0] if tz_row else DEFAULT_TIMEZONE
-    apply_spoken_call_boundary(text, tz_name)
     try:
         local_zone = ZoneInfo(tz_name)
     except Exception:
@@ -655,7 +654,7 @@ def apply_spoken_call_boundary(text: str, timezone_name: str) -> None:
     else:
         import re
         from datetime import timedelta
-        duration = re.search(r"for\\s+(\\d+)\\s*(hours?|hrs?|minutes?|mins?|days?)", value)
+        duration = re.search(r"for\s+(\d+)\s*(hours?|hrs?|minutes?|mins?|days?)", value)
         if duration:
             amount = int(duration.group(1))
             unit = duration.group(2)
@@ -663,7 +662,7 @@ def apply_spoken_call_boundary(text: str, timezone_name: str) -> None:
             until = now_local + timedelta(seconds=seconds)
             reason = f"Umi asked for no calls for {amount} {unit}."
         else:
-            clock = re.search(r"until\\s+(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm)?", value)
+            clock = re.search(r"until\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", value)
             if clock:
                 from datetime import time as clock_time, timedelta
                 hour, minute = int(clock.group(1)), int(clock.group(2) or 0)
@@ -1037,6 +1036,7 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
             ([row[0] for row in user_rows],)
         ).fetchall()
     tz_name = tz_row[0] if tz_row else DEFAULT_TIMEZONE
+    apply_spoken_call_boundary(text, tz_name)
     try:
         local_zone = ZoneInfo(tz_name)
     except Exception:
