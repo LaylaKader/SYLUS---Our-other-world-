@@ -29,6 +29,7 @@ from .migrate import run_migrations
 from .chat_service import generate_reply, generate_proactive_bubbles, split_reply_bubbles, load_emotion_state, ProviderNotConfigured, ProviderRequestFailed
 from .bond import refresh_bond
 from .web_search import discover_for_chat, is_search_followup
+from .image_delivery import extract_image_directive, should_generate_image
 
 app = FastAPI(title="SYLUS private companion API", version="0.3.0")
 
@@ -1494,38 +1495,66 @@ def delete_private_sticker(sticker_id: UUID, _: None = Depends(require_owner)):
     return {"deleted": True, "id": str(row[0])}
 
 @app.post("/v1/media/generate", response_model=MessageOut)
-def generate_private_image(payload: ImageGenerateIn, _: None = Depends(require_owner)):
+def _generate_and_store_assistant_image(prompt: str, caption: str = "For you.") -> MessageOut:
+    """Generate a real image and persist it as an assistant-owned media attachment."""
     if not (settings.cloudflare_account_id and settings.cloudflare_api_token):
-        raise HTTPException(status_code=503, detail="Image generation is not configured. Add the Cloudflare AI credentials in the private server settings; no paid fallback will be used.")
+        raise HTTPException(status_code=503, detail="Image generation is not configured on the private server.")
     with connection() as conn:
-        recent_generations = conn.execute("SELECT count(*) FROM media_assets WHERE source = 'generated' AND created_at > now() - interval '24 hours'").fetchone()[0]
+        recent_generations = conn.execute(
+            "SELECT count(*) FROM media_assets WHERE source = 'generated' AND created_at > now() - interval '24 hours'"
+        ).fetchone()[0]
     if recent_generations >= settings.cloudflare_image_limit_24h:
-        raise HTTPException(status_code=429, detail=f"Daily image safety limit reached ({settings.cloudflare_image_limit_24h} images per 24 hours). This prevents unexpected usage.")
-    prompt = f"{payload.prompt.strip()}. Character direction: Sylus from Love and Deepspace, a tall adult man with silver-white hair, vivid crimson eyes, refined sharp facial features, composed confident expression, elegant dark clothing with restrained red details. Preserve his recognizable in-game 3D appearance and realistic game-render proportions. Visual direction: cinematic lighting, detailed realistic materials, natural anatomy, dark elegant atmosphere, restrained ruby and champagne-gold accents. Avoid chibi, flat 2D anime, exaggerated anatomy, text, watermark, UI. "
+        raise HTTPException(status_code=429, detail=f"Daily image safety limit reached ({settings.cloudflare_image_limit_24h} images per 24 hours).")
+    sylus_direction = (
+        "Character direction: Sylus from Love and Deepspace, tall adult man, silver-white hair, vivid crimson eyes, "
+        "refined sharp features, natural adult anatomy, recognizable high-quality 3D game-render appearance, "
+        "elegant dark clothing with restrained red details. Cinematic lighting, detailed realistic materials, "
+        "dark elegant atmosphere, restrained ruby and champagne-gold accents. Avoid chibi, flat 2D anime, "
+        "exaggerated anatomy, text, watermark, and UI."
+    )
+    final_prompt = f"{prompt.strip()}. {sylus_direction}"
     try:
         response = httpx.post(
             f"https://api.cloudflare.com/client/v4/accounts/{settings.cloudflare_account_id}/ai/run/@cf/black-forest-labs/flux-1-schnell",
             headers={"Authorization": f"Bearer {settings.cloudflare_api_token}", "Content-Type": "application/json"},
-            json={"prompt": prompt[:2048], "steps": 4}, timeout=120.0,
+            json={"prompt": final_prompt[:2048], "steps": 4}, timeout=120.0,
         )
         response.raise_for_status()
-        result = response.json()
-        encoded = result.get("result", {}).get("image")
+        encoded = response.json().get("result", {}).get("image")
         if not encoded:
             raise ValueError("The image provider returned no image.")
         image_bytes = base64.b64decode(encoded)
-    except (httpx.HTTPError, ValueError, KeyError) as exc:
-        raise HTTPException(status_code=502, detail=f"Image generation failed: {exc}") from exc
+    except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+        logging.error("Private image generation failed: %s", str(exc)[:300])
+        raise HTTPException(status_code=502, detail="The image generator could not create the picture this time.") from exc
+    if image_bytes.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):
+        content_type, extension = "image/png", "png"
+    elif image_bytes.startswith(b"\\xff\\xd8\\xff"):
+        content_type, extension = "image/jpeg", "jpg"
+    elif image_bytes.startswith(b"RIFF") and image_bytes[8:12] == b"WEBP":
+        content_type, extension = "image/webp", "webp"
+    else:
+        content_type, extension = "image/png", "png"
     with connection() as conn:
         message = conn.execute(
             "INSERT INTO messages (role, body) VALUES ('assistant', %s) RETURNING id, role, body, created_at",
-            (payload.caption or "A picture for you.",),
+            (caption[:300] or "For you.",),
         ).fetchone()
         asset = conn.execute(
-            "INSERT INTO media_assets (message_id, content_type, filename, data, source) VALUES (%s, 'image/jpeg', 'sylus-generated.jpg', %s, 'generated') RETURNING id",
-            (message[0], image_bytes),
+            "INSERT INTO media_assets (message_id, content_type, filename, data, source) "
+            "VALUES (%s, %s, %s, %s, 'generated') RETURNING id",
+            (message[0], content_type, f"sylus-generated.{extension}", image_bytes),
         ).fetchone()
-    return MessageOut(id=str(message[0]), role=message[1], text=message[2], created_at=message[3], media_url=f"/v1/media/{asset[0]}")
+    return MessageOut(
+        id=str(message[0]), role=message[1], text=message[2], created_at=message[3],
+        media_url=f"/v1/media/{asset[0]}",
+    )
+
+
+@app.post("/v1/media/generate", response_model=MessageOut)
+def generate_private_image(payload: ImageGenerateIn, _: None = Depends(require_owner)):
+    return _generate_and_store_assistant_image(payload.prompt, payload.caption)
+
 
 @app.post("/v1/chat", response_model=ChatTurnOut)
 def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner)):
@@ -1621,6 +1650,7 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
     ]
     try:
         answer = generate_reply(text, str(user_rows[-1][0]), history, time_context=time_note)
+        answer, model_image_prompt = extract_image_directive(answer)
     except ProviderNotConfigured as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ProviderRequestFailed as exc:
@@ -1636,9 +1666,28 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
         answer, flags=re.I,
     ):
         answer = "There. Try not to look so pleased with yourself."
+    # An explicit image request is fulfilled with an actual persisted media attachment.
+    # A model-generated directive also lets Sylus choose to send an image naturally.
+    explicit_image_request = should_generate_image(text) and not web_attachments
+    image_prompt = model_image_prompt or (
+        (text + " Conversation context: " + " ".join(
+            str(item.get("body") or "")[:260] for item in history[-5:] if item.get("role") == "user"
+        ))[:1500] if explicit_image_request else None
+    )
+    generated_image_message = None
+    if image_prompt:
+        try:
+            generated_image_message = _generate_and_store_assistant_image(
+                image_prompt, "There. Don't say I never indulge your curiosity."
+            )
+        except HTTPException as exc:
+            logging.warning("Sylus could not deliver a requested image: %s", exc.detail)
+            answer = (
+                answer + "\\n\\n" if answer else ""
+            ) + "Tch. The image generator failed this time. I won't pretend I sent you something you can't see."
     bubbles = split_reply_bubbles(answer)
-    if web_attachments and not bubbles:
-        bubbles = ["Found a few things worth showing you."]
+    if (web_attachments or generated_image_message) and not bubbles:
+        bubbles = ["There. Try not to look so pleased with yourself."]
     with connection() as conn:
         assistant_rows = []
         for index, bubble in enumerate(bubbles):
@@ -1652,6 +1701,8 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
         MessageOut(id=str(r[0]), role=r[1], text=r[2], created_at=r[3], attachments=web_attachments if index == 0 else [])
         for index, r in enumerate(assistant_rows)
     ]
+    if generated_image_message:
+        assistant_messages.append(generated_image_message)
     # Update relationship progression on the server for both text and voice turns.
     refresh_bond()
     return ChatTurnOut(
