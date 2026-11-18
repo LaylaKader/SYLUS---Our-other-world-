@@ -27,6 +27,29 @@ const tabs = [
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
+function cleanAssistantText(value) {
+  let candidate = String(value || '').trim();
+  for (let pass = 0; pass < 3; pass += 1) {
+    const cleaned = candidate.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+    const start = cleaned.indexOf('{');
+    const end = cleaned.lastIndexOf('}');
+    if (start < 0 || end <= start) { candidate = cleaned; break; }
+    try {
+      const parsed = JSON.parse(cleaned.slice(start, end + 1));
+      if (typeof parsed === 'string') { candidate = parsed.trim(); continue; }
+      if (Array.isArray(parsed?.messages)) {
+        const parts = parsed.messages.filter(item => typeof item === 'string' && item.trim()).map(item => item.trim());
+        if (parts.length) return parts.join('\\n\\n');
+      }
+      const single = parsed?.response || parsed?.reply || parsed?.content || parsed?.text;
+      if (typeof single === 'string' && single.trim()) { candidate = single.trim(); continue; }
+      candidate = cleaned;
+      break;
+    } catch { candidate = cleaned; break; }
+  }
+  return candidate;
+}
+
 function audioBufferToWavBlob(buffer) {
   const channels = Math.min(buffer.numberOfChannels, 2);
   const frames = buffer.length;
@@ -300,7 +323,7 @@ function App() {
       }
       const turn = await response.json();
       const savedUsers = turn.user_messages?.length ? turn.user_messages : (turn.user_message ? [turn.user_message] : []);
-      const sylusBubbles = turn.assistant_messages?.length ? turn.assistant_messages : (turn.assistant_message ? [turn.assistant_message] : []);
+      const sylusBubbles = (turn.assistant_messages?.length ? turn.assistant_messages : (turn.assistant_message ? [turn.assistant_message] : [])).map(message => ({ ...message, text: cleanAssistantText(message.text) })).filter(message => message.text);
       const pendingIds = new Set(batch.map(item => item.id));
       setMessages(current => {
         const firstPending = current.findIndex(message => pendingIds.has(message.id));
@@ -312,6 +335,11 @@ function App() {
       setNotice('Private conversation saved');
       if (sylusBubbles.length) setReplyStatus('');
       else setReplyStatus('silent');
+      if (batch.some(item => /\b(?:call|calling|ring|phone)\s+me\b|\bgive\s+me\s+a\s+call\b/i.test(item.text))) {
+        setIncomingCall(true);
+        setCallOpen(true);
+        setCallStatus('Sylus has made time for you. Answer when you’re ready.');
+      }
       const memoryResponse = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/memories`, { headers, credentials: 'include' });
       if (memoryResponse.ok) setMemories(await memoryResponse.json());
       const bondResponse = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/bond`, { headers, credentials: 'include' });
@@ -341,16 +369,7 @@ function App() {
     setComposerNotice('');
     setReplyError('');
     setReplyStatus('waiting');
-    const wantsCall = /\b(?:call|calling|ring|phone)\s+me\b|\bgive\s+me\s+a\s+call\b/i.test(text);
-    if (wantsCall) {
-      // The user has explicitly requested a call. Start it from this tap so Android
-      // can grant microphone/audio permissions in the required user-gesture context.
-      beginVoiceCall();
-      if (callActiveRef.current) {
-        sendCallUtterance(text);
-        return;
-      }
-    }
+    // A call request remains an ordinary chat turn first. Sylus replies, then the app presents an incoming-call invitation that Umi explicitly accepts.
     const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2,7)}`;
     const optimisticMessage = { id: pendingId, role: 'user', text, created_at: new Date().toISOString() };
     messageQueue.current.push({ id: pendingId, text });
@@ -621,12 +640,10 @@ function App() {
         }
         const preview = [callFinalTranscriptRef.current, interimText].filter(Boolean).join(' ').trim();
         if (preview) setCallTranscript(preview);
-        if (callFinalTranscriptRef.current) {
-          if (callSilenceTimerRef.current) window.clearTimeout(callSilenceTimerRef.current);
-          // Do not submit on the first short recognition segment. Give Android speech
-          // recognition time to deliver the rest of the sentence.
-          callSilenceTimerRef.current = window.setTimeout(() => commitCallTranscript(), 1250);
-        }
+        // Interim results mean the recognizer is still hearing/decoding speech.
+        // Reset the quiet timer on every result, but submit only after a final segment.
+        if (callSilenceTimerRef.current) window.clearTimeout(callSilenceTimerRef.current);
+        if (callFinalTranscriptRef.current) callSilenceTimerRef.current = window.setTimeout(() => commitCallTranscript(), 900);
       };
       recognition.onerror = event => {
         if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
@@ -700,7 +717,7 @@ function App() {
 
   async function sendCallUtterance(spokenText) {
     setCallBusy(true);
-    setCallStatus('Sylus is considering his reply…');
+    setCallStatus('Sending what I heard…');
     try {
       const response = await fetch(apiUrl.replace(/\/$/, '') + '/v1/chat', {
         method: 'POST', headers, credentials: 'include',
@@ -710,9 +727,10 @@ function App() {
         const failure = await response.json().catch(() => ({}));
         throw new Error(failure.detail || 'The call could not reach Sylus (HTTP ' + response.status + ').');
       }
+      setCallStatus('Sylus is thinking…');
       const turn = await response.json();
       const userMessages = turn.user_messages?.length ? turn.user_messages : (turn.user_message ? [turn.user_message] : []);
-      const replies = turn.assistant_messages?.length ? turn.assistant_messages : (turn.assistant_message ? [turn.assistant_message] : []);
+      const replies = (turn.assistant_messages?.length ? turn.assistant_messages : (turn.assistant_message ? [turn.assistant_message] : [])).map(message => ({ ...message, text: cleanAssistantText(message.text) })).filter(message => message.text);
       setMessages(current => [...current, ...userMessages, ...replies]);
       const callsResponse = await fetch(apiUrl.replace(/\/$/, '') + '/v1/calls/settings', { headers, credentials: 'include' });
       if (callsResponse.ok) setCallSettings(await callsResponse.json());
