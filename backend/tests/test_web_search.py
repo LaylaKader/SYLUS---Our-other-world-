@@ -30,3 +30,22 @@ def test_only_public_https_urls_are_renderable():
     assert _safe_url("http://example.com/image.jpg") == ""
     assert _safe_url("https://127.0.0.1/private") == ""
     assert _safe_url("file:///etc/passwd") == ""
+
+
+def test_search_followups_reuse_previous_results():
+    from app.web_search import is_search_followup
+    assert is_search_followup("Yeah, show me!")
+    assert is_search_followup("Send me the image")
+    assert is_search_followup("where is it?")
+    assert not is_search_followup("Find me another meme")
+
+
+def test_meme_query_removes_find_me_prefix():
+    assert classify_search_request("Find me a funny meme") == ("image", "a funny meme")
+
+
+def test_result_parser_extracts_search_links():
+    from app.web_search import _ResultAnchors
+    parser = _ResultAnchors()
+    parser.feed('<a class="result__a" href="https://example.com/page">Example page</a>')
+    assert parser.items == [{"href": "https://example.com/page", "text": "Example page"}]
