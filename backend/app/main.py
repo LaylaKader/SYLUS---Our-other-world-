@@ -219,6 +219,11 @@ class MemoryCreate(BaseModel):
     confidence: float = Field(default=0.9, ge=0, le=1)
     sensitivity: Literal["normal", "sensitive"] = "normal"
 
+
+class StickerUpdate(BaseModel):
+    label: str | None = Field(default=None, min_length=1, max_length=100)
+    is_favorite: bool | None = None
+
 class MemoryUpdate(BaseModel):
     category: str | None = Field(default=None, min_length=1, max_length=80)
     content: str | None = Field(default=None, min_length=1, max_length=4000)
@@ -1420,7 +1425,63 @@ def get_private_image(asset_id: UUID, _: None = Depends(require_owner)):
         raise HTTPException(status_code=404, detail="Image not found.")
     return Response(content=bytes(row[1]), media_type=row[0], headers={"Content-Disposition": "inline", "Cache-Control": "no-store, private"})
 
-@app.post("/v1/media/generate", response_model=MessageOut)
+
+
+@app.get("/v1/stickers")
+def list_private_stickers(_: None = Depends(require_owner)):
+    with connection() as conn:
+        rows = conn.execute(
+            "SELECT id, label, filename, is_favorite, created_at FROM sticker_assets ORDER BY created_at DESC"
+        ).fetchall()
+    return [{"id": str(row[0]), "label": row[1], "filename": row[2], "is_favorite": row[3], "created_at": row[4], "src": f"/v1/stickers/{row[0]}"} for row in rows]
+
+@app.post("/v1/stickers")
+def create_private_sticker(file: UploadFile = File(...), label: str = "New sticker", _: None = Depends(require_owner)):
+    if file.content_type != "image/png":
+        raise HTTPException(status_code=415, detail="Stickers must be transparent PNG files.")
+    data = file.file.read(8 * 1024 * 1024 + 1)
+    if len(data) > 8 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Each sticker must be 8 MB or smaller.")
+    if not data.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):
+        raise HTTPException(status_code=415, detail="The uploaded file is not a valid PNG.")
+    safe_label = re.sub(r"\\s+", " ", label).strip()[:100] or "New sticker"
+    with connection() as conn:
+        row = conn.execute(
+            "INSERT INTO sticker_assets (label, filename, data) VALUES (%s, %s, %s) RETURNING id, label, filename, is_favorite, created_at",
+            (safe_label, (file.filename or "sticker.png")[:160], data),
+        ).fetchone()
+    return {"id": str(row[0]), "label": row[1], "filename": row[2], "is_favorite": row[3], "created_at": row[4], "src": f"/v1/stickers/{row[0]}"}
+
+@app.get("/v1/stickers/{sticker_id}")
+def get_private_sticker(sticker_id: UUID, _: None = Depends(require_owner)):
+    with connection() as conn:
+        row = conn.execute("SELECT content_type, data FROM sticker_assets WHERE id = %s", (sticker_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Sticker not found.")
+    return Response(content=bytes(row[1]), media_type=row[0], headers={"Content-Disposition": "inline", "Cache-Control": "no-store, private"})
+
+@app.patch("/v1/stickers/{sticker_id}")
+def update_private_sticker(sticker_id: UUID, payload: StickerUpdate, _: None = Depends(require_owner)):
+    changes = payload.model_dump(exclude_unset=True)
+    if not changes:
+        raise HTTPException(status_code=400, detail="No sticker changes supplied.")
+    with connection() as conn:
+        row = conn.execute(
+            "UPDATE sticker_assets SET label = COALESCE(%s, label), is_favorite = COALESCE(%s, is_favorite), updated_at = now() WHERE id = %s RETURNING id, label, filename, is_favorite, created_at",
+            (changes.get("label"), changes.get("is_favorite"), sticker_id),
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Sticker not found.")
+    return {"id": str(row[0]), "label": row[1], "filename": row[2], "is_favorite": row[3], "created_at": row[4], "src": f"/v1/stickers/{row[0]}"}
+
+@app.delete("/v1/stickers/{sticker_id}")
+def delete_private_sticker(sticker_id: UUID, _: None = Depends(require_owner)):
+    with connection() as conn:
+        row = conn.execute("DELETE FROM sticker_assets WHERE id = %s RETURNING id", (sticker_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Sticker not found.")
+    return {"deleted": True, "id": str(row[0])}
+\n@app.post("/v1/media/generate", response_model=MessageOut)
 def generate_private_image(payload: ImageGenerateIn, _: None = Depends(require_owner)):
     if not (settings.cloudflare_account_id and settings.cloudflare_api_token):
         raise HTTPException(status_code=503, detail="Image generation is not configured. Add the Cloudflare AI credentials in the private server settings; no paid fallback will be used.")
