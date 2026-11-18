@@ -71,3 +71,11 @@ def test_owner_reply_resets_followup_cycle_and_starts_new_idle_window():
     assert decision["reason"] == "owner_recently_active"
     assert decision["cycle_count"] == 0
     assert decision["pause_until"] is None
+
+
+def test_call_invitation_probability_uses_daily_average():
+    import math
+
+    # At 24 hours elapsed, a 24-hour exponential hazard has a 63.2% chance.
+    chance = 1.0 - math.exp(-86400 / (24 * 60 * 60))
+    assert 0.63 < chance < 0.64
