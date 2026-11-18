@@ -1549,6 +1549,8 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
             "WHERE role = 'assistant' AND archived_at IS NULL "
             "AND jsonb_typeof(metadata->'attachments') = 'array' "
             "AND jsonb_array_length(metadata->'attachments') > 0 "
+            "AND created_at > COALESCE((SELECT max(created_at) FROM messages "
+            "WHERE role = 'user' AND archived_at IS NULL), 'epoch'::timestamptz) "
             "ORDER BY created_at DESC, ctid DESC LIMIT 1"
         ).fetchone()
         user_rows = [
@@ -1581,7 +1583,8 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
     # Reuse prior result cards for follow-ups like "show me" or "send me the image".
     # This avoids launching a meaningless search for the words "the image".
     previous_attachments = (last_search_row[0] or []) if last_search_row else []
-    if is_search_followup(text) and previous_attachments:
+    reused_search_results = is_search_followup(text) and bool(previous_attachments)
+    if reused_search_results:
         web_attachments = previous_attachments
         web_context = (
             "The owner is following up on the immediately preceding web/image search. "
@@ -1624,6 +1627,15 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
         with connection() as conn:
             conn.execute("DELETE FROM messages WHERE id = ANY(%s) AND role = 'user'", ([row[0] for row in user_rows],))
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    # If the model slips into a fake "still searching/loading" line, the result
+    # cards are already attached. Keep the character voice but complete the request.
+    if reused_search_results and re.search(
+        r"\\b(?:wait|give me (?:a )?minute|still loading|loading\\.\\.\\.|"
+        r"let me (?:find|look|search)|i(?:'| a)m (?:still )?(?:looking|searching)|"
+        r"i'll (?:send|find|look)|you'll have to wait)\\b",
+        answer, flags=re.I,
+    ):
+        answer = "There. Try not to look so pleased with yourself."
     bubbles = split_reply_bubbles(answer)
     if web_attachments and not bubbles:
         bubbles = ["Found a few things worth showing you."]
