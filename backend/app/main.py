@@ -1373,6 +1373,9 @@ def _analyze_uploaded_image(asset_id: UUID, image_bytes: bytes, content_type: st
     try:
         answer = generate_reply(user_text, str(message_id), history, time_context="Umi has just shared an image in the current conversation.")
         bubbles = split_reply_bubbles(answer)
+        if not bubbles:
+            logging.warning("Vision analysis returned no conversational reply asset=%s", asset_id)
+            return False
         with connection() as conn:
             for bubble in bubbles:
                 conn.execute("INSERT INTO messages (role, body) VALUES ('assistant', %s)", (bubble,))
