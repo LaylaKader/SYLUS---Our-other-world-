@@ -1728,19 +1728,8 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
             ))[:1500] if explicit_image_request else None
         )
     )
-    generated_image_message = None
-    if image_prompt:
-        try:
-            generated_image_message = _generate_and_store_assistant_image(
-                image_prompt, "There. Don't say I never indulge your curiosity."
-            )
-        except HTTPException as exc:
-            logging.warning("Sylus could not deliver a requested image: %s", exc.detail)
-            answer = (
-                answer + "\n\n" if answer else ""
-            ) + "Tch. The image generator failed this time. I won't pretend I sent you something you can't see."
     bubbles = split_reply_bubbles(answer)
-    if (web_attachments or generated_image_message) and not bubbles:
+    if (web_attachments or image_prompt) and not bubbles:
         bubbles = ["There. Try not to look so pleased with yourself."]
     with connection() as conn:
         assistant_rows = []
@@ -1750,6 +1739,21 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
                 "INSERT INTO messages (role, body, metadata) VALUES ('assistant', %s, %s::jsonb) RETURNING id, role, body, created_at",
                 (bubble, json.dumps(metadata)),
             ).fetchone())
+    generated_image_message = None
+    if image_prompt:
+        try:
+            # Create the media row after the text reply so persisted chat order is natural.
+            generated_image_message = _generate_and_store_assistant_image(
+                image_prompt, "There. Don't say I never indulge your curiosity."
+            )
+        except HTTPException as exc:
+            logging.warning("Sylus could not deliver a requested image: %s", exc.detail)
+            failure_text = "Tch. The image generator failed this time. I won't pretend I sent you something you can't see."
+            with connection() as conn:
+                assistant_rows.append(conn.execute(
+                    "INSERT INTO messages (role, body) VALUES ('assistant', %s) RETURNING id, role, body, created_at",
+                    (failure_text,),
+                ).fetchone())
     user_messages = [MessageOut(id=str(r[0]), role=r[1], text=r[2], created_at=r[3]) for r in user_rows]
     assistant_messages = [
         MessageOut(id=str(r[0]), role=r[1], text=r[2], created_at=r[3], attachments=web_attachments if index == 0 else [])
