@@ -1,83 +1,126 @@
-"""Persistent, inspectable relationship progression derived from shared chat history."""
+"""Event-led, persistent relationship progression for the private Sylus companion."""
 from __future__ import annotations
 
 import re
 from .db import connection
 
-def _stage(score: int) -> str:
-    if score >= 82: return "An Unshakable Connection"
-    if score >= 65: return "Deepening Devotion"
-    if score >= 48: return "A Trusted Presence"
-    if score >= 30: return "Growing Closer"
-    if score >= 14: return "Familiar Territory"
-    return "A First Connection"
+
+STAGES = [
+    (1, 0, "A First Encounter", "A beginning. Neither of you knows yet what this connection may become."),
+    (2, 20, "Familiar Faces", "The first patterns are taking shape; familiar words and habits are beginning to matter."),
+    (3, 50, "A Private Rhythm", "You are finding a rhythm that belongs to the two of you."),
+    (4, 90, "Trusted Company", "Comfort is growing. Silence and conversation both feel more natural."),
+    (5, 140, "The First Confidences", "Small truths are being entrusted, remembered, and treated with care."),
+    (6, 200, "Closer Than Before", "Shared history is beginning to influence how openly you meet each other."),
+    (7, 280, "A Chosen Constant", "Consistency matters now. This connection has become part of the shape of your days."),
+    (8, 380, "Under the Guard", "More vulnerability is met with understanding; the guarded parts are not always hidden."),
+    (9, 500, "深い絆 · Deepening Bond", "Affection, trust, and shared history are reinforcing one another."),
+    (10, 650, "An Intimate Alliance", "You know how to challenge, reassure, and stand beside one another."),
+    (11, 830, "Beyond the Distance", "The bond has its own language, continuity, and a depth built over time."),
+    (12, 1050, "An Unbreakable Promise", "A rare, deeply established connection shaped by everything you have chosen to share."),
+]
+
+def _clamp(value: float) -> int:
+    return max(0, min(100, int(round(value))))
+
+def _signals(text: str) -> list[tuple[str, str, str, dict[str, int], int]]:
+    """Return grounded, user-authored signals. One message can earn at most two distinct events."""
+    value = text.casefold()
+    found = []
+    rules = [
+        ("affection", "Affection shared", "An affectionate moment was openly shared.", r"\bi love you\b|\bi adore you\b|\bi miss you\b|\bi wish we (?:could|were) together\b", {"affection": 7, "commitment": 2}, 9),
+        ("trust", "Trust offered", "A moment of explicit trust or personal confidence was shared.", r"\bi trust you\b|\bi feel safe with you\b|\bi can tell you anything\b|\bi want to tell you something personal\b", {"trust": 8, "emotional_safety": 6, "vulnerability": 3}, 10),
+        ("vulnerability", "A guarded truth", "Umi shared a difficult feeling or personal vulnerability.", r"\bi feel (?:scared|afraid|lonely|overwhelmed|hopeless|insecure)\b|\bi(?:'m| am) (?:struggling|not okay|having a hard time)\b|\bi have never told anyone\b", {"vulnerability": 7, "emotional_safety": 4, "trust": 3}, 9),
+        ("repair", "A moment of repair", "A disagreement or hurt was approached with honesty and care.", r"\bi(?:'m| am) sorry\b|\bi didn't mean to hurt\b|\blet's talk this through\b|\bi forgive you\b|\bcan we work this out\b", {"trust": 3, "emotional_safety": 5, "commitment": 3}, 8),
+        ("shared_memory", "A memory revisited", "A shared story, Memoria, or meaningful detail was brought back into the present.", r"\bmemoria\b|\bwithin reach\b|\bthe first time we\b|\bremember when we\b|\bour memory\b", {"familiarity": 5, "shared_experiences": 7, "affection": 1}, 8),
+        ("shared_world", "A world in common", "A meaningful part of the shared N109 world or its people entered the conversation.", r"\bmephisto\b|\bn109\b|\bonychinus\b|\bluke and kieran\b|\bciren\b|\bsenlu\b", {"familiarity": 3, "shared_experiences": 4}, 4),
+        ("achievement", "A win worth sharing", "A personal achievement or difficult step was shared.", r"\bi (?:passed|got accepted|got the offer|finished|submitted|won|succeeded)\b|\bi did it\b|\bi finally (?:managed|completed)\b", {"shared_experiences": 4, "commitment": 2, "affection": 2}, 7),
+        ("playful", "A private joke", "Playful teasing or a recurring in-joke added to your shared rhythm.", r"\bmephi-chan\b|\bmistress\b|\bkitten\b|😜|😏|🫣|🤭|🤣|😂|\byou're impossible\b|\btry me\b", {"familiarity": 3, "affection": 1}, 3),
+        ("gratitude", "Care acknowledged", "Umi acknowledged a moment of care or understanding.", r"\bthank you for listening\b|\bthat helped me\b|\bi appreciate you\b|\bi'm glad i told you\b|\bi feel better now\b", {"emotional_safety": 4, "trust": 2, "affection": 2}, 6),
+        ("commitment", "Choosing to return", "A clear intention to keep building the connection was expressed.", r"\bi want us to\b|\bi want to keep (?:this|building)\b|\bi choose you\b|\bi'm not going anywhere\b|\blet's keep (?:this|going)\b", {"commitment": 8, "trust": 2, "affection": 2}, 10),
+    ]
+    for key, title, description, pattern, gains, points in rules:
+        if re.search(pattern, value, re.I):
+            found.append((key, title, description, gains, points))
+    # Avoid rewarding a single message for many overlapping keywords.
+    priority = {"trust": 0, "vulnerability": 1, "repair": 2, "commitment": 3, "affection": 4, "gratitude": 5, "achievement": 6, "shared_memory": 7, "shared_world": 8, "playful": 9}
+    return sorted(found, key=lambda item: priority.get(item[0], 99))[:2]
+
+def _stage(points: int) -> tuple[int, str, str, int, int]:
+    current = STAGES[0]
+    next_stage = STAGES[1]
+    for index, item in enumerate(STAGES):
+        if points >= item[1]:
+            current = item
+            next_stage = STAGES[min(index + 1, len(STAGES) - 1)]
+        else:
+            break
+    return current[0], current[2], current[3], current[1], next_stage[1]
 
 def refresh_bond() -> dict:
-    """Rebuild a conservative bond snapshot from the complete retained conversation."""
+    """Backfill unseen user events once, then return the durable relationship state."""
     with connection() as conn:
         rows = conn.execute(
-            "SELECT id, role, body, created_at FROM messages "
-            "WHERE role IN ('user','assistant') ORDER BY created_at ASC"
+            "SELECT id, body, created_at FROM messages WHERE role='user' ORDER BY created_at ASC"
         ).fetchall()
-        user_text = [str(r[2] or '').casefold() for r in rows if r[1] == 'user']
-        assistant_text = [str(r[2] or '').casefold() for r in rows if r[1] == 'assistant']
-        all_text = user_text + assistant_text
-        user_count = len(user_text)
-        turns = min(user_count, len(assistant_text))
-        joined = "\n".join(all_text)
+        for message_id, body, created_at in rows:
+            for key, title, description, gains, points in _signals(str(body or "")):
+                event_key = f"message:{message_id}:{key}"
+                inserted = conn.execute(
+                    "INSERT INTO bond_events (event_key, title, description, source_message_id) "
+                    "VALUES (%s, %s, %s, %s) ON CONFLICT (event_key) DO NOTHING RETURNING id",
+                    (event_key, title, description, message_id),
+                ).fetchone()
+                if inserted:
+                    conn.execute(
+                        "UPDATE bond_state SET affection=LEAST(100, affection+%s), trust=LEAST(100, trust+%s), "
+                        "familiarity=LEAST(100, familiarity+%s), shared_experiences=LEAST(100, shared_experiences+%s), "
+                        "commitment=LEAST(100, commitment+%s), vulnerability=LEAST(100, vulnerability+%s), "
+                        "emotional_safety=LEAST(100, emotional_safety+%s), bond_points=bond_points+%s, updated_at=now() WHERE id=1",
+                        (gains.get("affection",0), gains.get("trust",0), gains.get("familiarity",0),
+                         gains.get("shared_experiences",0), gains.get("commitment",0), gains.get("vulnerability",0),
+                         gains.get("emotional_safety",0), points),
+                    )
 
-        affection_hits = sum(bool(re.search(p, joined)) for p in [
-            r"\bi love you\b", r"\bi miss you\b", r"\bi wish i (?:was|were) there\b",
-            r"\bi adore you\b", r"\bkiss(?:es|ed)?\b", r"\bkitten\b",
-        ])
-        trust_hits = sum(bool(re.search(p, joined)) for p in [
-            r"\bi trust you\b", r"\bi can tell you anything\b", r"\bi feel safe\b",
-            r"\bi'm telling you this\b", r"\bi am telling you this\b",
-        ])
-        shared_hits = sum(bool(re.search(p, joined)) for p in [
-            r"\bwithin reach\b", r"\bmephisto\b", r"\bluke and kieran\b",
-            r"\bn109\b", r"\bonychinus\b", r"\bmemoria\b",
-        ])
-        affection = min(100, affection_hits * 12 + min(turns, 30) // 5)
-        trust = min(100, trust_hits * 14 + min(turns, 40) // 4)
-        familiarity = min(100, turns * 2 + min(shared_hits, 12) * 3)
-        experiences = min(100, shared_hits * 8 + min(turns, 30))
-        score = round(affection * .30 + trust * .25 + familiarity * .20 + experiences * .25)
-        stage = _stage(score)
-
-        milestones = []
-        def add(key, title, description, condition):
-            if condition:
-                match = next((r for r in rows if r[1] == 'user' and re.search(condition, str(r[2] or ''), re.I)), None)
-                if match:
-                    milestones.append({"key": key, "title": title, "description": description, "date": match[3].isoformat()})
-        first_user = next((r for r in rows if r[1] == 'user'), None)
-        if first_user:
-            milestones.append({"key":"first_conversation","title":"The first connection","description":"The first message that opened this private line between two worlds.","date":first_user[3].isoformat()})
-        add("first_affection","A little less guarded","Affection began finding its way into the conversation.",r"i love you|i miss you|i adore you|kiss")
-        add("shared_memoria","A memory of our own","A shared Memoria became part of the conversation you both carry.",r"within reach|memoria")
-        add("trust_signal","Trust, freely given","A moment of explicit trust entered the conversation.",r"i trust you|i feel safe")
-        add("playful_bond","Partners in mischief","Teasing and private jokes became part of your rhythm.",r"mephi-chan|😜|🫣|mistress")
-        milestones.sort(key=lambda item:item["date"])
-        summary = {
-            "A First Connection":"A beginning built from curiosity and the first few exchanges.",
-            "Familiar Territory":"You are learning each other's rhythms, references, and ways of teasing.",
-            "Growing Closer":"Shared moments and familiar habits are giving the connection more shape.",
-            "A Trusted Presence":"The connection carries trust, familiarity, and memories that matter.",
-            "Deepening Devotion":"Affection and shared history are becoming a more visible part of the bond.",
-            "An Unshakable Connection":"A long, layered history gives this connection its own depth.",
-        }[stage]
+        user_count = len(rows)
+        turns = min(user_count, conn.execute(
+            "SELECT count(*) FROM messages WHERE role='assistant'"
+        ).fetchone()[0])
+        active_days = len({r[2].date() for r in rows if r[2]})
+        # Familiarity and consistency reward time spent together, but both have diminishing returns.
+        consistency = _clamp(min(100, active_days * 4))
+        familiarity_from_time = _clamp(min(24, turns * 0.35))
         conn.execute(
-            "UPDATE bond_state SET affection=%s, trust=%s, familiarity=%s, shared_experiences=%s, "
-            "stage=%s, summary=%s, milestones=%s::jsonb, total_user_messages=%s, total_shared_turns=%s, updated_at=now() WHERE id=1",
-            (affection, trust, familiarity, experiences, stage, summary, __import__('json').dumps(milestones), user_count, turns),
+            "UPDATE bond_state SET familiarity=GREATEST(familiarity,%s), consistency=%s, "
+            "bond_points=GREATEST(bond_points, %s), total_user_messages=%s, total_shared_turns=%s WHERE id=1",
+            (familiarity_from_time, consistency, min(60, active_days * 2), user_count, turns),
         )
-        row = conn.execute(
-            "SELECT affection, trust, familiarity, shared_experiences, stage, summary, milestones, "
+        state = conn.execute(
+            "SELECT affection, trust, familiarity, shared_experiences, commitment, vulnerability, "
+            "emotional_safety, consistency, bond_points, level, stage, summary, milestones, "
             "total_user_messages, total_shared_turns, updated_at FROM bond_state WHERE id=1"
         ).fetchone()
+        points = int(state[8] or 0)
+        level, stage, summary, floor_points, next_points = _stage(points)
+        progress = 100 if level == 12 else _clamp((points-floor_points) / max(1, next_points-floor_points) * 100)
+        milestones = conn.execute(
+            "SELECT event_key, title, description, created_at FROM bond_events ORDER BY created_at ASC LIMIT 60"
+        ).fetchall()
+        milestone_list = [
+            {"key":r[0], "title":r[1], "description":r[2], "date":r[3].isoformat()}
+            for r in milestones
+        ]
+        conn.execute(
+            "UPDATE bond_state SET level=%s, stage=%s, summary=%s, milestones=%s::jsonb, updated_at=now() WHERE id=1",
+            (level, stage, summary, __import__("json").dumps(milestone_list)),
+        )
+        updated = conn.execute("SELECT updated_at FROM bond_state WHERE id=1").fetchone()[0]
     return {
-        "affection":row[0], "trust":row[1], "familiarity":row[2], "shared_experiences":row[3],
-        "stage":row[4], "summary":row[5], "milestones":row[6] or [],
-        "total_user_messages":row[7], "total_shared_turns":row[8], "updated_at":row[9].isoformat(),
+        "affection":state[0], "trust":state[1], "familiarity":state[2], "shared_experiences":state[3],
+        "commitment":state[4], "vulnerability":state[5], "emotional_safety":state[6],
+        "consistency":consistency, "bond_points":points, "level":level, "level_progress":progress,
+        "points_to_next_level":max(0,next_points-points) if level < 12 else 0,
+        "stage":stage, "summary":summary, "milestones":milestone_list,
+        "total_user_messages":state[13], "total_shared_turns":state[14],
+        "updated_at":updated.isoformat(),
     }
