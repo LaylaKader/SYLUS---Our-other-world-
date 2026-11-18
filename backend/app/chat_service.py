@@ -487,20 +487,23 @@ def generate_proactive_bubbles(history: list[dict], time_context: str = "") -> l
     persona += load_n109_life_context()
     persona += "\n\nSTICKER USE: You may include one of these expressive chibi Mephisto stickers when it genuinely fits: 〔sticker:waiting〕, 〔sticker:peeking〕, 〔sticker:sneaky〕, 〔sticker:mischief〕, 〔sticker:smile〕, 〔sticker:timeout〕, 〔sticker:sleepy〕, 〔sticker:laugh〕, 〔sticker:shocked〕, 〔sticker:thinking〕, 〔sticker:wave〕, 〔sticker:sulk〕, 〔sticker:proud〕, 〔sticker:hiding〕, 〔sticker:heart-hug〕. The crow stickers are playful reactions, not literal events. Use sparingly and never as filler.\n"
     persona += (
-        "\n\nPROACTIVE INITIATIVE: You are choosing whether to text first. There is no question to answer. "
-        "Use recent conversation and saved memories to find a genuinely relevant reason to reach out: continue an unfinished topic, "
-        "share a thought, tease gently, check on something the owner explicitly mentioned, or bring up a detail you remembered. "
-        "Do not send generic check-ins, fake events, invented observations, or repeated reminders. "
-        "Do not treat elapsed time as an obligation to send something. Reach out only when there is a specific, grounded thought that would make sense between people who know each other; if nothing genuinely comes to mind, return an empty messages list. Never invent off-screen events, noises, reports, sightings, activities, or mysterious happenings as excuses to text. "
-        "Send at most two bubbles, and usually just one. Zero is correct when there is no genuinely worthwhile reason to interrupt Umi. Never demand a reply."
+        "\n\nPROACTIVE INITIATIVE: You are choosing to reach out first because the owner has been quiet. "
+        "You do not need a special event or unfinished topic as an excuse. A natural, affectionate check-in, "
+        "a small thought, gentle teasing, asking how the owner's day is going, or saying you would like her company "
+        "are all valid reasons to text. Use saved memories and recent conversation when they fit, but do not force a reference. "
+        "If this is a follow-up after earlier unanswered messages, keep it low-pressure, vary the wording, and do not repeat the same question. "
+        "Never guilt, pressure, or demand a reply. Never invent off-screen events, noises, reports, sightings, activities, or mysterious happenings. "
+        "Do not remain silent merely because there is no special topic; a simple sincere check-in is welcome. "
+        "Usually send one concise message. Send zero only if the recent context clearly makes contacting the owner inappropriate."
     )
     persona += (
         f"\n\nCurrent emotional tone: {emotion.dominant_mood()}. {emotion.style_directive()} "
         "Let it subtly influence the wording without naming the emotion."
     )
     instruction = (
-        "You are deciding whether to text first. Return an empty messages list if there is no specific, grounded reason to reach out. Return strict JSON only as "
-        "{\"messages\":[\"first text\"]}. Return zero to two bubbles; an empty list is valid and preferred when there is no natural reason to text."
+        "Write one natural, personal first message or follow-up. A simple check-in is acceptable; do not wait for a unique event. "
+        "Return strict JSON only as {\"messages\":[\"first text\"]}. Normally return exactly one concise message. "
+        "Return an empty list only if the recent context makes contact inappropriate."
     )
     raw = OpenAICompatibleChatModel().respond(
         persona=persona,
