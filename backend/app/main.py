@@ -9,6 +9,8 @@ import subprocess
 import tempfile
 import re
 import html
+import math
+import random
 from collections import defaultdict, deque
 from time import time
 from datetime import datetime, timedelta, timezone
@@ -999,12 +1001,11 @@ def apply_spoken_call_boundary(text: str, timezone_name: str) -> None:
 
 @app.post("/v1/proactive/poll")
 def poll_proactive_messages(_: None = Depends(require_owner)):
-    """Allow a natural first check-in after five quiet minutes, with five-minute spacing and no forced cooldown."""
+    """Use a stochastic contact impulse, not minimum-idle timers or cooldowns."""
     now_utc = datetime.now(timezone.utc)
     with connection() as conn:
         row = conn.execute(
-            "SELECT messages_enabled, min_idle_minutes, min_interval_minutes, timezone, last_proactive_at, "
-            "proactive_cycle_count, proactive_pause_until "
+            "SELECT messages_enabled, timezone, last_proactive_at "
             "FROM proactive_contact_settings WHERE id = 1 FOR UPDATE"
         ).fetchone()
         if not row or not row[0]:
@@ -1031,36 +1032,38 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
         ).fetchone()
         if not last_user or not last_user[0] or not last_activity or not last_activity[0]:
             return {"sent": False, "reason": "no_conversation", "messages": []}
-        idle_minutes = (now_utc - last_activity[0]).total_seconds() / 60
-        if idle_minutes < row[1]:
-            # A reply starts a fresh contact cycle and cancels any scheduled follow-up pause.
-            conn.execute(
-                "UPDATE proactive_contact_settings SET proactive_cycle_count=0, "
-                "proactive_pause_until=NULL WHERE id=1"
-            )
-            return {"sent": False, "reason": "owner_recently_active", "messages": []}
-        # No multi-message cooldown: each new attempt is governed only by the
-        # five-minute spacing below and the owner's explicit contact boundaries.
+        last_decision = row[2] if row[2] and row[2] > last_activity[0] else last_activity[0]
+        elapsed_seconds = max(0.0, (now_utc - last_decision).total_seconds())
+        # Poisson-style timing: about 2 natural message opportunities per day on average.
+        # This is not a minimum interval; every poll has a small chance, at any hour.
+        chance = 1.0 - math.exp(-elapsed_seconds / (12 * 60 * 60))
         conn.execute(
-            "UPDATE proactive_contact_settings SET proactive_cycle_count=0, "
-            "proactive_pause_until=NULL WHERE id=1"
-        )
-        last_proactive_at = row[4]
-        if last_proactive_at and (now_utc - last_proactive_at).total_seconds() < row[2] * 60:
-            return {"sent": False, "reason": "followup_spacing", "messages": []}
-        # Reserve this slot before generation so foreground polling and the background
-        # scheduler cannot generate duplicate messages at the same time.
-        conn.execute(
-            "UPDATE proactive_contact_settings SET last_proactive_at = %s, updated_at = now() WHERE id = 1",
+            "UPDATE proactive_contact_settings SET last_proactive_at=%s, updated_at=now() WHERE id=1",
             (now_utc,),
         )
-        tz_name = row[3] or DEFAULT_TIMEZONE
+        if random.random() >= chance:
+            return {"sent": False, "reason": "no_natural_impulse", "messages": []}
+        tz_name = row[1] or DEFAULT_TIMEZONE
         try:
             local_zone = ZoneInfo(tz_name)
         except Exception:
             local_zone = ZoneInfo(DEFAULT_TIMEZONE)
             tz_name = DEFAULT_TIMEZONE
         local_now = now_utc.astimezone(local_zone)
+        n109_now = now_utc.astimezone(ZoneInfo("Asia/Shanghai"))
+        hour = n109_now.hour
+        if 5 <= hour < 9:
+            rhythm = "morning briefings and the day's first decisions"
+        elif 9 <= hour < 13:
+            rhythm = "operations, negotiations, and business"
+        elif 13 <= hour < 16:
+            rhythm = "a meal break or a quieter hour"
+        elif 16 <= hour < 20:
+            rhythm = "meetings, planning, and overseeing operations"
+        elif 20 <= hour < 24:
+            rhythm = "private work, reading, or winding down"
+        else:
+            rhythm = "late-night work or sleep, depending on the day"
         history_rows = conn.execute(
             "SELECT role, body, created_at, metadata->>'image_context' "
             "FROM messages WHERE role IN ('user','assistant') "
@@ -1072,9 +1075,9 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
     ]
     time_note = (
         f"Current owner-local time: {local_now.strftime('%A, %Y-%m-%d %H:%M:%S')} ({tz_name}). "
-        f"The owner has not sent a message for about {int(idle_minutes)} minutes. "
-        "You may send a natural follow-up if you have something genuine to say. "
-        "This may be one of several separate attempts to reconnect; do not repeat yourself or pressure the owner."
+        f"Simulated N109 clock: {n109_now.strftime('%A, %H:%M')} (UTC+08:00; an internal fictional clock, not official canon). "
+        f"Possible N109 daily rhythm at this hour: {rhythm}. This is atmosphere, not a report of a specific event. "
+        "The two worlds have separate clocks. Reach out at any hour if it feels natural; do not follow a fixed schedule."
     )
     try:
         bubbles = generate_proactive_bubbles(history, time_context=time_note)[:1]
@@ -1092,11 +1095,6 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
             for bubble in bubbles
         ]
     messages = [MessageOut(id=str(r[0]), role=r[1], text=r[2], created_at=r[3]) for r in created_rows]
-    with connection() as conn:
-        conn.execute(
-            "UPDATE proactive_contact_settings SET proactive_cycle_count=0, "
-            "proactive_pause_until=NULL, updated_at=now() WHERE id=1"
-        )
     push_result = send_push_notification("Sylus", bubbles[0])
     logging.info(
         "Proactive message saved; push provider accepted=%s failed=%s.",
@@ -1106,11 +1104,11 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
 
 
 def poll_proactive_call_invite() -> dict:
-    """Send a tappable call invitation at any time unless the owner has explicitly paused calls."""
+    """Use a rare, un-timed call impulse; explicit owner pauses still take precedence."""
     now_utc = datetime.now(timezone.utc)
     with connection() as conn:
         row = conn.execute(
-            "SELECT calls_enabled, no_call_until, no_call_reason, min_interval_minutes, last_call_invite_at "
+            "SELECT calls_enabled, no_call_until, no_call_reason, last_call_invite_at "
             "FROM proactive_contact_settings WHERE id = 1 FOR UPDATE"
         ).fetchone()
         if not row or not row[0]:
@@ -1122,31 +1120,41 @@ def poll_proactive_call_invite() -> dict:
             return {"sent": False, "reason": "owner_requested_no_calls", "until": no_call_until.isoformat(), "detail": row[2]}
         if no_call_until and no_call_until <= now_utc:
             conn.execute(
-                "UPDATE proactive_contact_settings SET no_call_until = NULL, no_call_reason = NULL WHERE id = 1"
+                "UPDATE proactive_contact_settings SET no_call_until=NULL, no_call_reason=NULL WHERE id=1"
             )
         active_call = conn.execute(
             "SELECT 1 FROM call_sessions WHERE ended_at IS NULL AND last_activity_at >= now()-interval '2 hours' LIMIT 1"
         ).fetchone()
         if active_call:
             return {"sent": False, "reason": "voice_call_in_progress"}
-        last_invite = row[4]
-        # A short anti-duplicate interval prevents repeated ringing from the five-minute scheduler.
-        if last_invite and (now_utc - last_invite).total_seconds() < row[3] * 60:
-            return {"sent": False, "reason": "call_invitation_spacing"}
         subscriptions = conn.execute("SELECT count(*) FROM push_subscriptions").fetchone()[0]
         if not subscriptions:
             return {"sent": False, "reason": "no_push_subscription"}
+        last_invite = row[3]
+        if last_invite:
+            elapsed_seconds = max(0.0, (now_utc - last_invite).total_seconds())
+        else:
+            last_activity = conn.execute(
+                "SELECT GREATEST(COALESCE((SELECT max(created_at) FROM messages WHERE role IN ('user','assistant') "
+                "AND archived_at IS NULL AND COALESCE(metadata->>'proactive','false') <> 'true'), '-infinity'::timestamptz), "
+                "COALESCE((SELECT max(last_activity_at) FROM call_sessions), '-infinity'::timestamptz))"
+            ).fetchone()[0]
+            elapsed_seconds = max(0.0, (now_utc - last_activity).total_seconds()) if last_activity else 0.0
+        # Roughly one spontaneous call invitation every three days on average.
+        # This is a probability, not a cooldown or a clock-based restriction.
+        chance = 1.0 - math.exp(-elapsed_seconds / (72 * 60 * 60))
+        conn.execute(
+            "UPDATE proactive_contact_settings SET last_call_invite_at=%s, updated_at=now() WHERE id=1",
+            (now_utc,),
+        )
+        if random.random() >= chance:
+            return {"sent": False, "reason": "no_call_impulse"}
     result = send_push_notification(
         "Sylus is calling",
         "A moment for just us? Tap to open the private voice channel.",
         url="/?incoming-call=1",
     )
     if result.get("accepted", 0) > 0:
-        with connection() as conn:
-            conn.execute(
-                "UPDATE proactive_contact_settings SET last_call_invite_at = %s, updated_at = now() WHERE id = 1",
-                (now_utc,),
-            )
         logging.info("Sylus call invitation accepted by %s push provider(s).", result["accepted"])
         return {"sent": True, "accepted": result["accepted"]}
     return {"sent": False, "reason": "push_delivery_failed", **result}
