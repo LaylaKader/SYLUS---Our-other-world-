@@ -691,6 +691,9 @@ def create_speech(payload: SpeechIn, _: None = Depends(require_owner)):
             raise HTTPException(status_code=502, detail="The voice provider returned audio, but it could not be prepared for playback. Please try again.")
         audio_bytes = normalized.stdout
         logging.info("Voice audio normalized for playback: bytes=%s", len(audio_bytes))
+    except subprocess.TimeoutExpired as exc:
+        logging.error("Voice audio normalization timed out.")
+        raise HTTPException(status_code=504, detail="The generated voice took too long to prepare. Please try again.") from exc
     except httpx.HTTPError as exc:
         status = getattr(getattr(exc, "response", None), "status_code", None)
         logging.error("ElevenLabs speech request failed (HTTP %s): %s", status or "unknown", str(exc)[:300])
