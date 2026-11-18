@@ -105,11 +105,11 @@ def refresh_bond() -> dict:
         level, stage, summary, floor_points, next_points = _stage(points)
         progress = 100 if level == 12 else _clamp((points-floor_points) / max(1, next_points-floor_points) * 100)
         milestones = conn.execute(
-            "SELECT event_key, title, description, created_at FROM bond_events ORDER BY created_at ASC LIMIT 60"
+            "SELECT event_key, title, description, created_at FROM bond_events ORDER BY created_at DESC LIMIT 60"
         ).fetchall()
         milestone_list = [
             {"key":r[0], "title":r[1], "description":r[2], "date":r[3].isoformat()}
-            for r in milestones
+            for r in reversed(milestones)
         ]
         conn.execute(
             "UPDATE bond_state SET level=%s, stage=%s, summary=%s, milestones=%s::jsonb, updated_at=now() WHERE id=1",
