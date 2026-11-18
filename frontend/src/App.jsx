@@ -326,7 +326,7 @@ function App() {
       setVisualUploadStatus(current => ({ ...current, [identityId]: 'Uploading and saving…' }));
       const form = new FormData();
       form.append('file', uploadFile, uploadFile.name);
-      const response = await fetch(`${apiUrl.replace(/\\/$/, '')}/v1/visual-memory/identities/${identityId}/images`, {
+      const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/visual-memory/identities/${identityId}/images`, {
         method: 'POST', credentials: 'include', body: form
       });
       if (!response.ok) {
