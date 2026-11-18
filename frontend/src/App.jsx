@@ -722,7 +722,7 @@ function App() {
         if (callRecognitionRef.current !== recognition) return;
         callRecognitionRef.current = null;
         setCallListening(false);
-        if (callFinalTranscriptRef.current.trim() && !callProcessingRef.current) {
+        if (callFinalTranscriptRef.current.trim() && !callProcessingRef.current && !callMicPausedRef.current) {
           if (callSilenceTimerRef.current) window.clearTimeout(callSilenceTimerRef.current);
           callSilenceTimerRef.current = window.setTimeout(() => commitCallTranscript(), 1500);
         } else if (callActiveRef.current && !callProcessingRef.current && !callMicPausedRef.current) {
