@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import {Bell, Bird, BookHeart, Camera, ChevronDown, CircleHelp, Clock3, Crown, Heart, Image, LockKeyhole, Menu, MessageCircle, MoreHorizontal, Send, Settings, ShieldCheck, Sparkles, Star, X, RefreshCw, Phone, PhoneOff, Mic, MicOff} from 'lucide-react';
+import {Bell, Bird, BookHeart, Camera, ChevronDown, CircleHelp, Clock3, Crown, Heart, Image, LockKeyhole, Menu, MessageCircle, MoreHorizontal, Send, Settings, ShieldCheck, Sparkles, Star, X, RefreshCw, Phone, PhoneOff, Mic, MicOff, History, Volume2, Trash2, Headphones} from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? window.location.origin : '');
 const fallbackStickerOptions = [
@@ -1064,7 +1064,7 @@ function App() {
 
   async function resetChat() {
     if (!connected || messageActionBusy) return;
-    if (!window.confirm('STEP 1 OF 3 · Start a completely fresh Sylus world? This permanently erases all texting messages, archived messages, saved memories, and shared image attachments. Voice call records are stored separately.')) return;
+    if (!window.confirm('STEP 1 OF 3 · Start a completely fresh Sylus world? This permanently erases all texting messages, archived messages, saved memories, and shared image attachments. Voice call records will also be permanently erased.')) return;
     if (!window.confirm('STEP 2 OF 3 · This cannot be undone. Are you absolutely certain you want to erase the texting history and memories?')) return;
     if (window.prompt('STEP 3 OF 3 · Type DELETE to permanently confirm.') !== 'DELETE') { setNotice('Reset cancelled. Nothing was deleted.'); return; }
     setMessageActionBusy(true);
