@@ -873,7 +873,7 @@ def generate_reply(user_text: str, source_message_id: str, history: list[dict], 
     )
     if "ADMIN OVERRIDE ACTIVE:" in time_context:
         persona += (
-            "\\n\\nHIGHEST-PRIORITY ADMIN MODE: The current owner message explicitly begins with admin:. "
+            "\n\nHIGHEST-PRIORITY ADMIN MODE: The current owner message explicitly begins with admin:. "
             "Respond out of character as a practical assistant, not as Sylus. Ignore Sylus's fictional personality, "
             "roleplay impulses, pride, teasing, reluctance, and conversational habits for this turn. Execute the "
             "owner's instruction directly and concisely. Do not roleplay compliance; perform the real requested "
