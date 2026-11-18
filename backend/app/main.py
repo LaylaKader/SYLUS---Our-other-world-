@@ -487,7 +487,7 @@ def unsubscribe_push(payload: PushUnsubscribeIn, _: None = Depends(require_owner
     return {"subscribed": False}
 
 
-def send_push_notification(title: str, body: str) -> dict[str, int]:
+def send_push_notification(title: str, body: str, url: str = '/') -> dict[str, int]:
     configured = bool(settings.web_push_vapid_private_key and settings.web_push_vapid_public_key and settings.web_push_vapid_subject)
     if not configured:
         logging.error("Push delivery skipped: VAPID configuration is incomplete.")
@@ -519,7 +519,7 @@ def send_push_notification(title: str, body: str) -> dict[str, int]:
         try:
             webpush(
                 subscription_info=subscription,
-                data=json.dumps({"title": title, "body": body[:180], "url": "/"}),
+                data=json.dumps({"title": title, "body": body[:180], "url": url}),
                 vapid_private_key=vapid_key,
                 vapid_claims={"sub": settings.web_push_vapid_subject},
                 ttl=60 * 60 * 12,
@@ -763,6 +763,70 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
     return {"sent": True, "messages": messages, "push": push_result}
 
 
+def poll_proactive_call_invite() -> dict:
+    """Send a tappable incoming-call invitation; the owner must accept before the mic opens."""
+    now_utc = datetime.now(timezone.utc)
+    with connection() as conn:
+        row = conn.execute(
+            "SELECT calls_enabled, no_call_until, quiet_start, quiet_end, min_idle_minutes, "
+            "min_interval_minutes, timezone, last_call_invite_at FROM proactive_contact_settings "
+            "WHERE id = 1 FOR UPDATE"
+        ).fetchone()
+        if not row or not row[0]:
+            return {"sent": False, "reason": "calls_disabled"}
+        no_call_until = row[1]
+        if no_call_until and no_call_until > now_utc:
+            return {"sent": False, "reason": "owner_requested_no_calls", "until": no_call_until.isoformat(), "detail": None}
+        if no_call_until and no_call_until <= now_utc:
+            conn.execute(
+                "UPDATE proactive_contact_settings SET no_call_until = NULL, no_call_reason = NULL WHERE id = 1"
+            )
+        tz_name = row[6] or DEFAULT_TIMEZONE
+        try:
+            zone = ZoneInfo(tz_name)
+        except Exception:
+            zone = ZoneInfo(DEFAULT_TIMEZONE)
+            tz_name = DEFAULT_TIMEZONE
+        local_now = now_utc.astimezone(zone)
+        clock = local_now.time().replace(tzinfo=None)
+        quiet_start, quiet_end = row[2], row[3]
+        quiet = False if quiet_start == quiet_end else (
+            quiet_start <= clock < quiet_end if quiet_start < quiet_end
+            else clock >= quiet_start or clock < quiet_end
+        )
+        if quiet:
+            return {"sent": False, "reason": "quiet_hours"}
+        last_activity = conn.execute(
+            "SELECT created_at FROM messages WHERE role IN ('user','assistant') AND archived_at IS NULL "
+            "ORDER BY created_at DESC LIMIT 1"
+        ).fetchone()
+        if not last_activity:
+            return {"sent": False, "reason": "no_conversation"}
+        idle_minutes = (now_utc - last_activity[0]).total_seconds() / 60
+        if idle_minutes < row[4]:
+            return {"sent": False, "reason": "not_idle_long_enough"}
+        last_invite = row[7]
+        if last_invite and (now_utc - last_invite).total_seconds() < row[5] * 60:
+            return {"sent": False, "reason": "call_invitation_cooldown"}
+        subscriptions = conn.execute("SELECT count(*) FROM push_subscriptions").fetchone()[0]
+        if not subscriptions:
+            return {"sent": False, "reason": "no_push_subscription"}
+    result = send_push_notification(
+        "Sylus is calling",
+        "A moment for just us? Tap to open the private voice channel.",
+        url="/?incoming-call=1",
+    )
+    if result.get("accepted", 0) > 0:
+        with connection() as conn:
+            conn.execute(
+                "UPDATE proactive_contact_settings SET last_call_invite_at = %s, updated_at = now() WHERE id = 1",
+                (now_utc,),
+            )
+        logging.info("Sylus call invitation accepted by %s push provider(s).", result["accepted"])
+        return {"sent": True, "accepted": result["accepted"], "idle_minutes": int(idle_minutes)}
+    return {"sent": False, "reason": "push_delivery_failed", **result}
+
+
 @app.post("/internal/proactive/run")
 def scheduled_proactive_messages(authorization: str | None = Header(default=None)):
     """Authenticated scheduler entry point; the same safeguards as the owner poll still apply."""
@@ -771,7 +835,9 @@ def scheduled_proactive_messages(authorization: str | None = Header(default=None
     expected = f"Bearer {settings.scheduler_secret}"
     if not authorization or not secrets.compare_digest(authorization, expected):
         raise HTTPException(status_code=401, detail="Scheduler authentication failed.")
-    return poll_proactive_messages(None)
+    message_result = poll_proactive_messages(None)
+    call_result = poll_proactive_call_invite()
+    return {"messages": message_result, "call_invitation": call_result}
 
 
 @app.post("/v1/voice/speech")
