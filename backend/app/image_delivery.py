@@ -35,7 +35,7 @@ def should_generate_image(text: str) -> bool:
     if not value:
         return False
     # "Send/show me a picture of you" means fetch a real Sylus image, not synthesize a lookalike.
-    if re.search(r"\b(?:send|show|get|find|search)\b.{0,80}\b(?:picture|photo|image)\b.{0,60}\b(?:of you|of yourself|of sylus)\b", value, re.I):
+    if re.search(r"\b(?:send|show|get|find|search)\b.{0,80}\b(?:picture|photo|image)\b.{0,60}\b(?:of you|of yourself|of sylus|of him)\b", value, re.I):
         return False
     patterns = (
         r"\b(?:send|make|create|generate|draw|paint)\b.{0,100}\b(?:me\s+)?(?:an?\s+)?(?:image|picture|photo|illustration|artwork|portrait|drawing)\b",
