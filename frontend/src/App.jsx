@@ -521,12 +521,12 @@ function App() {
         autoReadQueueRef.current.push(message.id);
       }
     }
-    if (!speakingMessageId && autoReadQueueRef.current.length) {
+    if (!speakingMessageId && !playingAudioId && autoReadQueueRef.current.length) {
       const nextId = autoReadQueueRef.current.shift();
       const nextMessage = messages.find(message => message.id === nextId);
       if (nextMessage) readAloud(nextMessage);
     }
-  }, [messages, autoReadEnabled, speakingMessageId, audioBuffers, audioErrors]);
+  }, [messages, autoReadEnabled, speakingMessageId, playingAudioId, audioBuffers, audioErrors]);
 
   async function refreshApp() {
     setNotice('Refreshing the app…');
@@ -620,7 +620,7 @@ function App() {
     if (!window.confirm('Erase EVERYTHING and start over? This permanently deletes all chat messages (including archived messages), saved memories, and shared image attachments. This cannot be undone.')) return;
     setMessageActionBusy(true);
     try {
-      const response = await fetch(`${apiUrl.replace(/\\/$/, '')}/v1/reset-all`, { method: 'DELETE', headers, credentials: 'include' });
+      const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/reset-all`, { method: 'DELETE', headers, credentials: 'include' });
       if (!response.ok) {
         const failure = await response.json().catch(() => ({}));
         throw new Error(failure.detail || 'Could not erase the chat and memories.');
