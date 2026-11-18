@@ -999,7 +999,7 @@ def apply_spoken_call_boundary(text: str, timezone_name: str) -> None:
 
 @app.post("/v1/proactive/poll")
 def poll_proactive_messages(_: None = Depends(require_owner)):
-    """Send up to three thoughtful follow-ups per rolling hour after 60 minutes without an owner message."""
+    """Allow a natural first check-in after five quiet minutes, with five-minute spacing and no forced cooldown."""
     now_utc = datetime.now(timezone.utc)
     with connection() as conn:
         row = conn.execute(
@@ -1039,14 +1039,12 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
                 "proactive_pause_until=NULL WHERE id=1"
             )
             return {"sent": False, "reason": "owner_recently_active", "messages": []}
-        pause_until = row[6]
-        if pause_until and pause_until > now_utc:
-            return {"sent": False, "reason": "followup_rest_period", "retry_after": pause_until.isoformat(), "messages": []}
-        if pause_until and pause_until <= now_utc:
-            conn.execute(
-                "UPDATE proactive_contact_settings SET proactive_cycle_count=0, "
-                "proactive_pause_until=NULL WHERE id=1"
-            )
+        # No multi-message cooldown: each new attempt is governed only by the
+        # five-minute spacing below and the owner's explicit contact boundaries.
+        conn.execute(
+            "UPDATE proactive_contact_settings SET proactive_cycle_count=0, "
+            "proactive_pause_until=NULL WHERE id=1"
+        )
         last_proactive_at = row[4]
         if last_proactive_at and (now_utc - last_proactive_at).total_seconds() < row[2] * 60:
             return {"sent": False, "reason": "followup_spacing", "messages": []}
@@ -1096,11 +1094,8 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
     messages = [MessageOut(id=str(r[0]), role=r[1], text=r[2], created_at=r[3]) for r in created_rows]
     with connection() as conn:
         conn.execute(
-            "UPDATE proactive_contact_settings SET "
-            "proactive_cycle_count=LEAST(proactive_cycle_count+1, 3), "
-            "proactive_pause_until=CASE WHEN proactive_cycle_count+1 >= 3 THEN %s "
-            "ELSE proactive_pause_until END, updated_at=now() WHERE id=1",
-            (now_utc + timedelta(minutes=45),),
+            "UPDATE proactive_contact_settings SET proactive_cycle_count=0, "
+            "proactive_pause_until=NULL, updated_at=now() WHERE id=1"
         )
     push_result = send_push_notification("Sylus", bubbles[0])
     logging.info(
