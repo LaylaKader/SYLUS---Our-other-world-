@@ -242,10 +242,10 @@ class OpenAICompatibleChatModel(ChatModel):
 
 MEMORY_STOP_WORDS = {
     "about", "after", "again", "also", "and", "are", "because", "been", "before",
-    "being", "but", "can", "could", "did", "does", "doing", "for", "from",
-    "had", "has", "have", "her", "here", "him", "his", "how", "into", "its",
-    "just", "like", "make", "many", "more", "most", "much", "need", "not",
-    "our", "out", "over", "please", "really", "said", "she", "should", "some",
+    "being", "but", "can", "card", "cards", "could", "did", "does", "doing", "for", "from",
+    "had", "happened", "has", "have", "her", "here", "him", "his", "how", "into", "its",
+    "just", "like", "make", "many", "memory", "memoria", "more", "most", "much", "need", "not",
+    "our", "out", "over", "please", "really", "said", "she", "should", "some", "story",
     "than", "that", "the", "their", "them", "then", "there", "these", "they",
     "this", "those", "through", "too", "very", "was", "were", "what", "when",
     "where", "which", "who", "will", "with", "would", "you", "your",
@@ -255,6 +255,8 @@ MEMORY_STOP_WORDS = {
 def extract_memory_terms(query: str, limit: int = 10) -> list[str]:
     """Keep meaningful, unique terms; preserve Unicode combining marks."""
     import unicodedata
+    # Correct a common mobile typo in the Sylus card title before lexical matching.
+    query = re.sub(r"\\bwithen\\b", "within", query, flags=re.IGNORECASE)
     terms = []
     seen = set()
     current = []
