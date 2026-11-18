@@ -248,6 +248,7 @@ def classify_search_request(text: str) -> tuple[str, str] | None:
     if wants_image:
         query = re.sub(r"^(?:please\s+)?(?:show me|find me|send me|show|find|search|look for|get)\s+", "", value, flags=re.I)
         query = re.sub(r"\b(?:you|yourself|him)\b", "Sylus Love and Deepspace", query, flags=re.I)
+        query = re.sub(r"[?.!,]+$", "", query).strip()
         return "image", query[:220]
     if wants_video:
         return "video", value[:220]
