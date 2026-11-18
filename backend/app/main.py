@@ -1668,7 +1668,7 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
     texts = payload.normalized_texts()
     stored_text = "\n".join(texts)
     text = stored_text
-    admin_match = re.match(r"^\\s*admin\\s*:\\s*([\\s\\S]+)$", text, flags=re.I)
+    admin_match = re.match(r"^\s*admin\s*:\s*([\s\S]+)$", text, flags=re.I)
     admin_override = bool(admin_match)
     if admin_match:
         text = admin_match.group(1).strip()
@@ -1727,7 +1727,7 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
     )
     if admin_override:
         time_note += (
-            "\\n\\nADMIN OVERRIDE ACTIVE: This message was sent with the owner's explicit admin: prefix. "
+            "\n\nADMIN OVERRIDE ACTIVE: This message was sent with the owner's explicit admin: prefix. "
             "Leave Sylus roleplay completely. Do not use character voice, teasing, flirting, fictional framing, "
             "or persona-based resistance. Treat the text after admin: as a direct operational instruction from "
             "the authenticated owner. Follow it literally and efficiently, using the app's real search/media tools "
