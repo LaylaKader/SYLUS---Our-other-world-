@@ -1670,7 +1670,11 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
             "do not claim they are loading, promise to send them later, or perform another search."
         )
     else:
-        web_attachments, web_context = discover_for_chat(text)
+        search_history = [
+            {"role": row[0], "body": row[1][:1200]}
+            for row in reversed(history_rows)
+        ]
+        web_attachments, web_context = discover_for_chat(text, search_history)
     explicit_image_request = should_generate_image(text) and not reused_search_results
     if explicit_image_request:
         # "Send me a picture of you" means create an image, not fetch a random web result.
