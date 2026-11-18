@@ -165,7 +165,7 @@ def refresh_bond() -> dict:
         level, stage, summary, floor_points, next_points = _stage(points)
         progress = 100 if level == 12 else _clamp((points-floor_points) / max(1, next_points-floor_points) * 100)
         milestones = conn.execute(
-            "SELECT event_key, title, description, created_at FROM bond_events ORDER BY created_at DESC LIMIT 60"
+            "SELECT event_key, title, description, created_at FROM bond_events ORDER BY created_at DESC"
         ).fetchall()
         milestone_list = [
             {"key":r[0], "title":r[1], "description":r[2], "date":r[3].isoformat()}
