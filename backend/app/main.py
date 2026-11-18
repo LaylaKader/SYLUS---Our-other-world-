@@ -967,12 +967,12 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
         if not row or not row[0]:
             return {"sent": False, "reason": "disabled", "messages": []}
         conn.execute(
-            "UPDATE call_sessions SET ended_at=now(), last_activity_at=now(), "
-            "duration_seconds=GREATEST(duration_seconds,EXTRACT(EPOCH FROM (now()-started_at))::int) "
-            "WHERE ended_at IS NULL AND last_activity_at < now()-interval '30 minutes'"
+            "UPDATE call_sessions SET ended_at=last_activity_at, "
+            "duration_seconds=GREATEST(duration_seconds,EXTRACT(EPOCH FROM (last_activity_at-started_at))::int) "
+            "WHERE ended_at IS NULL AND last_activity_at < now()-interval '2 hours'"
         )
         active_call = conn.execute(
-            "SELECT 1 FROM call_sessions WHERE ended_at IS NULL AND last_activity_at >= now()-interval '30 minutes' LIMIT 1"
+            "SELECT 1 FROM call_sessions WHERE ended_at IS NULL AND last_activity_at >= now()-interval '2 hours' LIMIT 1"
         ).fetchone()
         if active_call:
             return {"sent": False, "reason": "voice_call_in_progress", "messages": []}
@@ -1090,12 +1090,12 @@ def poll_proactive_call_invite() -> dict:
         if quiet:
             return {"sent": False, "reason": "quiet_hours"}
         conn.execute(
-            "UPDATE call_sessions SET ended_at=now(), last_activity_at=now(), "
-            "duration_seconds=GREATEST(duration_seconds,EXTRACT(EPOCH FROM (now()-started_at))::int) "
-            "WHERE ended_at IS NULL AND last_activity_at < now()-interval '30 minutes'"
+            "UPDATE call_sessions SET ended_at=last_activity_at, "
+            "duration_seconds=GREATEST(duration_seconds,EXTRACT(EPOCH FROM (last_activity_at-started_at))::int) "
+            "WHERE ended_at IS NULL AND last_activity_at < now()-interval '2 hours'"
         )
         active_call = conn.execute(
-            "SELECT 1 FROM call_sessions WHERE ended_at IS NULL AND last_activity_at >= now()-interval '30 minutes' LIMIT 1"
+            "SELECT 1 FROM call_sessions WHERE ended_at IS NULL AND last_activity_at >= now()-interval '2 hours' LIMIT 1"
         ).fetchone()
         if active_call:
             return {"sent": False, "reason": "voice_call_in_progress"}
