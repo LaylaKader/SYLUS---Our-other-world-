@@ -1499,7 +1499,10 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
     )
     # Search only when Umi explicitly asks whether a named title/song/person exists.
     lookup_intent = re.search(
-        r"\b(?:do you know|have you heard of|heard of|know the song|what is|who is|look up|search for|find out about|tell me about)\b",
+        r"\b(?:do you know|have you heard of|heard of|know the song|what is|who is|"
+        r"look up|search for|find out about|tell me about|name the song|what song|"
+        r"which song|identify (?:the )?(?:song|track)|who sings|who performs|"
+        r"what are (?:these|the) lyrics|where are these lyrics from)\b",
         text, flags=re.I,
     )
     if lookup_intent and len(text) >= 10:
