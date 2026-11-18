@@ -234,7 +234,7 @@ def is_search_followup(text: str) -> bool:
     """Short deictic replies that refer to the most recent attached search results."""
     value = (text or "").strip().lower()
     return bool(re.fullmatch(
-        r"(?:yeah[, ]+)?(?:show me|send (?:it|that|the image|the picture)|show (?:it|that)|"
+        r"(?:yeah[, ]+)?(?:show me|send me (?:it|that|the image|the picture)|send (?:it|that|the image|the picture)|show (?:it|that)|"
         r"where is it|where are they|open (?:it|that)|give it to me|the image|the picture|"
         r"i want to see (?:it|that)|let me see|yes|yeah|yep|okay|ok)[.!? ]*",
         value,
