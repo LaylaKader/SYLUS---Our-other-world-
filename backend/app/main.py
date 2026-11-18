@@ -11,7 +11,7 @@ import re
 import html
 from collections import defaultdict, deque
 from time import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from typing import Literal
 from uuid import UUID, uuid4
@@ -988,7 +988,8 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
     now_utc = datetime.now(timezone.utc)
     with connection() as conn:
         row = conn.execute(
-            "SELECT messages_enabled, min_idle_minutes, min_interval_minutes, timezone, last_proactive_at "
+            "SELECT messages_enabled, min_idle_minutes, min_interval_minutes, timezone, last_proactive_at, "
+            "proactive_cycle_count, proactive_pause_until "
             "FROM proactive_contact_settings WHERE id = 1 FOR UPDATE"
         ).fetchone()
         if not row or not row[0]:
@@ -1016,13 +1017,20 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
             return {"sent": False, "reason": "no_conversation", "messages": []}
         idle_minutes = (now_utc - last_activity[0]).total_seconds() / 60
         if idle_minutes < row[1]:
+            # A reply starts a fresh contact cycle and cancels any scheduled follow-up pause.
+            conn.execute(
+                "UPDATE proactive_contact_settings SET proactive_cycle_count=0, "
+                "proactive_pause_until=NULL WHERE id=1"
+            )
             return {"sent": False, "reason": "owner_recently_active", "messages": []}
-        recent_count = conn.execute(
-            "SELECT count(*) FROM messages WHERE role='assistant' "
-            "AND metadata->>'proactive'='true' AND created_at > now()-interval '60 minutes'"
-        ).fetchone()[0]
-        if recent_count >= 3:
-            return {"sent": False, "reason": "hourly_followup_limit", "messages": []}
+        pause_until = row[6]
+        if pause_until and pause_until > now_utc:
+            return {"sent": False, "reason": "followup_rest_period", "retry_after": pause_until.isoformat(), "messages": []}
+        if pause_until and pause_until <= now_utc:
+            conn.execute(
+                "UPDATE proactive_contact_settings SET proactive_cycle_count=0, "
+                "proactive_pause_until=NULL WHERE id=1"
+            )
         last_proactive_at = row[4]
         if last_proactive_at and (now_utc - last_proactive_at).total_seconds() < row[2] * 60:
             return {"sent": False, "reason": "followup_spacing", "messages": []}
@@ -1070,6 +1078,14 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
             for bubble in bubbles
         ]
     messages = [MessageOut(id=str(r[0]), role=r[1], text=r[2], created_at=r[3]) for r in created_rows]
+    with connection() as conn:
+        conn.execute(
+            "UPDATE proactive_contact_settings SET "
+            "proactive_cycle_count=LEAST(proactive_cycle_count+1, 3), "
+            "proactive_pause_until=CASE WHEN proactive_cycle_count+1 >= 3 THEN %s "
+            "ELSE proactive_pause_until END, updated_at=now() WHERE id=1",
+            (now_utc + timedelta(minutes=45),),
+        )
     push_result = send_push_notification("Sylus", bubbles[0])
     logging.info(
         "Proactive message saved; push provider accepted=%s failed=%s.",
