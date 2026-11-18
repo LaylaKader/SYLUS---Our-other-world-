@@ -7,6 +7,8 @@ import hmac
 import logging
 import subprocess
 import tempfile
+import re
+import html
 from collections import defaultdict, deque
 from time import time
 from datetime import datetime, timezone
@@ -26,6 +28,41 @@ from .chat_service import generate_reply, generate_proactive_bubbles, split_repl
 from .bond import refresh_bond
 
 app = FastAPI(title="SYLUS private companion API", version="0.3.0")
+
+def _search_web_context(query: str) -> str:
+    """Small, keyless web lookup for explicit 'what is / do you know' questions."""
+    try:
+        response = httpx.get(
+            "https://html.duckduckgo.com/html/",
+            params={"q": query[:220]},
+            headers={"User-Agent": "Mozilla/5.0 (compatible; SylusCompanion/1.0)"},
+            timeout=httpx.Timeout(8.0, connect=3.0),
+            follow_redirects=True,
+        )
+        response.raise_for_status()
+        page = response.text
+        blocks = re.findall(r'<div class="result[^"]*"[^>]*>(.*?)</div>\s*</div>', page, flags=re.I | re.S)
+        found = []
+        for block in blocks[:5]:
+            title_match = re.search(r'<a[^>]*class="result__a"[^>]*>(.*?)</a>', block, flags=re.I | re.S)
+            snippet_match = re.search(r'<(?:a|div)[^>]*class="result__snippet"[^>]*>(.*?)</(?:a|div)>', block, flags=re.I | re.S)
+            href_match = re.search(r'<a[^>]*class="result__a"[^>]*href="([^"]+)"', block, flags=re.I | re.S)
+            if not title_match:
+                continue
+            clean = lambda value: re.sub(r"\\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", value or ""))).strip()
+            title = clean(title_match.group(1))
+            snippet = clean(snippet_match.group(1)) if snippet_match else ""
+            href = html.unescape(href_match.group(1)) if href_match else ""
+            if "uddg=" in href:
+                from urllib.parse import parse_qs, urlparse
+                href = parse_qs(urlparse(href).query).get("uddg", [href])[0]
+            if title and snippet:
+                found.append(f"- {title}: {snippet} ({href})")
+        return "\\n".join(found[:4])
+    except Exception as exc:
+        logging.info("Optional web lookup unavailable (%s).", type(exc).__name__)
+        return ""
+
 
 def chat_provider_configured() -> bool:
     """True when at least one explicitly configured free-tier provider is available."""
@@ -1121,6 +1158,18 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
         f"Current owner-local time: {now_local.strftime('%A, %Y-%m-%d %H:%M:%S')} ({tz_name}). "
         f"Current UTC: {now_utc.isoformat()}.{gap} Use this context naturally when relevant; do not announce it unnecessarily."
     )
+    # Search only when Umi explicitly asks whether a named title/song/person exists.
+    lookup_intent = re.search(
+        r"\\b(?:do you know|have you heard of|heard of|know the song|what is|who is|look up|search for|find out about|tell me about)\\b",
+        text, flags=re.I,
+    )
+    if lookup_intent and len(text) >= 10:
+        web_context = _search_web_context(text)
+        if web_context:
+            time_note += "\\n\\nFRESH WEB SEARCH RESULTS (retrieved just now; use as evidence, not canon):\\n" + web_context + (
+                "\\nIf these results identify a song, artist, meme, or public fact, answer from them. "
+                "If results are inconclusive, say so; never pretend you searched when no results are present."
+            )
     history = [
         {"role": r[0], "body": r[1][:1800], "created_at": r[2].isoformat(), "image_context": r[3]}
         for r in reversed(history_rows)
