@@ -152,6 +152,7 @@ function App() {
   const [callTranscript, setCallTranscript] = useState('');
   const [callCorrectionEnabled, setCallCorrectionEnabled] = useState(() => { try { return window.localStorage.getItem('sylus-call-correction') !== 'false'; } catch { return true; } });
   const [callSessionId, setCallSessionId] = useState(null);
+  const callSessionIdRef = useRef(null);
   const callStartedAtRef = useRef(null);
   const [callHistory, setCallHistory] = useState([]);
   const [expandedCallId, setExpandedCallId] = useState(null);
@@ -280,7 +281,8 @@ function App() {
     try {
       const r = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/calls/${id}/transcript`, { headers, credentials: 'include' });
       if (!r.ok) throw new Error('Could not load this call transcript.');
-      setCallTranscriptDetails(v => ({...v,[id]:await r.json()}));
+      const detail = await r.json();
+      setCallTranscriptDetails(v => ({...v,[id]:detail}));
       setExpandedCallId(id);
     } catch (error) { setNotice(error.message); }
   }
@@ -777,10 +779,11 @@ function App() {
     setCallBusy(true);
     setCallStatus('Sending what I heard…');
     try {
-      if (!callSessionId) throw new Error('The call session was not saved. Please end and restart the call.');
+      const activeSessionId = callSessionIdRef.current;
+      if (!activeSessionId) throw new Error('The call session was not saved. Please end and restart the call.');
       const response = await fetch(apiUrl.replace(/\/$/, '') + '/v1/calls/turn', {
         method: 'POST', headers, credentials: 'include',
-        body: JSON.stringify({ session_id: callSessionId, text: spokenText })
+        body: JSON.stringify({ session_id: activeSessionId, text: spokenText })
       });
       if (!response.ok) {
         const failure = await response.json().catch(() => ({}));
@@ -818,7 +821,7 @@ function App() {
     }
     setCallOpen(true);
     setCallStatus('Opening a private call record…');
-    try{const r=await fetch(apiUrl.replace(/\/$/, '')+'/v1/calls/start',{method:'POST',headers,credentials:'include'});if(!r.ok)throw new Error('Could not start a call record.');const s=await r.json();setCallSessionId(s.id);callStartedAtRef.current=Date.now();}
+    try{const r=await fetch(apiUrl.replace(/\/$/, '')+'/v1/calls/start',{method:'POST',headers,credentials:'include'});if(!r.ok)throw new Error('Could not start a call record.');const s=await r.json();setCallSessionId(s.id);callSessionIdRef.current=s.id;callStartedAtRef.current=Date.now();}
     catch(error){setCallStatus(error.message);return;}
     autoReadQueueRef.current = [];
     if (audioSourceRef.current) { try { audioSourceRef.current.stop(); } catch {} audioSourceRef.current = null; }
@@ -874,10 +877,10 @@ function App() {
     setCallActive(false);
     setCallListening(false);
     setCallBusy(false);
-    const sessionId=callSessionId;
+    const sessionId=callSessionIdRef.current;
     const duration=callStartedAtRef.current?Math.max(0,Math.floor((Date.now()-callStartedAtRef.current)/1000)):0;
     if(sessionId){try{await fetch(apiUrl.replace(/\/$/, '')+`/v1/calls/${sessionId}/finish`,{method:'POST',headers,credentials:'include',body:JSON.stringify({duration_seconds:duration})});}catch{}}
-    callStartedAtRef.current=null;setCallSessionId(null);await refreshCallHistory();
+    callStartedAtRef.current=null;callSessionIdRef.current=null;setCallSessionId(null);await refreshCallHistory();
     setCallStatus('Call ended. Its duration is saved separately from your text conversation.');
   }
 
@@ -1101,7 +1104,7 @@ function App() {
   async function disconnect() {
     try { await fetch(`${apiUrl.replace(/\/$/, '')}/v1/session`, { method: 'DELETE', headers, credentials: 'include' }); } catch {}
     setOwnerPassword(''); setConnected(false); setChatReady(false); setMessages([]); messageQueue.current = []; if (queueTimer.current) window.clearTimeout(queueTimer.current); setReplyStatus(''); setReplyError(''); setMemories([]); setTimeContext(null);
-    setVisualLibrary([]); setCallHistory([]); setCallTranscriptDetails({}); setCallSessionId(null);
+    setVisualLibrary([]); setCallHistory([]); setCallTranscriptDetails({}); callSessionIdRef.current=null; setCallSessionId(null);
     setNotice('Signed out · private data remains on the server');
   }
 
