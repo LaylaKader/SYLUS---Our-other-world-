@@ -29,7 +29,7 @@ from .migrate import run_migrations
 from .chat_service import generate_reply, generate_proactive_bubbles, split_reply_bubbles, load_emotion_state, ProviderNotConfigured, ProviderRequestFailed
 from .bond import refresh_bond
 from .web_search import discover_for_chat, is_search_followup
-from .image_delivery import extract_image_directive, should_generate_image
+from .image_delivery import extract_image_directive, extract_link_directive, should_generate_image
 
 app = FastAPI(title="SYLUS private companion API", version="0.3.0")
 
@@ -1719,12 +1719,23 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
     try:
         answer = generate_reply(text, str(user_rows[-1][0]), history, time_context=time_note)
         answer, model_image_prompt = extract_image_directive(answer)
+        answer, model_link_query = extract_link_directive(answer)
     except ProviderNotConfigured as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ProviderRequestFailed as exc:
         with connection() as conn:
             conn.execute("DELETE FROM messages WHERE id = ANY(%s) AND role = 'user'", ([row[0] for row in user_rows],))
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    # A private link directive lets Sylus choose to send a useful resource himself.
+    # The server performs the search and attaches real clickable cards; no model-made URL is trusted.
+    if model_link_query and not web_attachments and not explicit_image_request:
+        web_attachments, model_link_context = discover_for_chat(
+            "Find me a link for " + model_link_query
+        )
+        if not web_attachments:
+            answer = (answer + "\\n\\n" if answer else "") + (
+                "I couldn't find a reliable destination for that just now, so I won't invent a link."
+            )
     # If the model slips into a fake "still searching/loading" line, the result
     # cards are already attached. Keep the character voice but complete the request.
     if web_attachments and re.search(
