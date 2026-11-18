@@ -281,6 +281,7 @@ def erase_all_private_data(_: None = Depends(require_owner)):
         message_count = conn.execute("DELETE FROM messages RETURNING id").fetchall()
         memory_count = conn.execute("DELETE FROM memories RETURNING id").fetchall()
         conn.execute("DELETE FROM bond_events")
+        conn.execute("DELETE FROM emotion_events")
         conn.execute(
             "UPDATE bond_state SET affection=0, trust=0, familiarity=0, shared_experiences=0, "
             "commitment=0, vulnerability=0, emotional_safety=0, consistency=0, bond_points=0, level=1, "
