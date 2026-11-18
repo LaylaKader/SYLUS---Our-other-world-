@@ -1,9 +1,36 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#100e13"/>
-  <rect x="28" y="28" width="456" height="456" rx="92" fill="none" stroke="#a87878" stroke-opacity=".55" stroke-width="3"/>
-  <path d="M256 104l22 62 62 22-62 22-22 62-22-62-62-22 62-22z" fill="none" stroke="#c9a875" stroke-width="5" stroke-linejoin="round"/>
-  <path d="M175 352c28-42 61-63 98-63 30 0 54 14 73 42-31-12-56-10-75 8-18 18-32 35-42 52-22-2-40-15-54-39z" fill="none" stroke="#c9a875" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M251 329c-4 32-19 55-44 69" fill="none" stroke="#8d78b3" stroke-width="7" stroke-linecap="round"/>
-  <circle cx="364" cy="145" r="8" fill="#c9a875"/>
-  <path d="M123 211l8 22 22 8-22 8-8 22-8-22-22-8 22-8z" fill="#8d78b3"/>
+  <defs>
+    <linearGradient id="obsidian" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#281923"/>
+      <stop offset=".52" stop-color="#121018"/>
+      <stop offset="1" stop-color="#09090e"/>
+    </linearGradient>
+    <linearGradient id="metal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f0d8a8"/>
+      <stop offset=".52" stop-color="#c39a68"/>
+      <stop offset="1" stop-color="#8e674f"/>
+    </linearGradient>
+    <linearGradient id="ruby" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#d18a9a"/>
+      <stop offset="1" stop-color="#7e2948"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#obsidian)"/>
+  <rect x="23" y="23" width="466" height="466" rx="91" fill="none" stroke="url(#metal)" stroke-opacity=".62" stroke-width="3"/>
+  <rect x="42" y="42" width="428" height="428" rx="76" fill="none" stroke="#d8b98a" stroke-opacity=".13" stroke-width="1.5"/>
+  <path d="M330 112c-28-19-63-29-103-29-91 0-165 74-165 165s74 165 165 165c46 0 87-19 117-49" fill="none" stroke="url(#metal)" stroke-opacity=".45" stroke-width="3" stroke-linecap="round"/>
+  <path d="M316 119c-27-15-59-23-92-23-84 0-152 68-152 152s68 152 152 152c35 0 67-12 93-32" fill="none" stroke="#d8b98a" stroke-opacity=".15" stroke-width="1.5"/>
+  <path d="M324 141c-23-24-53-36-90-36-78 0-141 63-141 141s63 141 141 141c37 0 68-13 93-37" fill="none" stroke="url(#ruby)" stroke-width="7" stroke-linecap="round"/>
+  <path d="M306 155c-19-18-43-27-71-27-65 0-118 53-118 118s53 118 118 118c28 0 53-9 73-27" fill="none" stroke="#e2c69a" stroke-opacity=".2" stroke-width="2"/>
+  <path d="M315 153c-22-12-47-18-74-18-68 0-123 55-123 123s55 123 123 123c27 0 52-7 74-20" fill="none" stroke="#c9a875" stroke-opacity=".18" stroke-width="2"/>
+  <path d="M324 154c-21-18-48-28-78-28-67 0-121 54-121 121s54 121 121 121c31 0 59-11 81-31" fill="none" stroke="url(#metal)" stroke-opacity=".3" stroke-width="2"/>
+  <path d="M291 145c-11-6-25-9-40-9-67 0-121 54-121 121s54 121 121 121c18 0 34-4 49-11" fill="none" stroke="#c9a875" stroke-opacity=".18" stroke-width="1.5"/>
+  <path d="M310 150c-23-16-50-25-80-25-75 0-136 61-136 136s61 136 136 136c30 0 58-10 81-26" fill="none" stroke="#c9a875" stroke-opacity=".12" stroke-width="2"/>
+  <path d="M319 143c-29-18-61-27-96-27-87 0-158 71-158 158s71 158 158 158c38 0 73-14 101-37" fill="none" stroke="#c9a875" stroke-opacity=".12" stroke-width="2"/>
+  <path d="M188 355c30 16 66 20 101 9 63-20 98-88 78-151-10-32-32-58-61-73 18 33 21 69 7 103-20 49-72 77-125 69z" fill="url(#ruby)" fill-opacity=".26" stroke="url(#metal)" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M205 349c32 5 62-4 84-24 26-24 39-59 34-92-10 23-28 43-51 55-24 12-48 16-73 12l6 49z" fill="none" stroke="url(#metal)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="254" y="310" text-anchor="middle" font-family="Georgia,serif" font-size="190" font-weight="400" fill="url(#metal)" stroke="#171018" stroke-width="2" paint-order="stroke">S</text>
+  <path d="M374 103l9 24 24 9-24 9-9 24-9-24-24-9 24-9z" fill="url(#ruby)" stroke="url(#metal)" stroke-width="2"/>
+  <circle cx="131" cy="365" r="5" fill="#d9b98c"/>
+  <path d="M377 335l5 13 13 5-13 5-5 13-5-13-13-5 13-5z" fill="#c9a875" opacity=".8"/>
 </svg>
