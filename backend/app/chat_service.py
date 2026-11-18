@@ -109,17 +109,15 @@ class OpenAICompatibleChatModel(ChatModel):
         messages.append({"role": "user", "content": user_text})
         # Route ordinary chat to Gemini first. Mature/romantic-intimate turns go to
         # Groq first; Gemini is deliberately excluded from that route.
-        recent_owner_context = " ".join(
-            str(item.get("body") or item.get("text") or "")
-            for item in recent_history[-4:] if item.get("role") == "user"
-        )
+        # Route based on explicit content in this turn. Generic words such as
+        # "serious", "urgent", or "need to talk" must not disable the broad fallback pool.
         mature_terms = re.compile(
             r"\b(sex|sexual|sexually|erotic|erotica|nsfw|adult|mature|spicy|18\s*\+|explicit|nude|nudity|orgasm|"
-            r"foreplay|intercourse|intimate|intimacy|sensual|seduce|seduction|bedroom|make love|serious|important|urgent|something happened|need to talk|"
+            r"foreplay|intercourse|intimate|intimacy|sensual|seduce|seduction|bedroom|make love|"
             r"kiss|kissing|touch me|desire|aroused|turn me on|undress|undressing)\b",
             re.IGNORECASE,
         )
-        is_mature = bool(mature_terms.search(user_text + " " + recent_owner_context) or re.search(r"(?<!\w)18\s*\+(?!\w)", user_text + " " + recent_owner_context))
+        is_mature = bool(mature_terms.search(user_text) or re.search(r"(?<!\w)18\s*\+(?!\w)", user_text))
         providers = []
         legacy_key = settings.model_api_key
         legacy_base = settings.model_api_base_url.rstrip("/")
