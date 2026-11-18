@@ -498,7 +498,7 @@ function App() {
   }
 
   async function readAloud(message) {
-    if (!message || speakingMessageId) return;
+    if (!message || speakingMessageId || callActiveRef.current) return;
     if (audioBuffers[message.id]) {
       if (playingAudioId === message.id && audioSourceRef.current) {
         try { audioSourceRef.current.stop(); } catch {}
@@ -541,6 +541,7 @@ function App() {
       } catch (decodeError) {
         throw new Error(`The browser could not decode the voice audio (${decodeError?.name || 'decode error'}). I can switch voice engines if this persists.`);
       }
+      if (callActiveRef.current) return;
       if (!decoded || !decoded.length) throw new Error('The generated voice contained no playable audio.');
       setAudioBuffers(current => ({ ...current, [message.id]: decoded }));
       await playVoiceBuffer(message.id, decoded);
@@ -693,6 +694,9 @@ function App() {
       return;
     }
     setCallOpen(true);
+    autoReadQueueRef.current = [];
+    if (audioSourceRef.current) { try { audioSourceRef.current.stop(); } catch {} audioSourceRef.current = null; }
+    setPlayingAudioId(null);
     setIncomingCall(false);
     if (window.location.search.includes('incoming-call=1')) window.history.replaceState({}, document.title, window.location.pathname);
     callActiveRef.current = true;
