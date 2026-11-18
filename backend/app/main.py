@@ -1715,10 +1715,12 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
     # An explicit image request is fulfilled with an actual persisted media attachment.
     # A model-generated directive also lets Sylus choose to send an image naturally.
     explicit_image_request = should_generate_image(text) and not web_attachments
-    image_prompt = model_image_prompt or (
-        (text + " Conversation context: " + " ".join(
-            str(item.get("body") or "")[:260] for item in history[-5:] if item.get("role") == "user"
-        ))[:1500] if explicit_image_request else None
+    image_prompt = None if web_attachments else (
+        model_image_prompt or (
+            (text + " Conversation context: " + " ".join(
+                str(item.get("body") or "")[:260] for item in history[-5:] if item.get("role") == "user"
+            ))[:1500] if explicit_image_request else None
+        )
     )
     generated_image_message = None
     if image_prompt:
