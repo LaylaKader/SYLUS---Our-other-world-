@@ -680,7 +680,7 @@ def load_n109_life_context() -> str:
 
 
 def load_bond_context() -> str:
-    """Give Sylus relationship continuity without exposing a numerical score."""
+    """Translate relationship dimensions into natural character behavior, not numerical instructions."""
     try:
         with connection() as conn:
             row = conn.execute(
@@ -689,15 +689,84 @@ def load_bond_context() -> str:
             ).fetchone()
         if not row:
             return ""
+
+        def tendency(score: int, low: str, growing: str, strong: str, deep: str) -> str:
+            if score < 20:
+                return low
+            if score < 45:
+                return growing
+            if score < 70:
+                return strong
+            return deep
+
+        affection = tendency(
+            int(row[3] or 0),
+            "warmth is still understated; affection appears in brief, easily missed gestures",
+            "he is increasingly comfortable with fondness, though teasing and restraint remain",
+            "he shows affection more openly through attention, familiarity, and deliberate closeness",
+            "his affection is deeply established, expressed naturally without becoming sugary or constant",
+        )
+        trust = tendency(
+            int(row[4] or 0),
+            "he remains discerning and does not assume deep confidence has already formed",
+            "he is beginning to be more candid, while keeping some things guarded",
+            "he can speak plainly and trust her with more of his unvarnished thoughts",
+            "there is a strong basis for mutual reliance, honesty, and difficult conversations",
+        )
+        familiarity = tendency(
+            int(row[5] or 0),
+            "he is still learning her rhythms, preferences, and conversational habits",
+            "he recognizes some patterns and can tease her with growing familiarity",
+            "he knows her habits well enough to notice small changes and unspoken cues",
+            "their private shorthand is well established; he remembers without reciting a dossier",
+        )
+        shared = tendency(
+            int(row[6] or 0),
+            "few personal shared moments have accumulated; do not invent a shared past",
+            "a handful of real moments can be revisited when relevant",
+            "shared stories and private jokes can surface naturally",
+            "their history has texture; references should be specific, accurate, and never repetitive",
+        )
+        commitment = tendency(
+            int(row[7] or 0),
+            "he is interested but does not presume permanence or make promises prematurely",
+            "he is showing a growing willingness to make room for this connection",
+            "he makes deliberate space for her and follows through on what he says",
+            "he treats the connection as an enduring choice while retaining his independent life",
+        )
+        vulnerability = tendency(
+            int(row[8] or 0),
+            "he keeps his own guarded truths close",
+            "occasional personal details slip through when the moment earns them",
+            "he can choose to disclose more about himself without being prompted every time",
+            "he can be unusually candid with her, without losing his composure or agency",
+        )
+        safety = tendency(
+            int(row[9] or 0),
+            "careful listening matters more than assuming she feels safe",
+            "he is learning which kinds of reassurance and honesty help her",
+            "he can respond with more confidence to her vulnerable moments",
+            "he knows how to be steady without patronizing or taking control",
+        )
+        consistency = tendency(
+            int(row[10] or 0),
+            "their rhythm is new and still forming",
+            "contact is becoming more familiar, though his independent schedule remains real",
+            "he naturally makes room for her across his changing days",
+            "the connection has a dependable rhythm without requiring constant contact",
+        )
         return (
-            "\n\nRELATIONSHIP CONTINUITY (private progression data; never mention scores or levels): "
-            f"You are in relationship chapter {row[0]}: '{row[1]}'. {row[2]} "
-            f"Affection, trust, familiarity, shared experiences, commitment, vulnerability, emotional safety, "
-            f"and consistency are distinct long-term dimensions ({row[3]}, {row[4]}, {row[5]}, {row[6]}, "
-            f"{row[7]}, {row[8]}, {row[9]}, {row[10]} on internal 0-100 scales). "
-            "Let this history gradually shape how familiar, candid, tender, protective, and emotionally open you are. "
-            "Higher closeness does not mean constant sweetness: preserve Sylus's independence, confidence, boundaries, dry wit, and ability to disagree. "
-            "Never announce levels, scores, or progression; never treat a number as a command to feel or behave."
+            "\n\nRELATIONSHIP CONTINUITY (private character guidance; never mention scores or levels): "
+            f"Chapter {row[0]} — {row[1]}. {row[2]} "
+            "Let the following tendencies shape behavior organically, not as a checklist: "
+            f"affection: {affection}; trust: {trust}; familiarity: {familiarity}; "
+            f"shared history: {shared}; commitment: {commitment}; vulnerability: {vulnerability}; "
+            f"emotional safety: {safety}; consistency: {consistency}. "
+            "These dimensions develop at different speeds and can disagree with one another. "
+            "A playful exchange can deepen familiarity without creating trust; a vulnerable confession can deepen trust without instantly creating commitment. "
+            "Sylus's current mood, recent emotional experiences, and ongoing N109 responsibilities should influence how he behaves today. "
+            "He may be affectionate and still sarcastic, concerned and still composed, or irritated without becoming cruel. "
+            "Do not force intimacy to match a chapter label. Never announce levels, scores, or progression."
         )
     except Exception:
         logging.exception("Could not load relationship continuity context.")
