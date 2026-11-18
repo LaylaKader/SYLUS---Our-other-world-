@@ -390,13 +390,35 @@ def upload_visual_reference(identity_id: UUID, file: UploadFile = File(...), _: 
     if not data.startswith(signature) or (file.content_type=="image/webp" and data[8:12]!=b"WEBP"):
         raise HTTPException(status_code=415, detail="The uploaded file does not match its image type.")
     with connection() as conn:
-        exists=conn.execute("SELECT id FROM visual_identities WHERE id=%s",(identity_id,)).fetchone()
-        if not exists: raise HTTPException(status_code=404,detail="Visual identity not found.")
+        identity=conn.execute("SELECT display_name,category FROM visual_identities WHERE id=%s",(identity_id,)).fetchone()
+        if not identity: raise HTTPException(status_code=404,detail="Visual identity not found.")
         row=conn.execute(
             "INSERT INTO visual_reference_images (identity_id,content_type,filename,data,source) VALUES (%s,%s,%s,%s,'manual') RETURNING id,filename,created_at",
             (identity_id,file.content_type,(file.filename or f"reference.{extension}")[:160],data),
         ).fetchone()
-    return {"id":str(row[0]),"filename":row[1],"created_at":row[2].isoformat(),"url":f"/v1/visual-memory/images/{row[0]}"}
+        accepted=conn.execute("SELECT 1 FROM provider_acceptances WHERE provider='cloudflare_meta_vision'").fetchone()
+    analysis_notes=""
+    if accepted and settings.cloudflare_account_id and settings.cloudflare_api_token:
+        try:
+            reference_data="data:"+file.content_type+";base64,"+base64.b64encode(data).decode("ascii")
+            response=httpx.post(
+                "https://api.cloudflare.com/client/v4/accounts/"+settings.cloudflare_account_id+"/ai/run/@cf/meta/llama-3.2-11b-vision-instruct",
+                headers={"Authorization":f"Bearer {settings.cloudflare_api_token}","Content-Type":"application/json"},
+                json={"messages":[{"role":"user","content":[
+                    {"type":"text","text":f"This image was manually filed by the owner in the reference collection labelled {identity[0]!r} ({identity[1]}). Describe only visible, non-sensitive appearance details useful for visual continuity: hairstyle and color, clothing, accessories, pose, and overall styling. Do not identify a real person, compare faces, infer who the person is, or infer sensitive traits. Do not guess details that are not visible. Return 2–4 concise factual sentences."},
+                    {"type":"image_url","image_url":{"url":reference_data}},
+                ]}],"max_tokens":220,"temperature":0.1},
+                timeout=60.0,
+            )
+            response.raise_for_status()
+            result=response.json().get("result") or {}
+            analysis_notes=result.get("response","") if isinstance(result,dict) else result if isinstance(result,str) else ""
+            if analysis_notes:
+                with connection() as conn:
+                    conn.execute("UPDATE visual_reference_images SET analysis_notes=%s WHERE id=%s",(analysis_notes[:2000],row[0]))
+        except (httpx.HTTPError,ValueError,TypeError) as exc:
+            logging.info("Visual reference description unavailable identity=%s error=%s",identity_id,type(exc).__name__)
+    return {"id":str(row[0]),"filename":row[1],"created_at":row[2].isoformat(),"url":f"/v1/visual-memory/images/{row[0]}","analysis_notes":analysis_notes[:2000]}
 
 @app.get("/v1/visual-memory/images/{image_id}")
 def get_visual_reference(image_id: UUID, _: None = Depends(require_owner)):
