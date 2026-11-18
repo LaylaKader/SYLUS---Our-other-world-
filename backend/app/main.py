@@ -1294,50 +1294,97 @@ def _analyze_uploaded_image(asset_id: UUID, image_bytes: bytes, content_type: st
     """Analyze the actual uploaded pixels on the server, independent of frontend behavior."""
     with connection() as conn:
         accepted = conn.execute("SELECT 1 FROM provider_acceptances WHERE provider = 'cloudflare_meta_vision'").fetchone()
-        if not accepted:
-            logging.warning("Image uploaded but vision license has not been accepted; asset=%s", asset_id)
-            return False
         history_rows = conn.execute(
             "SELECT role, body, created_at, metadata->>'image_context' FROM messages WHERE id <> %s AND role IN ('user','assistant') "
             "AND archived_at IS NULL ORDER BY created_at DESC LIMIT 18", (message_id,),
         ).fetchall()
-    image_data = "data:" + content_type + ";base64," + base64.b64encode(image_bytes).decode("ascii")
-    # Sylus is a fictional character, so the vision model may compare the incoming image
-    # against owner-approved Sylus references. Real people are not facially identified;
-    # their reference collections are manually labelled by the owner.
+    # Compare the uploaded pixels only with the owner's labelled fictional Sylus
+    # references. No face recognition is performed on Umi or other real people.
     with connection() as conn:
         sylus_refs = conn.execute(
             "SELECT r.content_type, r.data FROM visual_reference_images r "
             "JOIN visual_identities i ON i.id=r.identity_id "
-            "WHERE i.category='sylus' AND i.status='confirmed' ORDER BY r.created_at DESC LIMIT 4"
+            "WHERE i.category='sylus' AND i.status='confirmed' ORDER BY r.created_at DESC LIMIT 8"
         ).fetchall()
-    vision_content = [{
-        "type": "text",
-        "text": "You are Sylus’s private visual-analysis system. Inspect the first image (the newly shared image) carefully. Compare it against any following owner-approved Sylus reference images, which are labelled as Sylus. Return plain text with short labeled lines, NOT JSON and NOT a user-facing caption. Describe the main subject and scene; recognizable fictional character; garments and exact colors; flowers and distinguishing features; notable objects; readable text; pose, expression, lighting, and background. If the new image strongly matches the Sylus reference images, explicitly write 'Character identification: Sylus (strong visual match).' If plausible but uncertain, write 'Character identification: possibly Sylus' and state evidence. Do not identify a generic silver-haired man as Sylus from hair/clothes alone. Do not identify Umi or any other real person by comparing faces; the owner must label real people manually. Distinguish gold/yellow, red, orange, cream, and brown. Identify flowers by structure, not color alone. Separate direct observations from interpretation. Never guess. Keep notes compact but specific (6–10 lines)."
-    }, {"type":"image_url", "image_url": {"url": image_data}}]
-    for index, ref in enumerate(sylus_refs, start=1):
-        ref_data = "data:" + ref[0] + ";base64," + base64.b64encode(bytes(ref[1])).decode("ascii")
-        vision_content.append({"type":"text","text":f"Owner-approved Sylus reference image {index}."})
-        vision_content.append({"type":"image_url","image_url":{"url":ref_data}})
-    try:
-        vision_response = httpx.post(
-            "https://api.cloudflare.com/client/v4/accounts/" + settings.cloudflare_account_id + "/ai/run/@cf/meta/llama-3.2-11b-vision-instruct",
-            headers={"Authorization": f"Bearer {settings.cloudflare_api_token}", "Content-Type": "application/json"},
-            json={"messages": [{"role": "user", "content": vision_content}], "max_tokens": 700, "temperature": 0.1},
-            timeout=90.0,
-        )
-        vision_response.raise_for_status()
-        vision_payload = vision_response.json()
-        vision_result = vision_payload.get("result") or {}
-        visual_description = (
-            vision_result.get("response", "") if isinstance(vision_result, dict)
-            else vision_result if isinstance(vision_result, str) else ""
-        )
-        if not visual_description.strip():
-            raise ValueError("The vision model returned no description.")
-    except (httpx.HTTPError, ValueError) as exc:
-        status = getattr(getattr(exc, "response", None), "status_code", None)
-        logging.error("Automatic image analysis failed asset=%s provider_status=%s error=%s", asset_id, status, str(exc)[:400])
+
+    vision_instruction = (
+        "You are a careful visual-understanding system for a private Sylus companion. "
+        "The FIRST image is newly shared. Every later image is an owner-approved reference "
+        "of the fictional character Sylus from Love and Deepspace. Compare the new image "
+        "against ALL references, prioritizing stable facial design, eye shape and crimson "
+        "iris color, hairstyle silhouette and silver-white tone, facial proportions, and "
+        "recognizable game-render styling. Hair color or red eyes alone are not enough. "
+        "Return concise labelled plain text, not JSON. Describe the actual subject, "
+        "composition, pose, expression, clothes, accessories, exact colors, lighting and "
+        "background. Say 'Character identification: Sylus (strong visual match)' only when "
+        "several distinctive features match; otherwise say 'possibly Sylus' or "
+        "'not Sylus / no reliable match' and explain briefly. Do not invent unseen details. "
+        "Do not identify Umi or any real person by face. Separate observations from guesses."
+    )
+    visual_description = ""
+    vision_failures = []
+
+    # Gemini Flash is the primary reader: multimodal comparison against the saved
+    # reference set, rather than relying on a short text-only appearance prompt.
+    if settings.gemini_api_key:
+        try:
+            parts = [
+                {"text": vision_instruction},
+                {"inline_data": {"mime_type": content_type, "data": base64.b64encode(image_bytes).decode("ascii")}},
+            ]
+            for ref_type, ref_bytes in sylus_refs:
+                if ref_type not in {"image/jpeg", "image/png", "image/webp"}:
+                    continue
+                parts.append({"text": "Owner-approved Sylus reference image."})
+                parts.append({"inline_data": {"mime_type": ref_type, "data": base64.b64encode(bytes(ref_bytes)).decode("ascii")}})
+            vision_response = httpx.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{settings.gemini_vision_model}:generateContent",
+                params={"key": settings.gemini_api_key},
+                headers={"Content-Type": "application/json"},
+                json={"contents": [{"role": "user", "parts": parts}],
+                      "generationConfig": {"temperature": 0.1, "maxOutputTokens": 900}},
+                timeout=90.0,
+            )
+            vision_response.raise_for_status()
+            candidates = vision_response.json().get("candidates") or []
+            candidate_parts = ((candidates[0].get("content") or {}).get("parts") or []) if candidates else []
+            visual_description = "\n".join(str(part.get("text", "")) for part in candidate_parts if part.get("text"))
+            if not visual_description.strip():
+                raise ValueError("Gemini vision returned no description.")
+        except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError) as exc:
+            vision_failures.append(f"Gemini:{type(exc).__name__}")
+            logging.warning("Gemini image understanding unavailable asset=%s error=%s", asset_id, type(exc).__name__)
+
+    # Preserve the accepted Cloudflare vision model as a fallback.
+    if not visual_description.strip() and accepted and settings.cloudflare_account_id and settings.cloudflare_api_token:
+        try:
+            content = [
+                {"type": "text", "text": vision_instruction},
+                {"type": "image_url", "image_url": {"url": "data:" + content_type + ";base64," + base64.b64encode(image_bytes).decode("ascii")}},
+            ]
+            for ref_type, ref_bytes in sylus_refs:
+                if ref_type not in {"image/jpeg", "image/png", "image/webp"}:
+                    continue
+                content.extend([
+                    {"type": "text", "text": "Owner-approved Sylus reference image."},
+                    {"type": "image_url", "image_url": {"url": "data:" + ref_type + ";base64," + base64.b64encode(bytes(ref_bytes)).decode("ascii")}},
+                ])
+            vision_response = httpx.post(
+                "https://api.cloudflare.com/client/v4/accounts/" + settings.cloudflare_account_id + "/ai/run/@cf/meta/llama-3.2-11b-vision-instruct",
+                headers={"Authorization": "Bearer " + settings.cloudflare_api_token, "Content-Type": "application/json"},
+                json={"messages": [{"role": "user", "content": content}], "max_tokens": 900, "temperature": 0.1},
+                timeout=90.0,
+            )
+            vision_response.raise_for_status()
+            result = vision_response.json().get("result") or {}
+            visual_description = result.get("response", "") if isinstance(result, dict) else result if isinstance(result, str) else ""
+            if not visual_description.strip():
+                raise ValueError("Cloudflare vision returned no description.")
+        except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+            vision_failures.append(f"Cloudflare:{type(exc).__name__}")
+
+    if not visual_description.strip():
+        logging.error("Automatic image analysis failed asset=%s providers=%s", asset_id, vision_failures or ["not_configured"])
         return False
 
     with connection() as conn:
