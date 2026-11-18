@@ -498,7 +498,7 @@ def correct_call_transcript(payload: CallTranscriptCorrectIn, _: None = Depends(
         with connection() as conn:
             row=conn.execute("SELECT transcript FROM call_sessions WHERE id=%s",(payload.session_id,)).fetchone()
         if row:
-            recent_context="\\n".join(
+            recent_context="\n".join(
                 f"{item.get('role','')}: {str(item.get('text',''))[:500]}"
                 for item in (row[0] or [])[-8:]
             )
@@ -520,7 +520,7 @@ def correct_call_transcript(payload: CallTranscriptCorrectIn, _: None = Depends(
         try:
             response=httpx.post(base.rstrip("/")+"/chat/completions",
                 headers={"Authorization":f"Bearer {key}","Content-Type":"application/json"},
-                json={"model":model,"messages":[{"role":"system","content":prompt},{"role":"user","content":("Recent call context (may be empty):\\n"+recent_context+"\\n\\nCurrent transcript to correct:\\n"+original)}],
+                json={"model":model,"messages":[{"role":"system","content":prompt},{"role":"user","content":("Recent call context (may be empty):\n"+recent_context+"\n\nCurrent transcript to correct:\n"+original)}],
                       "temperature":0,"max_tokens":300},
                 timeout=httpx.Timeout(9.0,connect=3.0))
             response.raise_for_status()
@@ -772,7 +772,7 @@ def send_push_notification(title: str, body: str, url: str = '/') -> dict[str, i
     private_key_text = settings.web_push_vapid_private_key
     if isinstance(private_key_text, bytes):
         private_key_text = private_key_text.decode("utf-8")
-    private_key_text = str(private_key_text).strip().replace("\\n", "\n")
+    private_key_text = str(private_key_text).strip().replace("\n", "\n")
     try:
         vapid_key = (
             Vapid.from_pem(private_key_text.encode("utf-8"))
