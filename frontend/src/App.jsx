@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import {Bell, Bird, BookHeart, Camera, ChevronDown, CircleHelp, Clock3, Crown, Heart, Image, LockKeyhole, Menu, MessageCircle, MoreHorizontal, Send, Settings, ShieldCheck, Sparkles, Star, X, RefreshCw, Phone, PhoneOff, Mic, MicOff, History, Volume2, Trash2, Headphones} from 'lucide-react';
+import {ArrowLeft, Bell, Bird, BookHeart, Camera, ChevronDown, CircleHelp, Clock3, Crown, Heart, Image, LockKeyhole, Menu, MessageCircle, MoreHorizontal, Send, Settings, ShieldCheck, Sparkles, Star, X, RefreshCw, Phone, PhoneOff, Mic, MicOff, History, Volume2, Trash2, Headphones} from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? window.location.origin : '');
 const fallbackStickerOptions = [
@@ -302,50 +302,30 @@ function App() {
   async function uploadVisualReference(identityId,file) {
     if (!file || !identityId) return;
     setVisualBusy(true);
-    setVisualUploadStatus(current => ({ ...current, [identityId]: 'Preparing image…' }));
-    setNotice('Uploading reference photo…');
+    setVisualUploadStatus(current => ({ ...current, [identityId]: 'Checking image format…' }));
+    setNotice('Preparing reference image…');
     try {
-      let uploadFile = file;
-      if (!file.type.startsWith('image/')) throw new Error('Please choose an image file.');
-      try {
-        const bitmap = await createImageBitmap(file);
-        const maxSide = 1800;
-        const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-        canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-        const context = canvas.getContext('2d');
-        if (!context) throw new Error('Could not prepare this image on your device.');
-        context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-        bitmap.close?.();
-        const blob = await new Promise((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('Could not convert this photo.')), 'image/jpeg', 0.88));
-        uploadFile = new File([blob], (file.name || 'reference').replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
-      } catch (imageError) {
-        if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('This phone image format could not be read. Please choose a JPG or PNG image.');
-      }
-      if (uploadFile.size > 8 * 1024 * 1024) throw new Error('This image is still larger than 8 MB. Choose a smaller photo.');
-      setVisualUploadStatus(current => ({ ...current, [identityId]: 'Uploading and saving…' }));
-      const form = new FormData();
-      form.append('file', uploadFile, uploadFile.name);
-      const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/visual-memory/identities/${identityId}/images`, {
-        method: 'POST', credentials: 'include', body: form
-      });
-      if (!response.ok) {
-        const failure = await response.json().catch(() => ({}));
-        throw new Error(failure.detail || `Reference upload failed (HTTP ${response.status}).`);
-      }
-      setVisualUploadStatus(current => ({ ...current, [identityId]: 'Saved. Refreshing references…' }));
-      await refreshVisualLibrary();
-      setVisualUploadStatus(current => ({ ...current, [identityId]: 'Photo saved privately.' }));
-      setNotice('Reference photo saved privately.');
-    } catch (error) {
-      setVisualUploadStatus(current => ({ ...current, [identityId]: error.message || 'Upload failed. Please try again.' }));
-      setNotice(error.message || 'Reference upload failed. Please try again.');
-    } finally {
-      setVisualBusy(false);
-    }
+      const bytes=new Uint8Array(await file.slice(0,16).arrayBuffer());let type='';
+      if(bytes[0]===255&&bytes[1]===216&&bytes[2]===255)type='image/jpeg';
+      else if([137,80,78,71,13,10,26,10].every((v,i)=>bytes[i]===v))type='image/png';
+      else if(String.fromCharCode(...bytes.slice(0,4))==='RIFF'&&String.fromCharCode(...bytes.slice(8,12))==='WEBP')type='image/webp';
+      else if(String.fromCharCode(...bytes.slice(0,6)).startsWith('GIF8'))type='image/gif';
+      else if(String.fromCharCode(...bytes.slice(4,12)).includes('ftypavif'))type='image/avif';
+      else if(/ftyp(heic|heix|hevc|hevx|mif1|msf1)/.test(String.fromCharCode(...bytes.slice(4,16))))type='image/heic';
+      if(!type)type=file.type;if(!type.startsWith('image/'))throw new Error('This file does not appear to be an image. Choose a photo or image file.');
+      let uploadFile=file;
+      if(!['image/jpeg','image/png','image/webp'].includes(type)){
+        setVisualUploadStatus(current=>({...current,[identityId]:'Converting image for reliable storage…'}));
+        try{const bitmap=await createImageBitmap(file);const scale=Math.min(1,1800/Math.max(bitmap.width,bitmap.height));const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(bitmap.width*scale));canvas.height=Math.max(1,Math.round(bitmap.height*scale));const context=canvas.getContext('2d');if(!context)throw new Error('Image conversion is unavailable.');context.drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close?.();const blob=await new Promise((resolve,reject)=>canvas.toBlob(v=>v?resolve(v):reject(new Error('Could not convert this image.')),'image/jpeg',0.9));uploadFile=new File([blob],(file.name||'reference').replace(/\.[^.]+$/,'')+'.jpg',{type:'image/jpeg'});type='image/jpeg';}
+        catch(error){if(!['image/gif','image/avif','image/heic'].includes(type))throw new Error('This image format cannot be decoded by this browser. Please convert it to JPG or PNG.');uploadFile=new File([file],file.name||'reference-image',{type});}
+      }else{const ext={'image/jpeg':'jpg','image/png':'png','image/webp':'webp'}[type];uploadFile=new File([file],(file.name||'reference').replace(/\.[^.]+$/,'')+'.'+ext,{type});}
+      if(uploadFile.size>8*1024*1024)throw new Error('This image is larger than 8 MB. Choose a smaller photo.');
+      setVisualUploadStatus(current=>({...current,[identityId]:'Uploading and saving…'}));const form=new FormData();form.append('file',uploadFile,uploadFile.name);
+      const response=await fetch(`${apiUrl.replace(/\/$/,'')}/v1/visual-memory/identities/${identityId}/images`,{method:'POST',credentials:'include',body:form});
+      if(!response.ok){const failure=await response.json().catch(()=>({}));throw new Error(failure.detail||`Reference upload failed (HTTP ${response.status}).`);}
+      await refreshVisualLibrary();setVisualUploadStatus(current=>({...current,[identityId]:'Photo saved privately.'}));setNotice('Reference photo saved privately.');
+    }catch(error){setVisualUploadStatus(current=>({...current,[identityId]:error.message||'Upload failed. Please try again.'}));setNotice(error.message||'Reference upload failed. Please try again.');}finally{setVisualBusy(false);}
   }
-
   async function saveVisualIdentityNotes(id, notes) {
     try {
       const r=await fetch(`${apiUrl.replace(/\/$/, '')}/v1/visual-memory/identities/${id}`,{method:'PATCH',headers,credentials:'include',body:JSON.stringify({notes})});
@@ -1198,7 +1178,7 @@ function App() {
       </header>
 
       {active === 'chat' && <section className="chat-view">
-        <div className="chat-heading"><div><div className="eyebrow"><span className="eyebrow-line"/> THE N109 CONNECTION</div><h1>Our conversations<span className="heading-period">.</span></h1><p className="subheading">A quiet corner of the world, just for us.</p><div className="chat-quick-actions chat-control-dock"><button className={`chat-control-chip ${selectionMode?'is-active':''}`} onClick={() => {setSelectionMode(v => !v);setSelectedMessageIds([]);}}><MessageCircle size={14}/>{selectionMode ? 'Done selecting' : 'Select messages'}</button>{selectionMode && <button className="chat-control-chip" disabled={!selectedMessageIds.length} onClick={copySelectedMessages}>Copy selected ({selectedMessageIds.length})</button>}{/* selection-only action ends here */}<button className="chat-control-chip call-launch-button" onClick={beginVoiceCall} disabled={!connected || !chatReady || !timeContext?.voice_ready}><Phone size={14}/> Call Sylus</button><button className={`chat-control-chip auto-read-toggle ${autoReadEnabled ? "active" : ""}`} onClick={() => { if (!autoReadEnabled) { messages.filter(message => message.role === 'assistant').forEach(message => autoReadSeenRef.current.add(message.id)); autoReadBaselineRef.current = true; } else { autoReadQueueRef.current = []; } setAutoReadEnabled(value => !value); }} disabled={!connected || !timeContext?.voice_ready} aria-pressed={autoReadEnabled}><Volume2 size={14}/>{autoReadEnabled ? 'Read aloud on' : 'Read aloud off'}</button><button className="chat-control-chip" onClick={() => setActive('calls')}><History size={14}/> Call history</button></div></div><button className="reset-chat-pill" aria-label="Start fresh: permanently erase chat and memories" title="Start fresh (three confirmations)" onClick={resetChat} disabled={!connected || messageActionBusy}><Trash2 size={15}/><span>Start fresh</span></button></div>
+        <div className="chat-heading"><div><div className="eyebrow"><span className="eyebrow-line"/> THE N109 CONNECTION</div><h1>Our conversations<span className="heading-period">.</span></h1><p className="subheading">A quiet corner of the world, just for us.</p><div className="chat-quick-actions chat-control-dock"><button className={`chat-control-chip ${selectionMode?'is-active':''}`} onClick={() => {setSelectionMode(v => !v);setSelectedMessageIds([]);}}><MessageCircle size={14}/>{selectionMode ? 'Done selecting' : 'Select messages'}</button>{selectionMode && <button className="chat-control-chip" disabled={!selectedMessageIds.length} onClick={copySelectedMessages}>Copy selected ({selectedMessageIds.length})</button>}{/* selection-only action ends here */}<button className="chat-control-chip call-launch-button" onClick={beginVoiceCall} disabled={!connected || !chatReady || !timeContext?.voice_ready}><Phone size={14}/> Call Sylus</button><button className={`chat-control-chip auto-read-toggle ${autoReadEnabled ? "active" : ""}`} onClick={() => { if (!autoReadEnabled) { messages.filter(message => message.role === 'assistant').forEach(message => autoReadSeenRef.current.add(message.id)); autoReadBaselineRef.current = true; } else { autoReadQueueRef.current = []; } setAutoReadEnabled(value => !value); }} disabled={!connected || !timeContext?.voice_ready} aria-pressed={autoReadEnabled}><Volume2 size={14}/>{autoReadEnabled ? 'Read aloud on' : 'Read aloud off'}</button><button className="chat-control-chip" onClick={() => setActive('calls')}><History size={14}/> Calls</button><button className="reset-chat-pill" aria-label="Start fresh: permanently erase chat and memories" title="Start fresh (three confirmations)" onClick={resetChat} disabled={!connected || messageActionBusy}><Trash2 size={14}/><span>Fresh</span></button></div></div>
         <div className="chat-stage">
           {messages.length === 0 ? <div className="empty-state">
             <div className="sigil-wrap"><div className="sigil-ring ring-one"/><div className="sigil-ring ring-two"/><div className="sigil-center"><Crown size={31} strokeWidth={1}/></div><span className="sigil-star star-a">✧</span><span className="sigil-star star-b">✦</span><span className="sigil-star star-c">·</span></div>
@@ -1213,7 +1193,7 @@ function App() {
       </section>}
 
       {active === 'calls' && <section className="content-view call-history-view">
-        <div className="eyebrow"><span className="eyebrow-line"/> PRIVATE VOICE RECORDS</div><h1>Call history<span className="heading-period">.</span></h1><p className="subheading">Your voice conversations, separate from the text chat.</p>
+        <button className="call-history-back" onClick={()=>setActive('chat')}><ArrowLeft size={16}/> Back to chat</button><div className="eyebrow"><span className="eyebrow-line"/> PRIVATE VOICE RECORDS</div><h1>Call history<span className="heading-period">.</span></h1><p className="subheading">Your voice conversations, separate from the text chat.</p>
         <div className="call-history-toolbar"><div><Headphones size={17}/><span>{callHistory.length} saved {callHistory.length===1?'call':'calls'}</span></div><button className="secondary-button icon-label-button" onClick={refreshCallHistory} disabled={!connected}><RefreshCw size={14}/> Refresh</button></div>
         {!connected ? <div className="call-history-empty"><Headphones size={28}/><h2>Your private call archive</h2><p>Connect to see your saved calls.</p></div> : callHistory.length ? <div className="call-history-list">{[...callHistory].sort((a,b)=>new Date(b.started_at)-new Date(a.started_at)).map((call,index)=><article className="call-history-card" key={call.id}><div className="call-history-card-top"><div className="call-history-icon"><Phone size={17}/></div><div className="call-history-meta"><strong>Voice call with Sylus</strong><span>{new Date(call.started_at).toLocaleString([], {weekday:'short',year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span><small>{Math.floor((call.duration_seconds||0)/60)} min {(call.duration_seconds||0)%60} sec</small></div><button className="call-transcript-toggle" onClick={()=>loadCallTranscript(call.id)}>{expandedCallId===call.id?'Hide':'View'} transcript <ChevronDown size={14}/></button></div>{expandedCallId===call.id && <div className="call-transcript-scroll">{(callTranscriptDetails[call.id]?.transcript||[]).map((item,itemIndex)=><div className="call-transcript-entry" key={itemIndex}><span className="card-kicker">{item.role==='user'?'YOU':'SYLUS'}</span><p>{item.text}</p></div>)}{!(callTranscriptDetails[call.id]?.transcript||[]).length && <p className="field-help">No transcript was captured for this call.</p>}</div>}</article>)}</div> : <div className="call-history-empty"><Headphones size={28}/><h2>No calls saved yet</h2><p>Completed voice calls will appear here, newest first, with their date, time, duration, and transcript.</p></div>}
       </section>}
@@ -1240,7 +1220,7 @@ function App() {
                 <div className="field-help">{image.source==='auto'?'Auto-saved':'Uploaded'}</div>
               </div>)}
             </div>
-            <label className="secondary-button" style={{display:'inline-flex',alignItems:'center',cursor:'pointer'}}>{visualBusy ? 'Uploading…' : 'Add reference photo'}<input className="visually-hidden" type="file" accept="image/*" disabled={!connected||visualBusy} onChange={e=>{const file=e.target.files?.[0];if(file)uploadVisualReference(person.id,file);e.target.value='';}}/></label>
+            <label className="secondary-button" style={{display:'inline-flex',alignItems:'center',cursor:'pointer'}}>{visualBusy ? 'Uploading…' : 'Add reference photo'}<input className="visually-hidden" type="file" accept="image/*,.heic,.heif,.avif,.gif,.bmp,.tif,.tiff" disabled={!connected||visualBusy} onChange={e=>{const file=e.target.files?.[0];if(file)uploadVisualReference(person.id,file);e.target.value='';}}/></label>
             {visualUploadStatus[person.id] && <div className="field-help" role="status" aria-live="polite">{visualUploadStatus[person.id]}</div>}
             <textarea className="settings-input memory-textarea" rows={2} value={visualNoteDrafts[person.id] ?? person.notes ?? ''} onChange={e=>setVisualNoteDrafts(v=>({...v,[person.id]:e.target.value}))} placeholder="Appearance notes for Sylus to remember (hair, style, usual outfit)…"/>
             <button className="text-action" onClick={()=>saveVisualIdentityNotes(person.id,visualNoteDrafts[person.id] ?? person.notes ?? '')}>Save notes</button>
