@@ -256,7 +256,7 @@ def extract_memory_terms(query: str, limit: int = 10) -> list[str]:
     """Keep meaningful, unique terms; preserve Unicode combining marks."""
     import unicodedata
     # Correct a common mobile typo in the Sylus card title before lexical matching.
-    query = re.sub(r"\\bwithen\\b", "within", query, flags=re.IGNORECASE)
+    query = re.sub(r"\bwithen\b", "within", query, flags=re.IGNORECASE)
     terms = []
     seen = set()
     current = []
