@@ -31,7 +31,8 @@ def _signals(text: str) -> list[tuple[str, str, str, dict[str, int], int]]:
     rules = [
         ("affection", "Affection shared", "An affectionate moment was openly shared.", r"\bi love you\b|\bi adore you\b|\bi miss you\b|\bi wish we (?:could|were) together\b", {"affection": 7, "commitment": 2}, 9),
         ("trust", "Trust offered", "A moment of explicit trust or personal confidence was shared.", r"\bi trust you\b|\bi feel safe with you\b|\bi can tell you anything\b|\bi want to tell you something personal\b", {"trust": 8, "emotional_safety": 6, "vulnerability": 3}, 10),
-        ("vulnerability", "A guarded truth", "Umi shared a difficult feeling or personal vulnerability.", r"\bi feel (?:scared|afraid|lonely|overwhelmed|hopeless|insecure)\b|\bi(?:'m| am) (?:struggling|not okay|having a hard time)\b|\bi have never told anyone\b", {"vulnerability": 7, "emotional_safety": 4, "trust": 3}, 9),
+        ("comfort", "Ease and comfort", "Umi expressed that she can relax, be herself, or speak freely with Sylus.", r"\bi feel comfortable (?:with you|talking to you)\b|\bi can be myself (?:with you|around you)\b|\bi don't have to pretend\b|\bi can talk to you (?:about anything|freely)\b|\bit's easy to talk to you\b|\bi feel understood\b|\bi can relax around you\b|\byou make me feel at ease\b", {"emotional_safety": 7, "trust": 3, "familiarity": 2}, 8),
+        ("vulnerability", "A guarded truth", "Umi shared a difficult feeling or personal vulnerability.", r"\bi feel (?:scared|afraid|lonely|overwhelmed|hopeless|insecure|ashamed|embarrassed)\b|\bi(?:'m| am) (?:struggling|not okay|having a hard time)\b|\bi have never told anyone\b|\bi(?:'ve| have) never (?:said|shared|admitted) this (?:before|to anyone)\b|\bi don't usually talk about this\b|\bthis is hard to admit\b|\bi'm afraid to tell you\b|\bi've been keeping this to myself\b", {"vulnerability": 8, "emotional_safety": 4, "trust": 3}, 9),
         ("repair", "A moment of repair", "A disagreement or hurt was approached with honesty and care.", r"\bi(?:'m| am) sorry\b|\bi didn't mean to hurt\b|\blet's talk this through\b|\bi forgive you\b|\bcan we work this out\b", {"trust": 3, "emotional_safety": 5, "commitment": 3}, 8),
         ("shared_memory", "A memory revisited", "A shared story, Memoria, or meaningful detail was brought back into the present.", r"\bmemoria\b|\bwithin reach\b|\bthe first time we\b|\bremember when we\b|\bour memory\b", {"familiarity": 5, "shared_experiences": 7, "affection": 1}, 8),
         ("shared_world", "A world in common", "A meaningful part of the shared N109 world or its people entered the conversation.", r"\bmephisto\b|\bn109\b|\bonychinus\b|\bluke and kieran\b|\bciren\b|\bsenlu\b", {"familiarity": 3, "shared_experiences": 4}, 4),
@@ -47,7 +48,7 @@ def _signals(text: str) -> list[tuple[str, str, str, dict[str, int], int]]:
         if re.search(pattern, value, re.I):
             found.append((key, title, description, gains, points))
     # Avoid rewarding a single message for many overlapping keywords.
-    priority = {"trust_breach": 0, "trust": 1, "vulnerability": 2, "repair": 3, "commitment": 4, "affection": 5, "gratitude": 6, "achievement": 7, "shared_memory": 8, "shared_media": 9, "shared_world": 10, "daily_life": 11, "playful": 12}
+    priority = {"trust_breach": 0, "trust": 1, "comfort": 2, "vulnerability": 3, "repair": 4, "commitment": 5, "affection": 6, "gratitude": 7, "achievement": 8, "shared_memory": 9, "shared_media": 10, "shared_world": 11, "daily_life": 12, "playful": 13}
     return sorted(found, key=lambda item: priority.get(item[0], 99))[:2]
 
 def _stage(points: int) -> tuple[int, str, str, int, int]:
