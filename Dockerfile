@@ -1,5 +1,5 @@
 # Single-container image for Render and other Docker web hosts.
-FROM node:20-alpine AS frontend-build
+FROM node:20-bookworm-slim AS frontend-build
 WORKDIR /build/frontend
 COPY frontend/package.json ./package.json
 RUN npm install --no-audit --no-fund
