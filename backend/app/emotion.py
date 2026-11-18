@@ -79,6 +79,7 @@ class EmotionState:
             "boundary_violated": {"irritation": .30, "anger": .16},
             "frustrating_obstacle": {"irritation": .18, "energy": .08},
             "interesting_discovery": {"curiosity": .28, "amusement": .04, "energy": .06},
+            "personal_curiosity": {"curiosity": .34, "warmth": .08, "affection": .06, "happiness": .05, "attachment": .04, "respect": .06},
             "reassurance_received": {"concern": -.16, "warmth": .10, "happiness": .12, "tenderness": .06},
             "conflict_resolved": {"anger": -.20, "irritation": -.18, "disappointment": -.12, "warmth": .08, "respect": .08},
             "quiet_companionship": {"warmth": .10, "affection": .06, "happiness": .06, "attachment": .04, "energy": -.03},
