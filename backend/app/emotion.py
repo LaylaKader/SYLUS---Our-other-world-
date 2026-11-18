@@ -100,7 +100,7 @@ class EmotionState:
             "surprised": self.surprise,
         }
         mood, score = max(scores.items(), key=lambda item: item[1])
-        return mood if score >= .34 else "composed"
+        return mood if score >= (.30 if mood == "disappointed" else .34) else "composed"
 
     def style_directive(self) -> str:
         mood = self.dominant_mood()
