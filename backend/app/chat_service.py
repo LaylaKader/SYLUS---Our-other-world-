@@ -501,6 +501,8 @@ def load_emotion_state() -> EmotionState:
 
 
 def classify_explicit_event(text: str) -> tuple[str | None, float]:
+    """Recognize clear conversational signals without pretending to read minds."""
+    value = text.lower()
     if re.search(r"\bi love you\b|\bi adore you\b", value):
         return "affection_confession", 0.95
     if re.search(r"\bi trust you\b|\bi feel safe with you\b", value):
@@ -509,9 +511,6 @@ def classify_explicit_event(text: str) -> tuple[str | None, float]:
         return "provocative_banter", 0.55
     if any(phrase in value for phrase in ("i'm sorry", "im sorry", "forgive me", "i didn't mean to hurt")):
         return "conflict_repair", 0.65
-
-    """Recognize clear conversational signals without pretending to read minds."""
-    value = text.lower()
     if any(phrase in value for phrase in (
         "i passed", "i got accepted", "i got the offer", "i finished it",
         "i did it", "i finally submitted", "i won", "i succeeded",
