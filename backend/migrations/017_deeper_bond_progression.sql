@@ -1,0 +1,8 @@
+-- A durable, event-led relationship model with more gradual progression.
+ALTER TABLE bond_state
+  ADD COLUMN IF NOT EXISTS commitment INTEGER NOT NULL DEFAULT 0 CHECK (commitment BETWEEN 0 AND 100),
+  ADD COLUMN IF NOT EXISTS vulnerability INTEGER NOT NULL DEFAULT 0 CHECK (vulnerability BETWEEN 0 AND 100),
+  ADD COLUMN IF NOT EXISTS emotional_safety INTEGER NOT NULL DEFAULT 0 CHECK (emotional_safety BETWEEN 0 AND 100),
+  ADD COLUMN IF NOT EXISTS consistency INTEGER NOT NULL DEFAULT 0 CHECK (consistency BETWEEN 0 AND 100),
+  ADD COLUMN IF NOT EXISTS bond_points INTEGER NOT NULL DEFAULT 0 CHECK (bond_points >= 0),
+  ADD COLUMN IF NOT EXISTS level INTEGER NOT NULL DEFAULT 1 CHECK (level BETWEEN 1 AND 12);
