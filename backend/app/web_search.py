@@ -329,22 +329,41 @@ def classify_search_request_with_history(text: str, history: list[dict] | None =
     return classify_search_request(text) or _search_query_from_history(text, history)
 
 
+def requested_result_limit(text: str, default: int = 1) -> int:
+    """Respect an explicit media count; otherwise return one result for media requests."""
+    value = (text or "").lower()
+    words = {"one": 1, "single": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8}
+    match = re.search(
+        r"\b(\d{1,2}|one|single|two|three|four|five|six|seven|eight)\s+(?:different\s+)?"
+        r"(?:images?|pictures?|photos?|memes?|wallpapers?|fan ?art|videos?|clips?|songs?|tracks?|pieces of music)\b",
+        value,
+    )
+    if match:
+        token = match.group(1)
+        count = int(token) if token.isdigit() else words[token]
+        return max(1, min(count, 8))
+    if re.search(r"\b(?:a few|several|multiple|a bunch of)\s+(?:images?|pictures?|photos?|memes?|videos?|clips?|songs?|tracks?)\b", value):
+        return 3
+    return max(1, min(default, 8))
+
 def discover_for_chat(text: str, history: list[dict] | None = None) -> tuple[list[dict], str]:
     intent = classify_search_request_with_history(text, history)
     if not intent:
         return [], ""
     kind, query = intent
+    # Media requests default to exactly one result unless the owner asks for more.
+    result_limit = requested_result_limit(text, default=1) if kind in {"image", "video", "music"} else 6
     if kind == "image":
-        items = search_images(query, 6)
+        items = search_images(query, result_limit)
         if not items:
-            items = search_links(query + " images", 4)
+            items = search_links(query + " images", result_limit)
     elif kind == "video":
-        items = search_links(query + " video", 6)
+        items = search_links(query + " video", result_limit)
         items = [item for item in items if item.get("type") == "video"] + [item for item in items if item.get("type") != "video"]
     elif kind == "music":
-        items = _itunes_music_links(query, 5)
+        items = _itunes_music_links(query, result_limit)
         if not items:
-            items = search_links(query + " official song", 5)
+            items = search_links(query + " official song", result_limit)
     else:
         items = search_links(query, 6)
     if not items and kind == "music":
@@ -365,6 +384,7 @@ def discover_for_chat(text: str, history: list[dict] | None = None) -> tuple[lis
         }]
     if not items:
         return [], f"An online {kind} search was attempted, but no usable public results were returned. Be transparent; do not invent results or pretend something is still loading."
+    items = items[:result_limit] if kind in {"image", "video", "music"} else items
     lines = [
         f"- [{item['type']}] {item['title']} — {item.get('url', '')} {item.get('description', '')}"
         for item in items
