@@ -507,10 +507,12 @@ def classify_explicit_event(text: str) -> tuple[str | None, float]:
     value = text.lower()
     if re.search(r"\bi love you\b|\bi adore you\b", value):
         return "affection_confession", 0.95
-    if re.search(r"\bi trust you\b|\bi feel safe with you\b|\bi can tell you anything\b", value):
+    if re.search(r"\bi trust you\b", value):
+        return "meaningful_trust", 0.65
+    if re.search(r"\bi feel safe with you\b", value):
+        return "meaningful_trust", 0.75
+    if re.search(r"\bi can tell you anything\b", value):
         return "meaningful_trust", 0.85
-    if re.search(r"\bi(?:'m| am) (?:scared|afraid|lonely|overwhelmed|struggling)\b|\bi have never told anyone\b|\bi don't usually talk about this\b", value):
-        return "user_confided", 0.8
     if any(phrase in value for phrase in ("you're mine", "you are mine", "don't flirt with", "are you jealous")):
         return "provocative_banter", 0.55
     if any(phrase in value for phrase in ("prove it", "bet you can't", "i dare you", "try me", "you're scared", "you are scared")):
@@ -540,6 +542,8 @@ def classify_explicit_event(text: str) -> tuple[str | None, float]:
         "i'm worried", "i am worried", "i'm exhausted", "i feel awful",
     )):
         return "user_distressed", 0.7
+    if re.search(r"\bi have never told anyone\b|\bi don't usually talk about this\b|\bi need to confide\b", value):
+        return "user_confided", 0.8
     if any(phrase in value for phrase in ("i'm disappointed", "i am disappointed")):
         return "disappointment", 0.75
     if any(phrase in value for phrase in (
