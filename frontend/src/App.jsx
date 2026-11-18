@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Bell, Bird, BookHeart, Camera, ChevronDown, CircleHelp, Clock3, Crown, Heart, Image, LockKeyhole, Menu, MessageCircle, MoreHorizontal, Send, Settings, ShieldCheck, Sparkles, Star, X } from 'lucide-react';
+import {Bell, Bird, BookHeart, Camera, ChevronDown, CircleHelp, Clock3, Crown, Heart, Image, LockKeyhole, Menu, MessageCircle, MoreHorizontal, Send, Settings, ShieldCheck, Sparkles, Star, X, RefreshCw} from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? window.location.origin : '');
 const fallbackStickerOptions = [
@@ -98,6 +98,9 @@ function App() {
   const [audioBuffers, setAudioBuffers] = useState({});
   const [audioErrors, setAudioErrors] = useState({});
   const [playingAudioId, setPlayingAudioId] = useState(null);
+  const [autoReadEnabled, setAutoReadEnabled] = useState(() => { try { return window.localStorage.getItem('sylus-auto-read') === 'true'; } catch { return false; } });
+  const autoReadQueueRef = useRef([]);
+  const autoReadSeenRef = useRef(new Set());
   const [speakingMessageId, setSpeakingMessageId] = useState(null);
   const audioContextRef = useRef(null);
   const audioSourceRef = useRef(null);
@@ -509,6 +512,37 @@ function App() {
     }
   }
 
+  useEffect(() => {
+    try { window.localStorage.setItem('sylus-auto-read', autoReadEnabled ? 'true' : 'false'); } catch {}
+    if (!autoReadEnabled) { autoReadQueueRef.current = []; return; }
+    for (const message of messages) {
+      if (message.role === 'assistant' && !autoReadSeenRef.current.has(message.id)) {
+        autoReadSeenRef.current.add(message.id);
+        autoReadQueueRef.current.push(message.id);
+      }
+    }
+    if (!speakingMessageId && autoReadQueueRef.current.length) {
+      const nextId = autoReadQueueRef.current.shift();
+      const nextMessage = messages.find(message => message.id === nextId);
+      if (nextMessage) readAloud(nextMessage);
+    }
+  }, [messages, autoReadEnabled, speakingMessageId, audioBuffers, audioErrors]);
+
+  async function refreshApp() {
+    setNotice('Refreshing the app…');
+    try {
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(registrations.map(registration => registration.unregister()));
+      }
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(key => caches.delete(key)));
+      }
+    } catch {}
+    window.location.reload();
+  }
+
   async function uploadImage(file) {
     if (!file || !connected || uploadingImage) return;
     setUploadingImage(true);
@@ -583,19 +617,25 @@ function App() {
 
   async function resetChat() {
     if (!connected || messageActionBusy) return;
-    if (!window.confirm('Start a completely fresh conversation? Current chat messages will disappear from the active chat. Saved memories will stay.')) return;
+    if (!window.confirm('Erase EVERYTHING and start over? This permanently deletes all chat messages (including archived messages), saved memories, and shared image attachments. This cannot be undone.')) return;
     setMessageActionBusy(true);
     try {
-      const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/messages`, { method: 'DELETE', headers, credentials: 'include' });
+      const response = await fetch(`${apiUrl.replace(/\\/$/, '')}/v1/reset-all`, { method: 'DELETE', headers, credentials: 'include' });
       if (!response.ok) {
         const failure = await response.json().catch(() => ({}));
-        throw new Error(failure.detail || 'Could not reset the conversation.');
+        throw new Error(failure.detail || 'Could not erase the chat and memories.');
       }
       setMessages([]);
+      setMemories([]);
+      setBond(null);
       setDraft('');
       setStickerPickerOpen(false);
-      setAudioUrls({});
-      setNotice('A fresh conversation. Your saved memories are still here.');
+      setAudioBuffers({});
+      setAudioErrors({});
+      setPlayingAudioId(null);
+      autoReadQueueRef.current = [];
+      autoReadSeenRef.current.clear();
+      setNotice('Everything has been erased. A completely new chapter starts here.');
     } catch (error) { setNotice(error.message); }
     finally { setMessageActionBusy(false); }
   }
@@ -694,11 +734,11 @@ function App() {
       <header className="topbar">
         <button className="icon-button mobile-menu" onClick={() => setMobileMenu(true)} aria-label="Open menu"><Menu size={20}/></button>
         <div className="breadcrumb"><span>SYLUS</span><span className="crumb-slash">/</span><strong>{currentTab?.label || 'Our conversations'}</strong></div>
-        <div className="topbar-right"><span className={`connection-dot ${connected ? 'online' : ''}`}/><span className="connection-label">{connected ? (chatReady ? 'PRIVATE SESSION' : 'SESSION · SETUP NEEDED') : 'OFFLINE PREVIEW'}</span><button className="avatar-button" aria-label="Profile options coming later" title="Profile options coming later" disabled><span>U</span></button></div>
+        <div className="topbar-right"><span className={`connection-dot ${connected ? 'online' : ''}`}/><span className="connection-label">{connected ? (chatReady ? 'PRIVATE SESSION' : 'SESSION · SETUP NEEDED') : 'OFFLINE PREVIEW'}</span><button className="icon-button app-refresh-button" onClick={refreshApp} aria-label="Refresh app and load latest deployment" title="Refresh app and load latest deployment"><RefreshCw size={17}/></button><button className="avatar-button" aria-label="Profile options coming later" title="Profile options coming later" disabled><span>U</span></button></div>
       </header>
 
       {active === 'chat' && <section className="chat-view">
-        <div className="chat-heading"><div><div className="eyebrow"><span className="eyebrow-line"/> THE N109 CONNECTION</div><h1>Our conversations<span className="heading-period">.</span></h1><p className="subheading">A quiet corner of the world, just for us.</p></div><button className="more-button reset-chat-button" aria-label="Reset chat" title="Start a fresh conversation" onClick={resetChat} disabled={!connected || messageActionBusy}><MoreHorizontal size={20}/></button></div>
+        <div className="chat-heading"><div><div className="eyebrow"><span className="eyebrow-line"/> THE N109 CONNECTION</div><h1>Our conversations<span className="heading-period">.</span></h1><p className="subheading">A quiet corner of the world, just for us.</p><div className="chat-quick-actions"><button className={`secondary-button auto-read-toggle ${autoReadEnabled ? "active" : ""}`} onClick={() => setAutoReadEnabled(value => !value)} disabled={!connected || !timeContext?.voice_ready} aria-pressed={autoReadEnabled}>{autoReadEnabled ? "Auto-read · On" : "Auto-read · Off"}</button><span className="field-help">Automatically speaks new replies</span></div></div><button className="more-button reset-chat-button" aria-label="Erase chat and memories" title="Permanently erase chat and memories" onClick={resetChat} disabled={!connected || messageActionBusy}><MoreHorizontal size={20}/></button></div>
         <div className="chat-stage">
           {messages.length === 0 ? <div className="empty-state">
             <div className="sigil-wrap"><div className="sigil-ring ring-one"/><div className="sigil-ring ring-two"/><div className="sigil-center"><Crown size={31} strokeWidth={1}/></div><span className="sigil-star star-a">✧</span><span className="sigil-star star-b">✦</span><span className="sigil-star star-c">·</span></div>
