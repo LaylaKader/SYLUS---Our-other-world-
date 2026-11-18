@@ -49,6 +49,10 @@ function App() {
   const [timeContext, setTimeContext] = useState(null);
   const [sending, setSending] = useState(false);
   const [composerNotice, setComposerNotice] = useState('');
+  const [replyStatus, setReplyStatus] = useState('');
+  const [replyError, setReplyError] = useState('');
+  const messageQueue = useRef([]);
+  const queueTimer = useRef(null);
   const [editingMessageId, setEditingMessageId] = useState(null);
   const [editingMessageText, setEditingMessageText] = useState('');
   const [messageActionBusy, setMessageActionBusy] = useState(false);
@@ -181,32 +185,66 @@ function App() {
     } finally { setChecking(false); }
   }
 
-  async function sendMessage(event) {
-    event.preventDefault();
-    const text = draft.trim();
-    if (!text || !connected || sending) return;
+  async function flushMessageQueue() {
+    if (queueTimer.current) window.clearTimeout(queueTimer.current);
+    queueTimer.current = null;
+    if (sending || !messageQueue.current.length) return;
+    const batch = messageQueue.current.splice(0);
     setSending(true);
+    setReplyStatus('thinking');
+    setReplyError('');
     setComposerNotice('');
-    setDraft('');
-    const pendingId = `pending-${Date.now()}`;
-    const optimisticMessage = { id: pendingId, role: 'user', text, created_at: new Date().toISOString() };
-    setMessages(current => [...current, optimisticMessage]);
     try {
-      const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/chat`, { method: 'POST', headers, credentials: 'include', body: JSON.stringify({ text }) });
+      const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/chat`, {
+        method: 'POST', headers, credentials: 'include',
+        body: JSON.stringify({ texts: batch.map(item => item.text) })
+      });
       if (!response.ok) {
         const failure = await response.json().catch(() => ({}));
-        throw new Error(failure.detail || 'Message could not be sent.');
+        throw new Error(failure.detail || `Sylus could not receive the messages (HTTP ${response.status}).`);
       }
       const turn = await response.json();
+      const savedUsers = turn.user_messages?.length ? turn.user_messages : (turn.user_message ? [turn.user_message] : []);
       const sylusBubbles = turn.assistant_messages?.length ? turn.assistant_messages : (turn.assistant_message ? [turn.assistant_message] : []);
-      setMessages(current => [...current.filter(message => message.id !== pendingId), turn.user_message, ...sylusBubbles]);
+      const pendingIds = new Set(batch.map(item => item.id));
+      setMessages(current => [...current.filter(message => !pendingIds.has(message.id)), ...savedUsers, ...sylusBubbles]);
       setNotice('Private conversation saved');
+      if (sylusBubbles.length) setReplyStatus('');
+      else setReplyStatus('silent');
       const memoryResponse = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/memories`, { headers, credentials: 'include' });
       if (memoryResponse.ok) setMemories(await memoryResponse.json());
       const bondResponse = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/bond`, { headers, credentials: 'include' });
       if (bondResponse.ok) setBond(await bondResponse.json());
-    } catch (error) { setMessages(current => current.filter(message => message.id !== pendingId)); setDraft(text); const message = error.message || 'Message could not be sent. Your text has been kept.'; setNotice(message); setComposerNotice(message); }
-    finally { setSending(false); }
+    } catch (error) {
+      const message = error.message || 'The message could not reach Sylus. Please try again.';
+      setReplyStatus('error');
+      setReplyError(message);
+      setComposerNotice(message);
+      setDraft(current => current ? current : batch.map(item => item.text).join('\n'));
+      // Keep the unsent messages visible so a connection failure never looks like deliberate silence.
+    } finally {
+      setSending(false);
+      if (messageQueue.current.length) {
+        setReplyStatus('waiting');
+        queueTimer.current = window.setTimeout(() => flushMessageQueue(), 1300);
+      }
+    }
+  }
+
+  async function sendMessage(event) {
+    event.preventDefault();
+    const text = draft.trim();
+    if (!text || !connected || !chatReady) return;
+    setDraft('');
+    setComposerNotice('');
+    setReplyError('');
+    setReplyStatus('waiting');
+    const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2,7)}`;
+    const optimisticMessage = { id: pendingId, role: 'user', text, created_at: new Date().toISOString() };
+    messageQueue.current.push({ id: pendingId, text });
+    setMessages(current => [...current, optimisticMessage]);
+    if (queueTimer.current) window.clearTimeout(queueTimer.current);
+    queueTimer.current = window.setTimeout(() => flushMessageQueue(), 1400);
   }
 
   function decodeBase64Url(value) {
@@ -505,7 +543,7 @@ function App() {
 
   async function disconnect() {
     try { await fetch(`${apiUrl.replace(/\/$/, '')}/v1/session`, { method: 'DELETE', headers, credentials: 'include' }); } catch {}
-    setOwnerPassword(''); setConnected(false); setChatReady(false); setMessages([]); setMemories([]); setTimeContext(null);
+    setOwnerPassword(''); setConnected(false); setChatReady(false); setMessages([]); messageQueue.current = []; if (queueTimer.current) window.clearTimeout(queueTimer.current); setReplyStatus(''); setReplyError(''); setMemories([]); setTimeContext(null);
     setNotice('Signed out · private data remains on the server');
   }
 
@@ -544,10 +582,10 @@ function App() {
             <div className="empty-divider"><span/><Sparkles size={12}/><span/></div>
             <div className="empty-footnote"><LockKeyhole size={12}/> Your conversations stay yours.</div>
           </div> : <div className="message-list" ref={messageListRef} aria-live="polite" aria-relevant="additions text">{messages.map(m => <div className={`message-row ${m.role === 'user' ? 'mine' : 'theirs'}`} key={m.id}><div className="message-avatar">{m.role === 'user' ? 'U' : <Crown size={15}/>}</div><div className="message-content"><div className="message-author">{m.role === 'user' ? 'YOU' : 'SYLUS'} <span>{new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span></div>{editingMessageId === m.id ? <div className="message-edit-box"><textarea value={editingMessageText} onChange={e => setEditingMessageText(e.target.value)} rows={3} maxLength={12000}/><div className="message-edit-actions"><button className="text-action" onClick={() => setEditingMessageId(null)}>Cancel</button><button className="text-action" disabled={messageActionBusy || !editingMessageText.trim()} onClick={() => saveMessageEdit(m.id)}>{messageActionBusy ? 'Saving…' : 'Save & rewind'}</button></div></div> : <div className="message-bubble">{renderMessageText(m.text)}{m.media_url && <img className="chat-image" src={m.media_url} alt="Image shared in our private conversation" loading="lazy"/>}</div>}{m.role === 'assistant' && <button className="text-action read-aloud-button" disabled={!timeContext?.voice_ready || speakingMessageId === m.id} onClick={() => readAloud(m)}>{speakingMessageId === m.id ? 'Preparing voice…' : !timeContext?.voice_ready ? 'Voice setup needed' : audioUrls[m.id] ? 'Play voice again' : 'Read aloud'}</button>}{audioUrls[m.id] && <audio id={`message-audio-${m.id}`} ref={element => { if (element) audioElements.current[m.id] = element; else delete audioElements.current[m.id]; }} className="message-audio" controls preload="auto" playsInline src={audioUrls[m.id]} onLoadedMetadata={e => { const player = e.currentTarget; const duration = player.duration; if (Number.isFinite(duration) && duration > 0) setNotice(`Audio loaded · ${Math.round(duration)} seconds.`); else setNotice('Audio player loaded, but the browser could not read its duration.'); }} onCanPlay={e => { if (autoPlayAudioId === m.id) e.currentTarget.play().catch(() => setNotice('Audio is ready. Press Play to listen.')); }} onPlay={() => setAutoPlayAudioId(current => current === m.id ? null : current)} onError={e => { const mediaError = e.currentTarget.error; setNotice(`Audio playback failed · media error ${mediaError?.code ?? 'unknown'}${mediaError?.message ? `: ${mediaError.message}` : ''}.`); }} />}<div className="message-actions">{m.role === 'assistant' && <></>}{m.role === 'user' && editingMessageId !== m.id && <><button className="text-action" disabled={messageActionBusy} onClick={() => beginEditMessage(m)}>Edit</button><button className="text-action danger-action" disabled={messageActionBusy} onClick={() => deleteMessage(m.id)}>Delete</button></>}<button className="text-action" disabled={messageActionBusy} onClick={() => rewindToMessage(m.id)}>Rewind here</button></div></div></div>)}
-          {composerNotice && <div className="composer-feedback" role="alert">{composerNotice}</div>}{sending && <div className="typing-row" role="status" aria-label="Sylus is typing"><div className="message-avatar"><Crown size={15}/></div><div className="typing-bubble"><span/><span/><span/></div></div>}
+          {composerNotice && <div className="composer-feedback" role="alert">{composerNotice}</div>}{replyStatus === 'waiting' && <div className="chat-presence waiting" role="status"><span className="presence-dot"/><span>Sylus is reading your messages…</span></div>}{sending && <div className="typing-row" role="status" aria-label="Sylus is thinking"><div className="message-avatar"><Crown size={15}/></div><div className="typing-bubble"><span/><span/><span/></div><span className="presence-caption">Sylus is thinking</span></div>}{replyStatus === 'silent' && <div className="chat-presence quiet" role="status"><span className="presence-dot"/><span>Sylus is quiet for now.</span></div>}{replyStatus === 'error' && <div className="chat-presence failed" role="alert"><span className="presence-dot"/><span>Message delivery failed. {replyError || 'Please try again.'}</span></div>}
         </div>}
         </div>
-        <div className="composer-wrap"><form className="composer" onSubmit={sendMessage}><input ref={imageInputRef} className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={e => uploadImage(e.target.files?.[0])}/><button type="button" className="composer-tool" title="Send an image" aria-label="Send an image" disabled={!connected || uploadingImage} onClick={() => imageInputRef.current?.click()}><Camera size={18}/></button><button type="button" className="composer-tool sticker-toggle" title="Choose a sticker" aria-label="Choose a sticker" disabled={!connected || !chatReady} onClick={() => setStickerPickerOpen(open => !open)}><Sparkles size={18}/></button><textarea value={draft} onChange={e => setDraft(e.target.value)} placeholder={connected ? (chatReady ? 'Say something…' : 'Chat model not configured yet…') : 'Connect your private instance to begin…'} rows={1} disabled={!connected || !chatReady || sending} onKeyDown={e => {if(e.key === 'Enter' && !e.shiftKey){e.preventDefault();sendMessage(e);}}}/><div className="composer-actions"><span className="composer-hint">{sending ? 'Sending…' : uploadingImage ? 'Uploading…' : '↵ to send'}</span><button className="send-button" type="submit" disabled={!connected || !chatReady || !draft.trim() || sending} aria-label="Send message"><Send size={16}/></button></div></form>{stickerPickerOpen && <div className="sticker-picker" role="group" aria-label="Sylus sticker collection"><div className="sticker-picker-heading"><span>OUR LITTLE COLLECTION</span><button type="button" className="text-action" onClick={() => setStickerPickerOpen(false)}>Close</button></div><div className="sticker-picker-grid">{stickerOptions.map(sticker => <button type="button" className="sticker-option" key={sticker.id} onClick={() => addStickerToDraft(sticker)}><img className="sticker-art" src={sticker.src} alt="" loading="lazy"/><span>{sticker.label}</span></button>)}</div></div>}<div className="composer-caption"><span>SYLUS IS A PRIVATE, PERSONAL COMPANION</span><span>✦</span><span>YOUR WORLD, YOUR RULES</span></div></div>
+        <div className="composer-wrap"><form className="composer" onSubmit={sendMessage}><input ref={imageInputRef} className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={e => uploadImage(e.target.files?.[0])}/><button type="button" className="composer-tool" title="Send an image" aria-label="Send an image" disabled={!connected || uploadingImage} onClick={() => imageInputRef.current?.click()}><Camera size={18}/></button><button type="button" className="composer-tool sticker-toggle" title="Choose a sticker" aria-label="Choose a sticker" disabled={!connected || !chatReady} onClick={() => setStickerPickerOpen(open => !open)}><Sparkles size={18}/></button><textarea value={draft} onChange={e => setDraft(e.target.value)} placeholder={connected ? (chatReady ? 'Say something…' : 'Chat model not configured yet…') : 'Connect your private instance to begin…'} rows={1} disabled={!connected || !chatReady} onKeyDown={e => {if(e.key === 'Enter' && !e.shiftKey){e.preventDefault();sendMessage(e);}}}/><div className="composer-actions"><span className="composer-hint">{sending ? 'Sending…' : replyStatus === 'waiting' ? 'Reading…' : uploadingImage ? 'Uploading…' : '↵ to send'}</span><button className="send-button" type="submit" disabled={!connected || !chatReady || !draft.trim()} aria-label="Send message"><Send size={16}/></button></div></form>{stickerPickerOpen && <div className="sticker-picker" role="group" aria-label="Sylus sticker collection"><div className="sticker-picker-heading"><span>OUR LITTLE COLLECTION</span><button type="button" className="text-action" onClick={() => setStickerPickerOpen(false)}>Close</button></div><div className="sticker-picker-grid">{stickerOptions.map(sticker => <button type="button" className="sticker-option" key={sticker.id} onClick={() => addStickerToDraft(sticker)}><img className="sticker-art" src={sticker.src} alt="" loading="lazy"/><span>{sticker.label}</span></button>)}</div></div>}<div className="composer-caption"><span>SYLUS IS A PRIVATE, PERSONAL COMPANION</span><span>✦</span><span>YOUR WORLD, YOUR RULES</span></div></div>
       </section>}
 
       {active === 'bond' && <section className="content-view"><div className="eyebrow"><span className="eyebrow-line"/> THE STORY WE BUILD</div><h1>Bond<span className="heading-period">.</span></h1><p className="subheading">Not a score to chase. A history that grows through what you share.</p>{bond ? <><div className="feature-card bond-card"><div className="feature-symbol"><Heart size={25}/></div><div><span className="card-kicker">WHERE WE STAND</span><h2>{bond.stage}</h2><p>{bond.summary}</p></div><Sparkles className="card-sparkle" size={20}/></div><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:18,margin:'22px 0',padding:20,border:'1px solid rgba(180,150,120,.2)',borderRadius:18}}>{[['Affection',bond.affection],['Trust',bond.trust],['Familiarity',bond.familiarity],['Shared experiences',bond.shared_experiences]].map(([label,value]) => <div key={label}><div style={{display:'flex',justifyContent:'space-between',fontSize:'.82rem',marginBottom:8}}><span>{label}</span><span>{value}%</span></div><div style={{height:5,borderRadius:9,background:'rgba(180,150,120,.14)',overflow:'hidden'}}><span style={{display:'block',height:'100%',width:value+'%',borderRadius:9,background:'linear-gradient(90deg,#8f6a5c,#d7b38a)'}}/></div></div>)}</div><p className="field-help">{bond.total_user_messages} messages from you · {bond.total_shared_turns} shared turns</p><div style={{marginTop:24}}><div className="card-kicker" style={{marginBottom:12}}>MOMENTS THAT SHAPED US · {bond.milestones.length}</div>{bond.milestones.length ? bond.milestones.map(item => <article key={item.key} style={{display:'flex',gap:14,padding:'16px 4px',borderBottom:'1px solid rgba(180,150,120,.15)'}}><span style={{color:'#c7a078'}}>✦</span><div><strong>{item.title}</strong><p style={{fontSize:'.85rem',margin:'5px 0',opacity:.8}}>{item.description}</p><small style={{opacity:.6}}>{new Date(item.date).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'})}</small></div></article>) : <p className="field-help">Your first meaningful milestones will appear here as they happen.</p>}</div></> : <div className="feature-card bond-card"><div className="feature-symbol"><Heart size={25}/></div><div><span className="card-kicker">OUR STORY</span><h2>{connected ? 'Gathering our history…' : 'A private connection.'}</h2><p>{connected ? 'The bond will update from your shared conversation history.' : 'Sign in to see your shared moments and milestones.'}</p></div></div>}<div className="small-note"><ShieldCheck size={15}/> Private progress. Your chat history and memories remain intact.</div></section>}
