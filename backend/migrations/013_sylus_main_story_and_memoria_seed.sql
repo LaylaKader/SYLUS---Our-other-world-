@@ -75,7 +75,3 @@ WHERE NOT EXISTS (
   SELECT 1 FROM character_knowledge_records existing
   WHERE existing.topic = v.topic AND existing.source_url = v.source_url
 );
-
--- Make the first card and arc records easy to retrieve by exact title and common phrasing.
-CREATE INDEX IF NOT EXISTS character_knowledge_records_topic_trgm_idx
-  ON character_knowledge_records USING gin (topic gin_trgm_ops);
