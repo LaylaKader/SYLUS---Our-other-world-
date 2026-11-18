@@ -179,6 +179,7 @@ class CallFinishIn(BaseModel):
 
 class CallTranscriptCorrectIn(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
+    alternatives: list[str] = Field(default_factory=list, max_length=6)
     session_id: UUID | None = None
 
 class VisualIdentityCreate(BaseModel):
@@ -515,6 +516,7 @@ def call_turn(payload: CallTurnIn, _: None = Depends(require_owner)):
 def correct_call_transcript(payload: CallTranscriptCorrectIn, _: None = Depends(require_owner)):
     original=payload.text.strip()
     if not original: return {"text":"","changed":False}
+    alternatives = [str(item).strip()[:500] for item in payload.alternatives[:6] if str(item).strip()]
     recent_context = ""
     if payload.session_id:
         with connection() as conn:
@@ -522,7 +524,7 @@ def correct_call_transcript(payload: CallTranscriptCorrectIn, _: None = Depends(
         if row:
             recent_context="\n".join(
                 f"{item.get('role','')}: {str(item.get('text',''))[:500]}"
-                for item in (row[0] or [])[-8:]
+                for item in (row[0] or [])[-14:]
             )
     fallback=re.sub(r"\b(silas|sylas|sailas|sailus)\b","Sylus",original,flags=re.I)
     fallback=re.sub(r"\b(hello|hey|hi) silence\b",lambda m:m.group(1)+" Sylus",fallback,flags=re.I)
@@ -535,14 +537,14 @@ def correct_call_transcript(payload: CallTranscriptCorrectIn, _: None = Depends(
         providers.append(("OpenRouter-free","https://openrouter.ai/api/v1",settings.openrouter_api_key,settings.openrouter_model))
     if settings.cloudflare_account_id and settings.cloudflare_api_token:
         providers.append(("Cloudflare",f"https://api.cloudflare.com/client/v4/accounts/{settings.cloudflare_account_id}/ai/v1",settings.cloudflare_api_token,settings.cloudflare_chat_model))
-    prompt=("You are a conservative speech-to-text correction layer for a live conversation. Correct clear speech-recognition errors, punctuation, capitalization, and obvious grammar slips while preserving the speaker's exact meaning, tone, wording, and language. "
-            "Known proper nouns: Sylus (not Silas, Sylas, or Silence when addressed by name), Umi, Mephisto, Mephi-chan, N109 Zone, Onychinus, Luke, Kieran, Protocore, Memoria, Within Reach. "
-            "Use the recent call context to resolve phonetic misspellings and pronouns. Never add ideas, answer the speaker, censor, summarize, or rewrite casual phrasing into formal prose. If uncertain, keep the original wording. Return only the corrected transcript.")
+    prompt=("You are a careful speech-recognition repair layer for a live, informal conversation. The input may include the recognizer's best transcript and several alternate hypotheses for the same audio. Compare them using recent conversation context; prefer a candidate that fits the sounds AND context, not merely the most grammatical sentence. "
+            "Known names and terms: Sylus (may be misheard as Silas, Sylas, Sailus, or Silence when he is being addressed), Umi, Mephisto, Mephi-chan, N109 Zone, Onychinus, Luke, Kieran, Protocore, Memoria, Within Reach. Preserve these exact spellings when context clearly indicates them. "
+            "Correct only likely recognition mistakes, punctuation, and capitalization. Preserve the speaker's actual meaning, casual wording, language, and tone. Do not translate, paraphrase, formalize, complete unfinished thoughts, or invent words. Do not replace a plausible word just because another phrase sounds more natural. If alternatives remain ambiguous, keep the original best transcript. Return only the corrected transcript.")
     for _,base,key,model in providers[:3]:
         try:
             response=httpx.post(base.rstrip("/")+"/chat/completions",
                 headers={"Authorization":f"Bearer {key}","Content-Type":"application/json"},
-                json={"model":model,"messages":[{"role":"system","content":prompt},{"role":"user","content":("Recent call context (may be empty):\n"+recent_context+"\n\nCurrent transcript to correct:\n"+original)}],
+                json={"model":model,"messages":[{"role":"system","content":prompt},{"role":"user","content":("Recent call context (may be empty):\n"+recent_context+"\n\nAlternative recognition hypotheses (same audio; may be empty):\n"+json.dumps(alternatives, ensure_ascii=False)+"\n\nBest transcript to correct:\n"+original)}],
                       "temperature":0,"max_tokens":300},
                 timeout=httpx.Timeout(9.0,connect=3.0))
             response.raise_for_status()
