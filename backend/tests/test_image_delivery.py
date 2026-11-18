@@ -22,3 +22,7 @@ def test_image_discussion_does_not_trigger_generation():
     assert not should_generate_image("What do you think of this image?")
     assert not should_generate_image("I found a picture online.")
     assert not should_generate_image("I missed you today.")
+
+def test_web_image_search_is_not_mistaken_for_generation():
+    assert not should_generate_image("Show me pictures of Sylus.")
+    assert not should_generate_image("Find me a funny meme.")
