@@ -86,11 +86,41 @@ def refresh_bond() -> dict:
                          gains.get("emotional_safety",0), points),
                     )
 
-        user_count = len(rows)
+        call_rows = conn.execute("SELECT transcript, started_at FROM call_sessions").fetchall()
+        call_user_count = 0
+        call_assistant_count = 0
+        call_days = set()
+        for transcript, started_at in call_rows:
+            call_days.add(started_at.date())
+            for item in (transcript or []):
+                if item.get("role") == "user" and item.get("text"):
+                    call_user_count += 1
+                    for key, title, description, gains, points in _signals(str(item["text"])):
+                        event_key = f"day:{started_at.date().isoformat()}:{key}"
+                        inserted = conn.execute(
+                            "INSERT INTO bond_events (event_key,title,description,source_message_id) "
+                            "VALUES (%s,%s,%s,NULL) ON CONFLICT (event_key) DO NOTHING RETURNING id",
+                            (event_key,title,description),
+                        ).fetchone()
+                        if inserted:
+                            conn.execute(
+                                "UPDATE bond_state SET affection=GREATEST(0,LEAST(100,affection+%s)), "
+                                "trust=GREATEST(0,LEAST(100,trust+%s)), familiarity=GREATEST(0,LEAST(100,familiarity+%s)), "
+                                "shared_experiences=GREATEST(0,LEAST(100,shared_experiences+%s)), "
+                                "commitment=GREATEST(0,LEAST(100,commitment+%s)), vulnerability=GREATEST(0,LEAST(100,vulnerability+%s)), "
+                                "emotional_safety=GREATEST(0,LEAST(100,emotional_safety+%s)), bond_points=GREATEST(0,bond_points+%s), updated_at=now() WHERE id=1",
+                                (gains.get("affection",0),gains.get("trust",0),gains.get("familiarity",0),
+                                 gains.get("shared_experiences",0),gains.get("commitment",0),gains.get("vulnerability",0),
+                                 gains.get("emotional_safety",0),points),
+                            )
+                elif item.get("role") == "assistant":
+                    call_assistant_count += 1
+
+        user_count = len(rows) + call_user_count
         turns = min(user_count, conn.execute(
             "SELECT count(*) FROM messages WHERE role='assistant'"
-        ).fetchone()[0])
-        active_days = len({r[2].date() for r in rows if r[2]})
+        ).fetchone()[0] + call_assistant_count)
+        active_days = len({r[2].date() for r in rows if r[2]} | call_days)
         # Familiarity and consistency reward time spent together, but both have diminishing returns.
         last_activity = max((r[2] for r in rows if r[2]), default=None)
         inactive_days = max(0, (datetime.now(timezone.utc).date() - last_activity.date()).days) if last_activity else 0
