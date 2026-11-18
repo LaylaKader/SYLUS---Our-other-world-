@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Bell, Bird, BookHeart, Camera, ChevronDown, CircleHelp, Clock3, Crown, Heart, Image, LockKeyhole, Menu, MessageCircle, MoreHorizontal, Send, Settings, ShieldCheck, Sparkles, Star, X } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? window.location.origin : '');
-const stickerOptions = [
+const fallbackStickerOptions = [
   { id: 'waiting', label: 'Waiting…', col: 0, row: 0 },
   { id: 'peeking', label: 'Peeking', col: 1, row: 0 },
   { id: 'sneaky', label: 'Sneaky', col: 2, row: 0 },
@@ -19,8 +19,6 @@ const stickerOptions = [
   { id: 'hiding', label: 'Hiding', col: 1, row: 4 },
   { id: 'heart-hug', label: 'A little hug', col: 2, row: 4 },
 ];
-const stickerById = Object.fromEntries(stickerOptions.map(sticker => [sticker.id, sticker]));
-
 const tabs = [
   { id: 'chat', label: 'Our conversations', icon: MessageCircle },
   { id: 'bond', label: 'Bond', icon: Heart },
@@ -34,6 +32,8 @@ function App() {
   const [mobileMenu, setMobileMenu] = useState(false);
   const [draft, setDraft] = useState('');
   const [stickerPickerOpen, setStickerPickerOpen] = useState(false);
+  const [stickerOptions, setStickerOptions] = useState(fallbackStickerOptions);
+  const stickerById = useMemo(() => Object.fromEntries(stickerOptions.map(sticker => [sticker.id, sticker])), [stickerOptions]);
   const [messages, setMessages] = useState([]);
   const [ownerPassword, setOwnerPassword] = useState('');
   const [connected, setConnected] = useState(false);
@@ -72,6 +72,14 @@ function App() {
   const messageListRef = useRef(null);
 
   useEffect(() => {
+    let cancelled = false;
+    fetch(`${API_BASE}/stickers/manifest.json`).then(response => response.ok ? response.json() : []).then(items => {
+      if (!cancelled && Array.isArray(items) && items.length) setStickerOptions(items);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
     if (!autoPlayAudioId) return;
     const player = audioElements.current[autoPlayAudioId];
     if (!player) return;
@@ -101,7 +109,7 @@ function App() {
       const sticker = stickerById[match[1] || legacy[match[2]] || match[2]];
       if (!sticker) return <React.Fragment key={index}>{part}</React.Fragment>;
       return <span className="message-sticker" key={index} role="img" aria-label={sticker.label}>
-        <span className="sticker-art" style={{ backgroundPosition: `${sticker.col * 50}% ${sticker.row * 25}%` }} />
+        <img className="sticker-art" src={sticker.src} alt={sticker.label} loading="lazy" />
         <span className="sticker-caption">{sticker.label}</span>
       </span>;
     });
@@ -534,7 +542,7 @@ function App() {
           {composerNotice && <div className="composer-feedback" role="alert">{composerNotice}</div>}{sending && <div className="typing-row" role="status" aria-label="Sylus is typing"><div className="message-avatar"><Crown size={15}/></div><div className="typing-bubble"><span/><span/><span/></div></div>}
         </div>}
         </div>
-        <div className="composer-wrap"><form className="composer" onSubmit={sendMessage}><input ref={imageInputRef} className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={e => uploadImage(e.target.files?.[0])}/><button type="button" className="composer-tool" title="Send an image" aria-label="Send an image" disabled={!connected || uploadingImage} onClick={() => imageInputRef.current?.click()}><Camera size={18}/></button><button type="button" className="composer-tool sticker-toggle" title="Choose a sticker" aria-label="Choose a sticker" disabled={!connected || !chatReady} onClick={() => setStickerPickerOpen(open => !open)}><Sparkles size={18}/></button><textarea value={draft} onChange={e => setDraft(e.target.value)} placeholder={connected ? (chatReady ? 'Say something…' : 'Chat model not configured yet…') : 'Connect your private instance to begin…'} rows={1} disabled={!connected || !chatReady || sending} onKeyDown={e => {if(e.key === 'Enter' && !e.shiftKey){e.preventDefault();sendMessage(e);}}}/><div className="composer-actions"><span className="composer-hint">{sending ? 'Sending…' : uploadingImage ? 'Uploading…' : '↵ to send'}</span><button className="send-button" type="submit" disabled={!connected || !chatReady || !draft.trim() || sending} aria-label="Send message"><Send size={16}/></button></div></form>{stickerPickerOpen && <div className="sticker-picker" role="group" aria-label="Sylus sticker collection"><div className="sticker-picker-heading"><span>OUR LITTLE COLLECTION</span><button type="button" className="text-action" onClick={() => setStickerPickerOpen(false)}>Close</button></div><div className="sticker-picker-grid">{stickerOptions.map(sticker => <button type="button" className="sticker-option" key={sticker.id} onClick={() => addStickerToDraft(sticker)}><span className="sticker-art" style={{ backgroundPosition: `${sticker.col * 50}% ${sticker.row * 25}%` }}/><span>{sticker.label}</span></button>)}</div></div>}<div className="composer-caption"><span>SYLUS IS A PRIVATE, PERSONAL COMPANION</span><span>✦</span><span>YOUR WORLD, YOUR RULES</span></div></div>
+        <div className="composer-wrap"><form className="composer" onSubmit={sendMessage}><input ref={imageInputRef} className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={e => uploadImage(e.target.files?.[0])}/><button type="button" className="composer-tool" title="Send an image" aria-label="Send an image" disabled={!connected || uploadingImage} onClick={() => imageInputRef.current?.click()}><Camera size={18}/></button><button type="button" className="composer-tool sticker-toggle" title="Choose a sticker" aria-label="Choose a sticker" disabled={!connected || !chatReady} onClick={() => setStickerPickerOpen(open => !open)}><Sparkles size={18}/></button><textarea value={draft} onChange={e => setDraft(e.target.value)} placeholder={connected ? (chatReady ? 'Say something…' : 'Chat model not configured yet…') : 'Connect your private instance to begin…'} rows={1} disabled={!connected || !chatReady || sending} onKeyDown={e => {if(e.key === 'Enter' && !e.shiftKey){e.preventDefault();sendMessage(e);}}}/><div className="composer-actions"><span className="composer-hint">{sending ? 'Sending…' : uploadingImage ? 'Uploading…' : '↵ to send'}</span><button className="send-button" type="submit" disabled={!connected || !chatReady || !draft.trim() || sending} aria-label="Send message"><Send size={16}/></button></div></form>{stickerPickerOpen && <div className="sticker-picker" role="group" aria-label="Sylus sticker collection"><div className="sticker-picker-heading"><span>OUR LITTLE COLLECTION</span><button type="button" className="text-action" onClick={() => setStickerPickerOpen(false)}>Close</button></div><div className="sticker-picker-grid">{stickerOptions.map(sticker => <button type="button" className="sticker-option" key={sticker.id} onClick={() => addStickerToDraft(sticker)}><img className="sticker-art" src={sticker.src} alt="" loading="lazy"/><span>{sticker.label}</span></button>)}</div></div>}<div className="composer-caption"><span>SYLUS IS A PRIVATE, PERSONAL COMPANION</span><span>✦</span><span>YOUR WORLD, YOUR RULES</span></div></div>
       </section>}
 
       {active === 'bond' && <section className="content-view"><div className="eyebrow"><span className="eyebrow-line"/> THE STORY WE BUILD</div><h1>Bond<span className="heading-period">.</span></h1><p className="subheading">A connection shaped by time, trust, and the moments we keep.</p><div className="feature-card bond-card"><div className="feature-symbol"><Heart size={25}/></div><div><span className="card-kicker">OUR STORY</span><h2>Still unfolding.</h2><p>Relationship milestones and shared experiences will live here. Nothing is assumed or rushed.</p></div><Sparkles className="card-sparkle" size={20}/></div><div className="small-note"><ShieldCheck size={15}/> Progress is private and always under your control.</div></section>}
