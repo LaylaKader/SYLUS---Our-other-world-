@@ -190,3 +190,19 @@ html,body,#root{height:100%;overflow:hidden}
 .call-history-empty h2{font:500 21px 'Playfair Display',serif;color:#e8dce6;margin:13px 0 7px}
 .call-history-empty p{font-size:11px;line-height:1.7;color:#9e929f;max-width:340px;margin:auto}
 @media(max-width:620px){.chat-control-dock{gap:7px}.chat-control-chip{padding:9px 11px;font-size:9px}.reset-chat-pill{padding:8px 10px;font-size:9px}.call-history-card{padding:13px}.call-history-card-top{align-items:flex-start}.call-transcript-toggle{margin-left:51px}.call-transcript-scroll{max-height:55dvh}}
+
+
+/* Keep chat actions in a compact horizontal rail so the message area stays tall. */
+.chat-control-dock{display:flex;flex-wrap:nowrap;align-items:center;gap:6px;width:100%;max-width:100%;overflow-x:auto;overflow-y:hidden;padding:2px 1px 7px;margin-top:10px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.chat-control-dock::-webkit-scrollbar{display:none}
+.chat-control-chip,.reset-chat-pill{flex:0 0 auto;white-space:nowrap;padding:7px 10px;font-size:9px;line-height:1.15;min-height:31px}
+.chat-control-chip svg,.reset-chat-pill svg{width:13px;height:13px;flex-shrink:0}
+.reset-chat-pill{margin:0}
+.call-history-back{display:inline-flex;align-items:center;gap:8px;margin:0 0 18px;padding:9px 14px;border:1px solid rgba(201,168,117,.24);border-radius:999px;background:rgba(126,49,75,.13);color:#e3c8d5;font-size:11px}
+.call-history-back:active{transform:scale(.98)}
+@media(max-width:620px){
+ .chat-control-dock{gap:5px;margin-top:8px}
+ .chat-control-chip,.reset-chat-pill{padding:7px 9px;font-size:8px;min-height:30px;gap:5px}
+ .chat-control-chip svg,.reset-chat-pill svg{width:12px;height:12px}
+ .call-history-back{margin-bottom:14px}
+}
