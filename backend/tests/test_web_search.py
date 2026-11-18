@@ -69,3 +69,7 @@ def test_music_preference_followup_uses_prior_search_intent():
 def test_waiting_is_a_search_followup():
     from app.web_search import is_search_followup
     assert is_search_followup("I'm waiting~")
+
+
+def test_ordinary_music_chat_does_not_trigger_search():
+    assert classify_search_request("I love music.") is None
