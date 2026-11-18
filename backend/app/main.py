@@ -14,7 +14,7 @@ from time import time
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from typing import Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -170,6 +170,26 @@ class ChatTurnOut(BaseModel):
 class SpeechIn(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
 
+class CallTurnIn(BaseModel):
+    session_id: UUID
+    text: str = Field(min_length=1, max_length=12000)
+
+class CallFinishIn(BaseModel):
+    duration_seconds: int = Field(default=0, ge=0, le=86400)
+
+class CallTranscriptCorrectIn(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
+
+class VisualIdentityCreate(BaseModel):
+    display_name: str = Field(min_length=1, max_length=100)
+    category: Literal["sylus", "owner", "other"] = "other"
+    notes: str = Field(default="", max_length=2000)
+
+class VisualIdentityUpdate(BaseModel):
+    display_name: str | None = Field(default=None, min_length=1, max_length=100)
+    status: Literal["confirmed", "pending"] | None = None
+    notes: str | None = Field(default=None, max_length=2000)
+
 class ImageGenerateIn(BaseModel):
     prompt: str = Field(min_length=1, max_length=1800)
     caption: str = Field(default='A picture for you.', max_length=300)
@@ -297,6 +317,209 @@ def time_context(_: None = Depends(require_owner)):
 def get_relationship_bond(_: None = Depends(require_owner)):
     """Return the persistent relationship snapshot and its earned milestones."""
     return refresh_bond()
+
+@app.get("/v1/visual-memory")
+def list_visual_memory(_: None = Depends(require_owner)):
+    with connection() as conn:
+        rows = conn.execute(
+            "SELECT i.id, i.display_name, i.category, i.status, i.notes, i.created_at, "
+            "r.id, r.filename, r.source, r.analysis_notes, r.created_at "
+            "FROM visual_identities i LEFT JOIN visual_reference_images r ON r.identity_id=i.id "
+            "ORDER BY CASE i.category WHEN 'sylus' THEN 0 WHEN 'owner' THEN 1 ELSE 2 END, i.created_at, r.created_at DESC"
+        ).fetchall()
+    identities = {}
+    for row in rows:
+        key = str(row[0])
+        if key not in identities:
+            identities[key] = {
+                "id": key, "display_name": row[1], "category": row[2], "status": row[3],
+                "notes": row[4], "created_at": row[5].isoformat(), "images": []
+            }
+        if row[6]:
+            identities[key]["images"].append({
+                "id": str(row[6]), "filename": row[7], "source": row[8],
+                "analysis_notes": row[9], "created_at": row[10].isoformat(),
+                "url": f"/v1/visual-memory/images/{row[6]}"
+            })
+    return list(identities.values())
+
+@app.post("/v1/visual-memory/identities")
+def create_visual_identity(payload: VisualIdentityCreate, _: None = Depends(require_owner)):
+    with connection() as conn:
+        row = conn.execute(
+            "INSERT INTO visual_identities (display_name, category, notes, status) VALUES (%s,%s,%s,'confirmed') "
+            "RETURNING id, display_name, category, status, notes, created_at",
+            (payload.display_name.strip(), payload.category, payload.notes.strip()),
+        ).fetchone()
+    return {"id":str(row[0]),"display_name":row[1],"category":row[2],"status":row[3],"notes":row[4],"created_at":row[5].isoformat(),"images":[]}
+
+@app.patch("/v1/visual-memory/identities/{identity_id}")
+def update_visual_identity(identity_id: UUID, payload: VisualIdentityUpdate, _: None = Depends(require_owner)):
+    changes = payload.model_dump(exclude_unset=True)
+    if not changes:
+        raise HTTPException(status_code=400, detail="No identity changes supplied.")
+    with connection() as conn:
+        row = conn.execute(
+            "UPDATE visual_identities SET display_name=COALESCE(%s,display_name), status=COALESCE(%s,status), "
+            "notes=COALESCE(%s,notes), updated_at=now() WHERE id=%s "
+            "RETURNING id,display_name,category,status,notes,created_at",
+            (changes.get("display_name"),changes.get("status"),changes.get("notes"),identity_id),
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Visual identity not found.")
+    return {"id":str(row[0]),"display_name":row[1],"category":row[2],"status":row[3],"notes":row[4],"created_at":row[5].isoformat()}
+
+@app.delete("/v1/visual-memory/identities/{identity_id}")
+def delete_visual_identity(identity_id: UUID, _: None = Depends(require_owner)):
+    with connection() as conn:
+        row = conn.execute("DELETE FROM visual_identities WHERE id=%s AND category='other' RETURNING id",(identity_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Only additional people can be deleted here; the Sylus and Umi collections are permanent.")
+    return {"deleted":True,"id":str(row[0])}
+
+@app.post("/v1/visual-memory/identities/{identity_id}/images")
+def upload_visual_reference(identity_id: UUID, file: UploadFile = File(...), _: None = Depends(require_owner)):
+    allowed = {"image/jpeg":("jpg",b"\\xff\\xd8\\xff"),"image/png":("png",b"\\x89PNG\\r\\n\\x1a\\n"),"image/webp":("webp",b"RIFF")}
+    if file.content_type not in allowed:
+        raise HTTPException(status_code=415, detail="Please upload a JPG, PNG, or WebP image.")
+    data = file.file.read(8*1024*1024+1)
+    if len(data)>8*1024*1024:
+        raise HTTPException(status_code=413, detail="Reference images must be 8 MB or smaller.")
+    extension, signature = allowed[file.content_type]
+    if not data.startswith(signature) or (file.content_type=="image/webp" and data[8:12]!=b"WEBP"):
+        raise HTTPException(status_code=415, detail="The uploaded file does not match its image type.")
+    with connection() as conn:
+        exists=conn.execute("SELECT id FROM visual_identities WHERE id=%s",(identity_id,)).fetchone()
+        if not exists: raise HTTPException(status_code=404,detail="Visual identity not found.")
+        row=conn.execute(
+            "INSERT INTO visual_reference_images (identity_id,content_type,filename,data,source) VALUES (%s,%s,%s,%s,'manual') RETURNING id,filename,created_at",
+            (identity_id,file.content_type,(file.filename or f"reference.{extension}")[:160],data),
+        ).fetchone()
+    return {"id":str(row[0]),"filename":row[1],"created_at":row[2].isoformat(),"url":f"/v1/visual-memory/images/{row[0]}"}
+
+@app.get("/v1/visual-memory/images/{image_id}")
+def get_visual_reference(image_id: UUID, _: None = Depends(require_owner)):
+    with connection() as conn:
+        row=conn.execute("SELECT content_type,data FROM visual_reference_images WHERE id=%s",(image_id,)).fetchone()
+    if not row: raise HTTPException(status_code=404,detail="Reference image not found.")
+    return Response(content=bytes(row[1]),media_type=row[0],headers={"Content-Disposition":"inline","Cache-Control":"no-store, private"})
+
+@app.delete("/v1/visual-memory/images/{image_id}")
+def delete_visual_reference(image_id: UUID, _: None = Depends(require_owner)):
+    with connection() as conn:
+        row=conn.execute("DELETE FROM visual_reference_images WHERE id=%s RETURNING id",(image_id,)).fetchone()
+    if not row: raise HTTPException(status_code=404,detail="Reference image not found.")
+    return {"deleted":True,"id":str(row[0])}
+
+@app.post("/v1/calls/start")
+def start_call_session(_: None = Depends(require_owner)):
+    with connection() as conn:
+        row=conn.execute("INSERT INTO call_sessions DEFAULT VALUES RETURNING id,started_at",( )).fetchone()
+    return {"id":str(row[0]),"started_at":row[1].isoformat()}
+
+@app.get("/v1/calls")
+def list_call_sessions(_: None = Depends(require_owner)):
+    with connection() as conn:
+        rows=conn.execute(
+            "SELECT id,started_at,ended_at,duration_seconds,jsonb_array_length(transcript) "
+            "FROM call_sessions ORDER BY started_at DESC LIMIT 50"
+        ).fetchall()
+    return [{"id":str(r[0]),"started_at":r[1].isoformat(),"ended_at":r[2].isoformat() if r[2] else None,
+             "duration_seconds":r[3],"transcript_items":r[4]} for r in rows]
+
+@app.get("/v1/calls/{session_id}/transcript")
+def get_call_transcript(session_id: UUID, _: None = Depends(require_owner)):
+    with connection() as conn:
+        row=conn.execute("SELECT id,started_at,ended_at,duration_seconds,transcript FROM call_sessions WHERE id=%s",(session_id,)).fetchone()
+    if not row: raise HTTPException(status_code=404,detail="Call record not found.")
+    return {"id":str(row[0]),"started_at":row[1].isoformat(),"ended_at":row[2].isoformat() if row[2] else None,
+            "duration_seconds":row[3],"transcript":row[4] or []}
+
+@app.post("/v1/calls/{session_id}/finish")
+def finish_call_session(session_id: UUID, payload: CallFinishIn, _: None = Depends(require_owner)):
+    with connection() as conn:
+        row=conn.execute(
+            "UPDATE call_sessions SET ended_at=COALESCE(ended_at,now()), "
+            "duration_seconds=GREATEST(duration_seconds,%s) WHERE id=%s RETURNING id,started_at,ended_at,duration_seconds",
+            (payload.duration_seconds,session_id),
+        ).fetchone()
+    if not row: raise HTTPException(status_code=404,detail="Call record not found.")
+    return {"id":str(row[0]),"started_at":row[1].isoformat(),"ended_at":row[2].isoformat(),"duration_seconds":row[3]}
+
+@app.post("/v1/calls/turn")
+def call_turn(payload: CallTurnIn, _: None = Depends(require_owner)):
+    spoken = payload.text.strip()
+    with connection() as conn:
+        session=conn.execute("SELECT transcript,ended_at FROM call_sessions WHERE id=%s",(payload.session_id,)).fetchone()
+        if not session: raise HTTPException(status_code=404,detail="Call session not found.")
+        if session[1]: raise HTTPException(status_code=409,detail="This call has already ended.")
+        transcript=list(session[0] or [])
+        anchor=conn.execute(
+            "INSERT INTO messages (role,body) VALUES ('system','Private voice-call turn') RETURNING id"
+        ).fetchone()
+        history_rows=conn.execute(
+            "SELECT role,body,created_at,metadata->>'image_context' FROM messages WHERE role IN ('user','assistant') "
+            "AND archived_at IS NULL ORDER BY created_at DESC LIMIT 10"
+        ).fetchall()
+        tz_row=conn.execute("SELECT timezone FROM owner_runtime_context WHERE id=1").fetchone()
+    history=[{"role":r[0],"body":r[1][:1600],"created_at":r[2].isoformat(),"image_context":r[3]} for r in reversed(history_rows)]
+    for item in transcript[-12:]:
+        if item.get("role") in ("user","assistant") and item.get("text"):
+            history.append({"role":item["role"],"body":str(item["text"])[:1600],"created_at":item.get("at",""),"image_context":None})
+    tz_name=tz_row[0] if tz_row else DEFAULT_TIMEZONE
+    apply_spoken_call_boundary(spoken,tz_name)
+    call_context=("LIVE VOICE CALL: You are currently speaking with Umi through an active voice call, not exchanging text messages. "
+                  "Answer as if you are speaking aloud in real time. Do not say you are texting, messaging, reading a text, or sending text bubbles. "
+                  "If she asks whether you can hear her, respond as someone on the active call. Keep spoken replies natural and concise.")
+    try:
+        answer=generate_reply(spoken,str(anchor[0]),history,time_context=call_context)
+    except ProviderNotConfigured as exc:
+        raise HTTPException(status_code=503,detail=str(exc)) from exc
+    except ProviderRequestFailed as exc:
+        raise HTTPException(status_code=502,detail=str(exc)) from exc
+    bubbles=split_reply_bubbles(answer)
+    now_iso=datetime.now(timezone.utc).isoformat()
+    additions=[{"role":"user","text":spoken,"at":now_iso}]
+    additions.extend({"role":"assistant","text":bubble,"at":now_iso} for bubble in bubbles)
+    with connection() as conn:
+        conn.execute("UPDATE call_sessions SET transcript=transcript || %s::jsonb WHERE id=%s",
+                     (json.dumps(additions),payload.session_id))
+    refresh_bond()
+    return {"session_id":str(payload.session_id),"user_text":spoken,"assistant_messages":bubbles,"transcript_additions":additions}
+
+@app.post("/v1/calls/correct-transcript")
+def correct_call_transcript(payload: CallTranscriptCorrectIn, _: None = Depends(require_owner)):
+    original=payload.text.strip()
+    if not original: return {"text":"","changed":False}
+    fallback=re.sub(r"\\b(silas|sylas|sailas|sailus)\\b","Sylus",original,flags=re.I)
+    fallback=re.sub(r"\\b(hello|hey|hi) silence\\b",lambda m:m.group(1)+" Sylus",fallback,flags=re.I)
+    providers=[]
+    if settings.gemini_api_key:
+        providers.append(("Gemini","https://generativelanguage.googleapis.com/v1beta/openai",settings.gemini_api_key,settings.gemini_model))
+    if settings.groq_api_key:
+        providers.append(("Groq","https://api.groq.com/openai/v1",settings.groq_api_key,settings.groq_model))
+    if settings.openrouter_api_key:
+        providers.append(("OpenRouter-free","https://openrouter.ai/api/v1",settings.openrouter_api_key,settings.openrouter_model))
+    if settings.cloudflare_account_id and settings.cloudflare_api_token:
+        providers.append(("Cloudflare",f"https://api.cloudflare.com/client/v4/accounts/{settings.cloudflare_account_id}/ai/v1",settings.cloudflare_api_token,settings.cloudflare_chat_model))
+    prompt=("You are a conservative speech-to-text correction layer for a live conversation. Correct clear speech-recognition errors, punctuation, capitalization, and obvious grammar slips while preserving the speaker's exact meaning, tone, wording, and language. "
+            "Known proper nouns: Sylus (not Silas, Sylas, or Silence when addressed by name), Umi, Mephisto, Mephi-chan, N109 Zone, Onychinus, Luke, Kieran, Protocore, Memoria, Within Reach. "
+            "Use context to resolve phonetic misspellings. Never add ideas, answer the speaker, censor, summarize, or rewrite casual phrasing into formal prose. If uncertain, keep the original wording. Return only the corrected transcript.")
+    for _,base,key,model in providers[:3]:
+        try:
+            response=httpx.post(base.rstrip("/")+"/chat/completions",
+                headers={"Authorization":f"Bearer {key}","Content-Type":"application/json"},
+                json={"model":model,"messages":[{"role":"system","content":prompt},{"role":"user","content":original}],
+                      "temperature":0,"max_tokens":300},
+                timeout=httpx.Timeout(9.0,connect=3.0))
+            response.raise_for_status()
+            corrected=response.json()["choices"][0]["message"]["content"].strip().strip('"')
+            if corrected and len(corrected)<=len(original)*2+100:
+                return {"text":corrected,"changed":corrected!=original,"source":"ai"}
+        except (httpx.HTTPError,KeyError,IndexError,ValueError,TypeError) as exc:
+            logging.info("Call transcript correction provider unavailable (%s).",type(exc).__name__)
+    return {"text":fallback,"changed":fallback!=original,"source":"local-fallback"}
+
 
 @app.get("/v1/messages", response_model=list[MessageOut])
 def list_messages(_: None = Depends(require_owner)):
