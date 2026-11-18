@@ -160,7 +160,10 @@ def refresh_bond() -> dict:
             started_at = started_at.replace(tzinfo=timezone.utc)
         age_days = max(0.0, (datetime.now(timezone.utc) - started_at).total_seconds() / 86400)
         level, stage, summary, floor_points, next_points = _stage(points, age_days)
-        progress = 100 if level == 12 else _clamp((points-floor_points) / max(1, next_points-floor_points) * 100)
+        points_progress = 100 if level == 12 else _clamp((points-floor_points) / max(1, next_points-floor_points) * 100)
+        next_stage_min_days = STAGE_MIN_DAYS[level] if level < 12 else age_days
+        time_progress = 100 if level == 12 else _clamp(age_days / max(1, next_stage_min_days) * 100)
+        progress = min(points_progress, time_progress)
         milestones = conn.execute(
             "SELECT event_key, title, description, created_at FROM bond_events ORDER BY created_at DESC"
         ).fetchall()
@@ -178,6 +181,7 @@ def refresh_bond() -> dict:
         "commitment":state[4], "vulnerability":state[5], "emotional_safety":state[6],
         "consistency":consistency, "bond_points":points, "level":level, "level_progress":progress,
         "points_to_next_level":max(0,next_points-points) if level < 12 else 0,
+        "days_to_next_level":max(0, int(__import__("math").ceil(next_stage_min_days-age_days))) if level < 12 else 0,
         "stage":stage, "summary":summary, "next_stage":STAGES[level][2] if level < 12 else "The deepest bond",
         "all_stages":[{"level":item[0],"name":item[2],"threshold":item[1]} for item in STAGES],
         "milestones":milestone_list,
