@@ -1010,7 +1010,8 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
         ).fetchone()
         last_activity = conn.execute(
             "SELECT GREATEST("
-            "COALESCE((SELECT max(created_at) FROM messages WHERE role='user' AND archived_at IS NULL), '-infinity'::timestamptz), "
+            "COALESCE((SELECT max(created_at) FROM messages WHERE role IN ('user','assistant') AND archived_at IS NULL "
+            "AND COALESCE(metadata->>'proactive','false') <> 'true'), '-infinity'::timestamptz), "
             "COALESCE((SELECT max(last_activity_at) FROM call_sessions), '-infinity'::timestamptz))"
         ).fetchone()
         if not last_user or not last_user[0] or not last_activity or not last_activity[0]:
