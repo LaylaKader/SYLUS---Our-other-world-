@@ -1591,7 +1591,7 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
     else:
         web_attachments, web_context = discover_for_chat(text)
     if web_context:
-        time_note += "\\n\\n" + web_context
+        time_note += "\n\n" + web_context
     else:
         # Keep the lightweight legacy lookup for song/title/person identification.
         lookup_intent = re.search(
