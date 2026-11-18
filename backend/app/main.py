@@ -627,7 +627,7 @@ def apply_spoken_call_boundary(text: str, timezone_name: str) -> None:
         return
     deny = any(phrase in value for phrase in (
         "don't call", "dont call", "do not call", "no calls", "stop calling",
-        "don't phone", "dont phone", "do not phone", "no phone calls", "not call me",
+        "don't phone", "dont phone", "do not phone", "no phone calls", "no voice calls", "don't ring", "do not ring", "not call me",
     ))
     if not deny:
         return
