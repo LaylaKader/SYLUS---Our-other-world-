@@ -422,53 +422,55 @@ class ExplicitOnlyMemoryWriter:
 
 
 def split_reply_bubbles(answer: str) -> list[str]:
-    """Unwrap structured provider output so JSON envelopes never appear as chat text."""
+    """Extract conversational text from provider envelopes, including malformed trailing braces."""
     candidate = (answer or "").strip()
-    # Providers sometimes wrap a JSON object in Markdown or encode the object as
-    # a JSON string. Unwrap at most twice; never expose a valid messages envelope.
-    for _ in range(2):
+    decoder = json.JSONDecoder()
+    for _ in range(3):
         cleaned = candidate
         if cleaned.startswith("```"):
             cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", cleaned, flags=re.I).strip()
-        start, end = cleaned.find("{"), cleaned.rfind("}")
-        if start < 0 or end <= start:
-            candidate = cleaned
-            break
-        try:
-            payload = json.loads(cleaned[start:end + 1])
-        except (ValueError, TypeError, json.JSONDecodeError):
-            candidate = cleaned
-            break
-        if isinstance(payload, str):
-            candidate = payload.strip()
-            continue
-        if isinstance(payload, dict):
-            messages = payload.get("messages")
-            if isinstance(messages, list):
-                bubbles = [str(item).strip() for item in messages if isinstance(item, str) and item.strip()]
-                if bubbles:
-                    return bubbles[:4]
-                return []
-            # Some compatible models return a single response/content key,
-            # or an object whose only key is unexpectedly empty.
-            value = None
-            for key in ("response", "reply", "content", "text", ""):
-                candidate_value = payload.get(key)
-                if isinstance(candidate_value, str) and candidate_value.strip():
-                    value = candidate_value
-                    break
-            if value is None and len(payload) == 1:
-                only_value = next(iter(payload.values()))
-                if isinstance(only_value, str) and only_value.strip():
-                    value = only_value
-            if value is not None:
-                candidate = value.strip()
+        # Some providers append an extra brace or explanatory text after valid JSON.
+        # raw_decode stops at the end of the first complete value, unlike json.loads.
+        parsed = None
+        for index, char in enumerate(cleaned):
+            if char != "{":
                 continue
-            candidate = cleaned
-            break
-        candidate = cleaned
-        break
-    return [candidate] if candidate else []
+            try:
+                parsed, _ = decoder.raw_decode(cleaned[index:])
+                break
+            except (ValueError, TypeError):
+                continue
+        if isinstance(parsed, str):
+            candidate = parsed.strip()
+            continue
+        if isinstance(parsed, dict):
+            messages = parsed.get("messages")
+            if isinstance(messages, list):
+                return [item.strip() for item in messages if isinstance(item, str) and item.strip()][:4]
+            for key in ("response", "reply", "content", "text"):
+                value = parsed.get(key)
+                if isinstance(value, str) and value.strip():
+                    candidate = value.strip()
+                    break
+            else:
+                # A malformed envelope must never be shown verbatim in chat.
+                return []
+            continue
+        # A provider occasionally emits a JSON-encoded array without an object wrapper.
+        array_match = re.search(r'"messages"\s*:\s*(\[)', cleaned)
+        if array_match:
+            try:
+                values, _ = decoder.raw_decode(cleaned[array_match.start(1):])
+                if isinstance(values, list):
+                    return [item.strip() for item in values if isinstance(item, str) and item.strip()][:4]
+            except (ValueError, TypeError):
+                pass
+        # Plain natural-language text remains untouched.
+        if cleaned and not cleaned.startswith("{") and not cleaned.startswith("`"):
+            return [cleaned]
+        return []
+    return [candidate] if candidate and not candidate.startswith("{") else []
+
 
 
 def retrieve_character_knowledge(query: str, limit: int = 8) -> str:
@@ -541,16 +543,7 @@ def generate_proactive_bubbles(history: list[dict], time_context: str = "") -> l
         memories=memories,
         user_text=instruction,
     )
-    try:
-        start, end = raw.find("{"), raw.rfind("}")
-        data = json.loads(raw[start:end + 1]) if start >= 0 and end > start else {}
-        values = data.get("messages", []) if isinstance(data, dict) else []
-        if not isinstance(values, list):
-            return []
-        bubbles = [str(value).strip() for value in values if isinstance(value, str) and value.strip()][:10]
-        return bubbles
-    except (ValueError, TypeError, json.JSONDecodeError):
-        return ["I thought I would leave you a note rather than let the silence stretch any further."]
+    return split_reply_bubbles(raw)[:1]
 
 
 def load_emotion_state() -> EmotionState:
