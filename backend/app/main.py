@@ -1407,7 +1407,7 @@ def discuss_uploaded_image(asset_id: UUID, _: None = Depends(require_owner)):
 
 @app.post("/v1/media/upload", response_model=ChatTurnOut)
 def upload_image(file: UploadFile = File(...), _: None = Depends(require_owner)):
-    allowed = {"image/jpeg": ("jpg", b"\\xff\\xd8\\xff"), "image/png": ("png", b"\\x89PNG\\r\\n\\x1a\\n"), "image/webp": ("webp", b"RIFF")}
+    allowed = {"image/jpeg": ("jpg", b"\xff\xd8\xff"), "image/png": ("png", b"\x89PNG\r\n\x1a\n"), "image/webp": ("webp", b"RIFF")}
     if file.content_type not in allowed:
         raise HTTPException(status_code=415, detail="Please upload a JPG, PNG, or WebP image.")
     data = file.file.read(8 * 1024 * 1024 + 1)
@@ -1572,11 +1572,11 @@ def _generate_and_store_assistant_image(prompt: str, caption: str = "For you.") 
     except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
         logging.error("Private image generation failed: %s", str(exc)[:300])
         raise HTTPException(status_code=502, detail="The image generator could not create the picture this time.") from exc
-    if image_bytes.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):
+    if image_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
         content_type, extension = "image/png", "png"
-    elif image_bytes.startswith(b"\\xff\\xd8\\xff"):
+    if image_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
         content_type, extension = "image/jpeg", "jpg"
-    elif image_bytes.startswith(b"RIFF") and image_bytes[8:12] == b"WEBP":
+    if image_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
         content_type, extension = "image/webp", "webp"
     else:
         content_type, extension = "image/png", "png"
