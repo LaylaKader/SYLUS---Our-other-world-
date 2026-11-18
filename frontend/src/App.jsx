@@ -1055,13 +1055,11 @@ function App() {
       form.append('file', file);
       const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/media/upload`, { method: 'POST', credentials: 'include', body: form });
       if (!response.ok) { const failure = await response.json().catch(() => ({})); throw new Error(failure.detail || 'Image upload failed.'); }
-      const message = await response.json();
-      setMessages(current => [...current, message]);
-      setNotice('Image saved. Sylus is inspecting it…');
+      const turn = await response.json();
       await refreshMessages();
-      setNotice(timeContext?.vision_ready
-        ? 'Sylus has inspected the image and saved what he can see.'
-        : 'Image saved, but image understanding is not enabled. Enable it in Settings before asking Sylus about the picture.');
+      setNotice(turn.assistant_messages?.length
+        ? 'Image shared. Sylus has replied.'
+        : 'Image saved. Sylus could not reply just now; you can try again in a moment.');
     } catch (error) { setNotice(error.message); }
     finally { setUploadingImage(false); if (imageInputRef.current) imageInputRef.current.value = ''; }
   }
