@@ -1630,9 +1630,9 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
     # If the model slips into a fake "still searching/loading" line, the result
     # cards are already attached. Keep the character voice but complete the request.
     if reused_search_results and re.search(
-        r"\\b(?:wait|give me (?:a )?minute|still loading|loading\\.\\.\\.|"
+        r"\b(?:wait|give me (?:a )?minute|still loading|loading\.\.\.|"
         r"let me (?:find|look|search)|i(?:'| a)m (?:still )?(?:looking|searching)|"
-        r"i'll (?:send|find|look)|you'll have to wait)\\b",
+        r"i'll (?:send|find|look)|you'll have to wait)\b",
         answer, flags=re.I,
     ):
         answer = "There. Try not to look so pleased with yourself."
