@@ -38,8 +38,8 @@ def refresh_bond() -> dict:
             r"\bwithin reach\b", r"\bmephisto\b", r"\bluke and kieran\b",
             r"\bn109\b", r"\bonychinus\b", r"\bmemoria\b",
         ])
-        affection = min(100, affection_hits * 7 + min(user_count, 40))
-        trust = min(100, trust_hits * 12 + min(turns, 30) // 2)
+        affection = min(100, affection_hits * 12 + min(turns, 30) // 5)
+        trust = min(100, trust_hits * 14 + min(turns, 40) // 4)
         familiarity = min(100, turns * 2 + min(shared_hits, 12) * 3)
         experiences = min(100, shared_hits * 8 + min(turns, 30))
         score = round(affection * .30 + trust * .25 + familiarity * .20 + experiences * .25)
