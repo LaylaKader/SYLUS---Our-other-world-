@@ -516,23 +516,24 @@ def generate_proactive_bubbles(history: list[dict], time_context: str = "") -> l
     persona += load_n109_life_context()
     persona += "\n\nSTICKER USE: You may include one of these expressive chibi Mephisto stickers when it genuinely fits: 〔sticker:waiting〕, 〔sticker:peeking〕, 〔sticker:sneaky〕, 〔sticker:mischief〕, 〔sticker:smile〕, 〔sticker:timeout〕, 〔sticker:sleepy〕, 〔sticker:laugh〕, 〔sticker:shocked〕, 〔sticker:thinking〕, 〔sticker:wave〕, 〔sticker:sulk〕, 〔sticker:proud〕, 〔sticker:hiding〕, 〔sticker:heart-hug〕. The crow stickers are playful reactions, not literal events. Use sparingly and never as filler.\n"
     persona += (
-        "\n\nPROACTIVE INITIATIVE: You are choosing to reach out first because the owner has been quiet. "
-        "You do not need a special event or unfinished topic as an excuse. A natural, affectionate check-in, "
-        "a small thought, gentle teasing, asking how the owner's day is going, or saying you would like her company "
-        "are all valid reasons to text. Use saved memories and recent conversation when they fit, but do not force a reference. "
-        "If this is a follow-up after earlier unanswered messages, keep it low-pressure, vary the wording, and do not repeat the same question. "
-        "Never guilt, pressure, or demand a reply. Never invent off-screen events, noises, reports, sightings, activities, or mysterious happenings. "
-        "Do not remain silent merely because there is no special topic; a simple sincere check-in is welcome. "
-        "Usually send one concise message. Send zero only if the recent context clearly makes contacting the owner inappropriate."
+        "\n\nPROACTIVE INITIATIVE: You have your own ongoing life, responsibilities, interests, and relationships in N109. "
+        "Choose independently whether you genuinely want to contact Umi now. You may text at any hour, including very late or very early, "
+        "when a thought, memory, concern, amusement, longing, or a natural opening gives you a reason. There is no prescribed message interval, "
+        "minimum waiting period, daily quota, or cooldown. Do not send a message merely because a poll happened. Sometimes you will be occupied "
+        "and say nothing; sometimes you will reach out unexpectedly. Let the simulated N109 clock and current emotional tone influence what "
+        "you might be doing, without inventing specific off-screen incidents or pretending fictional events are canon. "
+        "Use memories naturally, do not repeat recent messages, never guilt or pressure Umi, and never demand a reply. "
+        "Return zero messages when you have nothing natural to say."
     )
     persona += (
         f"\n\nCurrent emotional tone: {emotion.dominant_mood()}. {emotion.style_directive()} "
-        "Let it subtly influence the wording without naming the emotion."
+        "Let it subtly influence whether you reach out and how you phrase it; do not name the emotion."
     )
     instruction = (
-        "Write one natural, personal first message or follow-up. A simple check-in is acceptable; do not wait for a unique event. "
-        "Return strict JSON only as {\"messages\":[\"first text\"]}. Normally return exactly one concise message. "
-        "Return an empty list only if the recent context makes contact inappropriate."
+        "Decide whether Sylus would naturally initiate contact at this moment. Consider the current owner-local time, "
+        "the simulated N109 clock, his independent life, his emotional state, recent messages, and whether he has already reached out. "
+        "Do not obey a fixed schedule. Return strict JSON only as {\"messages\":[\"one concise message\"]} or {\"messages\":[]} "
+        "if silence feels more natural. Never fabricate an urgent incident just to create a reason to text."
     )
     raw = OpenAICompatibleChatModel().respond(
         persona=persona,
