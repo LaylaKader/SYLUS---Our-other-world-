@@ -542,6 +542,10 @@ def erase_all_private_data(_: None = Depends(require_owner)):
     """Permanently erase all conversation messages, attachments, and saved memories."""
     with connection() as conn:
         conn.execute("DELETE FROM media_assets")
+        conn.execute("DELETE FROM call_sessions")
+        conn.execute("DELETE FROM visual_reference_images")
+        conn.execute("DELETE FROM visual_identities WHERE category='other'")
+        conn.execute("UPDATE visual_identities SET notes='', status='confirmed', updated_at=now() WHERE category IN ('sylus','owner')")
         message_count = conn.execute("DELETE FROM messages RETURNING id").fetchall()
         memory_count = conn.execute("DELETE FROM memories RETURNING id").fetchall()
         conn.execute("DELETE FROM bond_events")
