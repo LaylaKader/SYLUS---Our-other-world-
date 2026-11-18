@@ -1849,9 +1849,22 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
         for r in reversed(history_rows)
     ]
     try:
-        answer = generate_reply(text, str(user_rows[-1][0]), history, time_context=time_note)
-        answer, model_image_prompt = extract_image_directive(answer)
-        answer, model_link_query = extract_link_directive(answer)
+        # Admin search/media tasks should not depend on an LLM choosing to speak.
+        # The search service has already done the real work and attached the actual results.
+        if admin_override and web_attachments:
+            answer = f"Found {len(web_attachments)} result{'s' if len(web_attachments) != 1 else ''}. They're attached below."
+            model_image_prompt = None
+            model_link_query = None
+        elif admin_override and web_context and not web_attachments:
+            answer = "I searched online, but no usable public results were returned. I haven't attached or invented anything."
+            model_image_prompt = None
+            model_link_query = None
+        else:
+            answer = generate_reply(text, str(user_rows[-1][0]), history, time_context=time_note)
+            answer, model_image_prompt = extract_image_directive(answer)
+            answer, model_link_query = extract_link_directive(answer)
+        if admin_override and not (answer or "").strip():
+            answer = "I couldn't complete that admin request. No result or action was produced."
     except ProviderNotConfigured as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ProviderRequestFailed as exc:
