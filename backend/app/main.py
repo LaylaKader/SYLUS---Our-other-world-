@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import logging
 import subprocess
+import tempfile
 from collections import defaultdict, deque
 from time import time
 from datetime import datetime, timezone
@@ -680,17 +681,32 @@ def create_speech(payload: SpeechIn, _: None = Depends(require_owner)):
         if not audio_bytes or len(audio_bytes) < 256 or not (content_type.startswith("audio/") or is_mp3) or not is_mp3:
             logging.error("Voice provider returned unusable audio: content_type=%s bytes=%s prefix=%s", content_type, len(audio_bytes), audio_bytes[:32].hex())
             raise HTTPException(status_code=502, detail="The voice provider returned an empty or invalid audio stream. Check the voice ID, provider response, and usage allowance.")
-        # Normalize provider output to a baseline MP3 profile for reliable Android/browser playback.
-        normalized = subprocess.run(
-            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "mp3", "-i", "pipe:0",
-             "-vn", "-c:a", "pcm_s16le", "-ar", "24000", "-ac", "1", "-f", "wav", "pipe:1"],
-            input=audio_bytes, capture_output=True, timeout=25, check=False,
-        )
-        if normalized.returncode != 0 or len(normalized.stdout) < 512 or not normalized.stdout.startswith(b"RIFF") or normalized.stdout[8:12] != b"WAVE":
-            logging.error("Voice audio normalization failed: exit=%s stderr=%s prefix=%s", normalized.returncode, normalized.stderr[:300].decode("utf-8", "replace"), normalized.stdout[:16].hex())
-            raise HTTPException(status_code=502, detail="The voice provider returned audio, but it could not be prepared for playback. Please try again.")
-        audio_bytes = normalized.stdout
-        logging.info("Voice audio normalized to PCM WAV for browser compatibility: bytes=%s", len(audio_bytes))
+        # Write WAV to a seekable temporary file. WAV written to stdout/pipe can
+        # contain an unknown-length RIFF data chunk, which some mobile browsers reject
+        # with MEDIA_ERR_SRC_NOT_SUPPORTED even though the bytes begin with RIFF/WAVE.
+        wav_path = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as wav_file:
+                wav_path = wav_file.name
+            normalized = subprocess.run(
+                ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "mp3", "-i", "pipe:0",
+                 "-vn", "-c:a", "pcm_s16le", "-ar", "24000", "-ac", "1", "-f", "wav", wav_path],
+                input=audio_bytes, capture_output=True, timeout=25, check=False,
+            )
+            if normalized.returncode != 0:
+                logging.error("Voice audio normalization failed: exit=%s stderr=%s", normalized.returncode, normalized.stderr[:300].decode("utf-8", "replace"))
+                raise HTTPException(status_code=502, detail="The voice provider returned audio, but it could not be prepared for playback. Please try again.")
+            audio_bytes = Path(wav_path).read_bytes()
+            if len(audio_bytes) < 512 or not audio_bytes.startswith(b"RIFF") or audio_bytes[8:12] != b"WAVE":
+                logging.error("Voice audio normalization produced an invalid WAV file: bytes=%s prefix=%s", len(audio_bytes), audio_bytes[:16].hex())
+                raise HTTPException(status_code=502, detail="The voice provider returned audio, but it could not be prepared for playback. Please try again.")
+            logging.info("Voice audio normalized to finalized PCM WAV file: bytes=%s riff_size=%s", len(audio_bytes), int.from_bytes(audio_bytes[4:8], "little"))
+        finally:
+            if wav_path:
+                try:
+                    os.unlink(wav_path)
+                except FileNotFoundError:
+                    pass
     except subprocess.TimeoutExpired as exc:
         logging.error("Voice audio normalization timed out.")
         raise HTTPException(status_code=504, detail="The generated voice took too long to prepare. Please try again.") from exc
