@@ -221,7 +221,7 @@ def classify_search_request(text: str) -> tuple[str, str] | None:
     wants_link = re.search(r"\b(?:search|look up|find|browse|give me|send me|share)\b.{0,100}\b(?:websites?|webpages?|links?|articles?|sources?|pages?)\b|\b(?:latest|current|recent)\b.{0,80}\b(?:news|updates|price|release|event)\b", value, re.I)
     explicit_search = re.search(r"\b(?:search the web|google it|look it up online|find online|search online|browse the web)\b", value, re.I)
     if wants_image:
-        query = re.sub(r"^(?:please\s+)?(?:show|find|search|look for|get|send me)\s+", "", value, flags=re.I)
+        query = re.sub(r"^(?:please\s+)?(?:show me|find me|send me|show|find|search|look for|get)\s+", "", value, flags=re.I)
         return "image", query[:220]
     if wants_video:
         return "video", value[:220]
@@ -234,7 +234,7 @@ def is_search_followup(text: str) -> bool:
     """Short deictic replies that refer to the most recent attached search results."""
     value = (text or "").strip().lower()
     return bool(re.fullmatch(
-        r"(?:yeah\s+)?(?:show me|send (?:it|that|the image|the picture)|show (?:it|that)|"
+        r"(?:yeah[, ]+)?(?:show me|send (?:it|that|the image|the picture)|show (?:it|that)|"
         r"where is it|where are they|open (?:it|that)|give it to me|the image|the picture|"
         r"i want to see (?:it|that)|let me see|yes|yeah|yep|okay|ok)[.!? ]*",
         value,
