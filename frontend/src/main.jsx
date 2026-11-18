@@ -56,13 +56,18 @@ function showFatalStartupError(message) {
   root.replaceChildren(panel);
 }
 
+// Runtime errors must never replace the mounted app. In particular, a failed
+// image decode or a rejected background request must not blank the Settings page.
+// React rendering failures are handled by StartupErrorBoundary above.
 window.addEventListener('error', event => {
+  if (event.target && event.target !== window) {
+    console.warn('SYLUS resource failed to load:', event.target?.src || event.target?.href || event.target);
+    return;
+  }
   console.error('SYLUS uncaught browser error:', event.error || event.message);
-  showFatalStartupError(event.error?.stack || event.message || 'Unknown browser error');
 });
 window.addEventListener('unhandledrejection', event => {
-  console.error('SYLUS unhandled promise rejection:', event.reason);
-  showFatalStartupError(event.reason?.stack || event.reason?.message || String(event.reason));
+  console.error('SYLUS unhandled promise rejection (app kept mounted):', event.reason);
 });
 
 const rootElement = document.getElementById('root');
