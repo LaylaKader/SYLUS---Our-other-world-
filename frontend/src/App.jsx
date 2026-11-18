@@ -318,7 +318,7 @@ function App() {
         context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
         bitmap.close?.();
         const blob = await new Promise((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('Could not convert this photo.')), 'image/jpeg', 0.88));
-        uploadFile = new File([blob], (file.name || 'reference').replace(/\\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+        uploadFile = new File([blob], (file.name || 'reference').replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
       } catch (imageError) {
         if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('This phone image format could not be read. Please choose a JPG or PNG image.');
       }
@@ -711,6 +711,7 @@ function App() {
   async function commitCallTranscript() {
     if (!callActiveRef.current || callProcessingRef.current) return;
     const phrase = callFinalTranscriptRef.current.trim(); if (!phrase) return;
+    const alternatives = callFinalAlternativesRef.current.slice(-6);
     callFinalTranscriptRef.current = '';
     callFinalAlternativesRef.current = [];
     if (callSilenceTimerRef.current) window.clearTimeout(callSilenceTimerRef.current);
@@ -718,7 +719,7 @@ function App() {
     let corrected=phrase;
     if(callCorrectionEnabled){
       setCallStatus('Cleaning up the transcription…');
-      try{const r=await fetch(apiUrl.replace(/\/$/, '')+'/v1/calls/correct-transcript',{method:'POST',headers,credentials:'include',body:JSON.stringify({text:phrase,alternatives:callFinalAlternativesRef.current.slice(-6),session_id:callSessionIdRef.current})});if(r.ok){const v=await r.json();if(v.text?.trim())corrected=v.text.trim();}}catch{}
+      try{const r=await fetch(apiUrl.replace(/\/$/, '')+'/v1/calls/correct-transcript',{method:'POST',headers,credentials:'include',body:JSON.stringify({text:phrase,alternatives,session_id:callSessionIdRef.current})});if(r.ok){const v=await r.json();if(v.text?.trim())corrected=v.text.trim();}}catch{}
     }
     setCallTranscript(corrected);sendCallUtterance(corrected);
   }
@@ -1245,7 +1246,7 @@ function App() {
                 <div className="field-help">{image.source==='auto'?'Auto-saved':'Uploaded'}</div>
               </div>)}
             </div>
-            <label className="secondary-button" style={{display:'inline-flex',alignItems:'center',cursor:'pointer'}}>Add reference photo<input className="visually-hidden" type="file" accept="image/*" disabled={!connected||visualBusy} onChange={e=>{const file=e.target.files?.[0];if(file)uploadVisualReference(person.id,file);e.target.value='';}}/></label>
+            <label className="secondary-button" style={{display:'inline-flex',alignItems:'center',cursor:'pointer'}}>{visualBusy ? 'Uploading…' : 'Add reference photo'}<input className="visually-hidden" type="file" accept="image/*" disabled={!connected||visualBusy} onChange={e=>{const file=e.target.files?.[0];if(file)uploadVisualReference(person.id,file);e.target.value='';}}/></label>
             {visualUploadStatus[person.id] && <div className="field-help" role="status" aria-live="polite">{visualUploadStatus[person.id]}</div>}
             <textarea className="settings-input memory-textarea" rows={2} value={visualNoteDrafts[person.id] ?? person.notes ?? ''} onChange={e=>setVisualNoteDrafts(v=>({...v,[person.id]:e.target.value}))} placeholder="Appearance notes for Sylus to remember (hair, style, usual outfit)…"/>
             <button className="text-action" onClick={()=>saveVisualIdentityNotes(person.id,visualNoteDrafts[person.id] ?? person.notes ?? '')}>Save notes</button>
