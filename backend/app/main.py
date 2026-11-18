@@ -280,7 +280,18 @@ def erase_all_private_data(_: None = Depends(require_owner)):
         conn.execute("DELETE FROM media_assets")
         message_count = conn.execute("DELETE FROM messages RETURNING id").fetchall()
         memory_count = conn.execute("DELETE FROM memories RETURNING id").fetchall()
-    return {"erased": True, "messages_deleted": len(message_count), "memories_deleted": len(memory_count)}
+        conn.execute("DELETE FROM bond_events")
+        conn.execute(
+            "UPDATE bond_state SET affection=0, trust=0, familiarity=0, shared_experiences=0, "
+            "commitment=0, vulnerability=0, emotional_safety=0, consistency=0, bond_points=0, level=1, "
+            "stage='A First Encounter', summary='A beginning. Neither of you knows yet what this connection may become.', "
+            "milestones='[]'::jsonb, total_user_messages=0, total_shared_turns=0, updated_at=now() WHERE id=1"
+        )
+        conn.execute(
+            "UPDATE emotion_states SET dimensions='{}'::jsonb, dominant_mood='composed', "
+            "rationale='Owner reset all private data.', confidence=1, version=version+1, updated_at=now() WHERE id=1"
+        )
+    return {"erased": True, "messages_deleted": len(message_count), "memories_deleted": len(memory_count), "bond_reset": True, "emotion_reset": True}
 
 
 @app.post("/v1/messages", response_model=MessageOut)
