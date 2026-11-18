@@ -159,6 +159,30 @@ def refresh_bond() -> dict:
         if started_at.tzinfo is None:
             started_at = started_at.replace(tzinfo=timezone.utc)
         age_days = max(0.0, (datetime.now(timezone.utc) - started_at).total_seconds() / 86400)
+        unlocked_index = max(index for index, minimum_days in enumerate(STAGE_MIN_DAYS) if age_days >= minimum_days)
+        point_cap = STAGES[min(unlocked_index + 1, len(STAGES) - 1)][1] - 1 if unlocked_index < 11 else 10**9
+        metric_caps = (
+            min(100, 25 + int(age_days * 2)),
+            min(100, 12 + int(age_days * 1.5)),
+            min(100, 20 + int(age_days * 2.5)),
+            min(100, 15 + int(age_days * 2)),
+            min(100, 8 + int(age_days * 0.7)),
+            min(100, 8 + int(age_days * 1.0)),
+            min(100, 12 + int(age_days * 1.5)),
+        )
+        conn.execute(
+            "UPDATE bond_state SET affection=LEAST(affection,%s), trust=LEAST(trust,%s), "
+            "familiarity=LEAST(familiarity,%s), shared_experiences=LEAST(shared_experiences,%s), "
+            "commitment=LEAST(commitment,%s), vulnerability=LEAST(vulnerability,%s), "
+            "emotional_safety=LEAST(emotional_safety,%s), bond_points=LEAST(bond_points,%s) WHERE id=1",
+            (*metric_caps, point_cap),
+        )
+        state = conn.execute(
+            "SELECT affection, trust, familiarity, shared_experiences, commitment, vulnerability, "
+            "emotional_safety, consistency, bond_points, level, stage, summary, milestones, "
+            "total_user_messages, total_shared_turns, updated_at, progression_started_at FROM bond_state WHERE id=1"
+        ).fetchone()
+        points = int(state[8] or 0)
         level, stage, summary, floor_points, next_points = _stage(points, age_days)
         points_progress = 100 if level == 12 else _clamp((points-floor_points) / max(1, next_points-floor_points) * 100)
         next_stage_min_days = STAGE_MIN_DAYS[level] if level < 12 else age_days
