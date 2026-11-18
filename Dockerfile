@@ -9,6 +9,7 @@ RUN mkdir -p public/stickers/assets && unzip -q public/stickers/sylus-49-sticker
 RUN npm run build
 
 FROM python:3.12-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     FRONTEND_DIST_DIR=/srv/frontend
