@@ -198,7 +198,7 @@ class OpenAICompatibleChatModel(ChatModel):
                 "response_format": {"type": "json_object"},
             }
             try:
-                response = httpx.post(endpoint, headers=headers, json=payload, timeout=45.0)
+                response = httpx.post(endpoint, headers=headers, json=payload, timeout=httpx.Timeout(22.0, connect=5.0))
                 if response.status_code in (400, 422):
                     fallback_payload = {key: value for key, value in payload.items() if key != "response_format"}
                     response = httpx.post(endpoint, headers=headers, json=fallback_payload, timeout=45.0)
@@ -231,6 +231,9 @@ class OpenAICompatibleChatModel(ChatModel):
                 continue
             except (httpx.HTTPError, KeyError, IndexError, ValueError, TypeError) as exc:
                 failures.append(f"{provider_name}: {type(exc).__name__}")
+                if isinstance(exc, httpx.TimeoutException):
+                    # Avoid making every new message wait on the same slow provider.
+                    _provider_cooldowns[cooldown_key] = time.monotonic() + 90.0
                 logging.warning("Sylus provider request failed provider=%s error=%s", provider_name, type(exc).__name__)
                 continue
 
