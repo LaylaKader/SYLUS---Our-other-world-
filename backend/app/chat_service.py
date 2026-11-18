@@ -242,12 +242,12 @@ class OpenAICompatibleChatModel(ChatModel):
                     quota_text = detail.lower()
                     daily_quota = any(term in quota_text for term in (
                         "per day", "daily quota", "tokens per day", "perday",
-                        "per_day", "requestsperday", "tokensperday", "daily limit",
+                        "per_day", "requestsperday", "tokensperday", "daily limit", "daily token limit",
                     ))
                     try:
-                        cooldown_seconds = float(retry_after) if retry_after else (21600.0 if daily_quota else 60.0)
+                        cooldown_seconds = float(retry_after) if retry_after else (43200.0 if daily_quota else 60.0)
                     except (TypeError, ValueError):
-                        cooldown_seconds = 21600.0 if daily_quota else 60.0
+                        cooldown_seconds = 43200.0 if daily_quota else 60.0
                     _provider_cooldowns[cooldown_key] = time.monotonic() + max(1.0, min(cooldown_seconds, 86400.0))
                 elif status in (402, 403):
                     _provider_cooldowns[cooldown_key] = time.monotonic() + 3600.0
