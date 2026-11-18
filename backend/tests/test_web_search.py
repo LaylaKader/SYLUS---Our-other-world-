@@ -78,3 +78,14 @@ def test_ordinary_music_chat_does_not_trigger_search():
 def test_self_referential_picture_request_searches_for_sylus():
     assert classify_search_request("Send me a picture of you.") == ("image", "a picture of Sylus Love and Deepspace")
     assert classify_search_request("Show me a photo of him.") == ("image", "a photo of Sylus Love and Deepspace")
+
+
+def test_media_result_count_defaults_to_one_and_respects_explicit_count():
+    from app.web_search import requested_result_limit
+    assert requested_result_limit("Send me one picture") == 1
+    assert requested_result_limit("Send me a picture") == 1
+    assert requested_result_limit("Find me one video") == 1
+    assert requested_result_limit("Give me one song") == 1
+    assert requested_result_limit("Send me three pictures") == 3
+    assert requested_result_limit("Find two songs") == 2
+    assert requested_result_limit("Show me several videos") == 3
