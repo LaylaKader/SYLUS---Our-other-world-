@@ -377,7 +377,7 @@ def is_search_followup(text: str) -> bool:
         r"(?:yeah[, ]+)?(?:show me|send me (?:it|that|the image|the picture|the link)|send (?:it|that|the image|the picture|the link)|show (?:it|that)|"
         r"where is it|where are they|open (?:it|that)|give it to me|the image|the picture|the link|"
         r"i want to see (?:it|that)|let me see|i'?m waiting|still waiting|your choice|surprise me|"
-        r"yes|yeah|yep|okay|ok)[.!~ ]*",
+        r"yes|yeah|yep|okay|ok)[.!?~ ]*",
         value,
     ))
 
