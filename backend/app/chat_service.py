@@ -475,6 +475,7 @@ def generate_proactive_bubbles(history: list[dict], time_context: str = "") -> l
     emotion = load_emotion_state()
     memories = PostgresMemoryRetriever().retrieve(query=recent_owner_text, limit=8)
     persona = load_persona() + "\n\n" + time_context
+    persona += load_visual_reference_context()
     persona += load_bond_context()
     persona += load_n109_life_context()
     persona += "\n\nSTICKER USE: You may include one of these expressive chibi Mephisto stickers when it genuinely fits: 〔sticker:waiting〕, 〔sticker:peeking〕, 〔sticker:sneaky〕, 〔sticker:mischief〕, 〔sticker:smile〕, 〔sticker:timeout〕, 〔sticker:sleepy〕, 〔sticker:laugh〕, 〔sticker:shocked〕, 〔sticker:thinking〕, 〔sticker:wave〕, 〔sticker:sulk〕, 〔sticker:proud〕, 〔sticker:hiding〕, 〔sticker:heart-hug〕. The crow stickers are playful reactions, not literal events. Use sparingly and never as filler.\n"
@@ -665,6 +666,38 @@ def load_bond_context() -> str:
         )
     except Exception:
         logging.exception("Could not load relationship continuity context.")
+        return ""
+
+
+def load_visual_reference_context() -> str:
+    """Load owner-approved appearance notes without performing real-person identity matching."""
+    try:
+        with connection() as conn:
+            identities = conn.execute(
+                "SELECT display_name, category, notes FROM visual_identities WHERE status='confirmed' ORDER BY category"
+            ).fetchall()
+            image_notes = conn.execute(
+                "SELECT i.display_name, i.category, r.analysis_notes FROM visual_reference_images r "
+                "JOIN visual_identities i ON i.id=r.identity_id "
+                "WHERE i.status='confirmed' AND r.analysis_notes<>'' ORDER BY r.created_at DESC LIMIT 12"
+            ).fetchall()
+        lines = []
+        for name, category, notes in identities:
+            if notes:
+                lines.append(f"- {name} ({category}) owner notes: {str(notes)[:1200]}")
+        for name, category, notes in image_notes:
+            lines.append(f"- {name} ({category}) reference-photo description: {str(notes)[:1200]}")
+        if not lines:
+            return ""
+        return (
+            "\n\nOWNER-MANAGED VISUAL REFERENCE NOTES (private descriptive context; use only when relevant):\n"
+            + "\n".join(lines)
+            + "\nThese are descriptions of labelled reference photos, not proof of who appears in a new image. "
+            "Never identify Umi or another real person by comparing faces or claiming a match. Use real-person labels only when Umi explicitly tells you who a picture shows. "
+            "For fictional Sylus, use his labelled reference collection to recognise your own depiction and speak in first person."
+        )
+    except Exception:
+        logging.exception("Could not load visual reference context.")
         return ""
 
 
