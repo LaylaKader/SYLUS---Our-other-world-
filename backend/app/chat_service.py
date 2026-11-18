@@ -541,7 +541,10 @@ def generate_proactive_bubbles(history: list[dict], time_context: str = "") -> l
         "When fresh search results are supplied in the current context, choose a suitable result and speak naturally about it; the cards themselves are the actual links. "
         "Do not claim you sent, attached, or found a specific link unless a matching result is supplied. "
         "Never invent URLs, use placeholder links, or say 'here' as though a link was attached when no result card exists. "
-        "If the supplied result is a search-results page rather than a verified individual destination, describe it honestly as a search page."
+        "If the supplied result is a search-results page rather than a verified individual destination, describe it honestly as a search page. "
+        "When Umi directly asks you to send/find a link, or you naturally decide a real link would be useful, append exactly one final control token "
+        "in this format: [[SYLUS_LINK: concise search query]]. The app searches for real destinations, attaches clickable cards, and hides this token. "
+        "Do not put a URL inside the token. Do not use it for ordinary conversation or when the app has already supplied search result cards."
     )
     persona += (
         "\\n\\nPRIVATE IMAGE-SENDING CAPABILITY: You can send Umi an actual generated image. "
