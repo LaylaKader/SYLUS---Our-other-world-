@@ -615,7 +615,7 @@ def apply_spoken_call_boundary(text: str, timezone_name: str) -> None:
     if not value:
         return
     resume = any(phrase in value for phrase in (
-        "you can call again", "call me again", "you may call me", "calls are okay again",
+        "you can call again", "call me again", "call me now", "you can call now", "you may call me", "calls are okay again",
         "it's okay to call", "it is okay to call", "i'm okay with calls", "im okay with calls",
         "allow calls again", "resume calls",
     ))
@@ -768,20 +768,22 @@ def poll_proactive_call_invite() -> dict:
     now_utc = datetime.now(timezone.utc)
     with connection() as conn:
         row = conn.execute(
-            "SELECT calls_enabled, no_call_until, quiet_start, quiet_end, min_idle_minutes, "
+            "SELECT calls_enabled, no_call_until, no_call_reason, quiet_start, quiet_end, min_idle_minutes, "
             "min_interval_minutes, timezone, last_call_invite_at FROM proactive_contact_settings "
             "WHERE id = 1 FOR UPDATE"
         ).fetchone()
         if not row or not row[0]:
             return {"sent": False, "reason": "calls_disabled"}
         no_call_until = row[1]
+        if row[2] and not no_call_until:
+            return {"sent": False, "reason": "owner_requested_no_calls", "detail": row[2]}
         if no_call_until and no_call_until > now_utc:
-            return {"sent": False, "reason": "owner_requested_no_calls", "until": no_call_until.isoformat(), "detail": None}
+            return {"sent": False, "reason": "owner_requested_no_calls", "until": no_call_until.isoformat(), "detail": row[2]}
         if no_call_until and no_call_until <= now_utc:
             conn.execute(
                 "UPDATE proactive_contact_settings SET no_call_until = NULL, no_call_reason = NULL WHERE id = 1"
             )
-        tz_name = row[6] or DEFAULT_TIMEZONE
+        tz_name = row[7] or DEFAULT_TIMEZONE
         try:
             zone = ZoneInfo(tz_name)
         except Exception:
@@ -789,7 +791,7 @@ def poll_proactive_call_invite() -> dict:
             tz_name = DEFAULT_TIMEZONE
         local_now = now_utc.astimezone(zone)
         clock = local_now.time().replace(tzinfo=None)
-        quiet_start, quiet_end = row[2], row[3]
+        quiet_start, quiet_end = row[3], row[4]
         quiet = False if quiet_start == quiet_end else (
             quiet_start <= clock < quiet_end if quiet_start < quiet_end
             else clock >= quiet_start or clock < quiet_end
@@ -803,10 +805,10 @@ def poll_proactive_call_invite() -> dict:
         if not last_activity:
             return {"sent": False, "reason": "no_conversation"}
         idle_minutes = (now_utc - last_activity[0]).total_seconds() / 60
-        if idle_minutes < row[4]:
+        if idle_minutes < row[5]:
             return {"sent": False, "reason": "not_idle_long_enough"}
-        last_invite = row[7]
-        if last_invite and (now_utc - last_invite).total_seconds() < row[5] * 60:
+        last_invite = row[8]
+        if last_invite and (now_utc - last_invite).total_seconds() < row[6] * 60:
             return {"sent": False, "reason": "call_invitation_cooldown"}
         subscriptions = conn.execute("SELECT count(*) FROM push_subscriptions").fetchone()[0]
         if not subscriptions:
