@@ -89,3 +89,8 @@ def test_media_result_count_defaults_to_one_and_respects_explicit_count():
     assert requested_result_limit("Send me three pictures") == 3
     assert requested_result_limit("Find two songs") == 2
     assert requested_result_limit("Show me several videos") == 3
+
+def test_admin_search_online_picture_request_cleans_query():
+    assert classify_search_request(
+        "search online and send me pictures of a cute girl"
+    ) == ("image", "a cute girl")
