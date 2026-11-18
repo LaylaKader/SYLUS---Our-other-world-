@@ -683,14 +683,14 @@ def create_speech(payload: SpeechIn, _: None = Depends(require_owner)):
         # Normalize provider output to a baseline MP3 profile for reliable Android/browser playback.
         normalized = subprocess.run(
             ["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "mp3", "-i", "pipe:0",
-             "-vn", "-codec:a", "libmp3lame", "-b:a", "128k", "-ar", "44100", "-ac", "1", "-f", "mp3", "pipe:1"],
+             "-vn", "-c:a", "pcm_s16le", "-ar", "24000", "-ac", "1", "-f", "wav", "pipe:1"],
             input=audio_bytes, capture_output=True, timeout=25, check=False,
         )
-        if normalized.returncode != 0 or len(normalized.stdout) < 256:
-            logging.error("Voice audio normalization failed: exit=%s stderr=%s", normalized.returncode, normalized.stderr[:300].decode("utf-8", "replace"))
+        if normalized.returncode != 0 or len(normalized.stdout) < 512 or not normalized.stdout.startswith(b"RIFF") or normalized.stdout[8:12] != b"WAVE":
+            logging.error("Voice audio normalization failed: exit=%s stderr=%s prefix=%s", normalized.returncode, normalized.stderr[:300].decode("utf-8", "replace"), normalized.stdout[:16].hex())
             raise HTTPException(status_code=502, detail="The voice provider returned audio, but it could not be prepared for playback. Please try again.")
         audio_bytes = normalized.stdout
-        logging.info("Voice audio normalized for playback: bytes=%s", len(audio_bytes))
+        logging.info("Voice audio normalized to PCM WAV for browser compatibility: bytes=%s", len(audio_bytes))
     except subprocess.TimeoutExpired as exc:
         logging.error("Voice audio normalization timed out.")
         raise HTTPException(status_code=504, detail="The generated voice took too long to prepare. Please try again.") from exc
@@ -700,10 +700,10 @@ def create_speech(payload: SpeechIn, _: None = Depends(require_owner)):
         raise HTTPException(status_code=502, detail="The voice provider could not generate audio. Check the private voice configuration and usage allowance.") from exc
     return Response(
         content=audio_bytes,
-        media_type="audio/mpeg",
+        media_type="audio/wav",
         headers={
             "Cache-Control": "no-store, private",
-            "Content-Disposition": 'inline; filename="sylus-message.mp3"',
+            "Content-Disposition": 'inline; filename="sylus-message.wav"',
             "Content-Length": str(len(audio_bytes)),
             "Accept-Ranges": "bytes",
         },
