@@ -643,7 +643,7 @@ function App() {
         // Interim results mean the recognizer is still hearing/decoding speech.
         // Reset the quiet timer on every result, but submit only after a final segment.
         if (callSilenceTimerRef.current) window.clearTimeout(callSilenceTimerRef.current);
-        if (callFinalTranscriptRef.current) callSilenceTimerRef.current = window.setTimeout(() => commitCallTranscript(), 900);
+        if (callFinalTranscriptRef.current) callSilenceTimerRef.current = window.setTimeout(() => commitCallTranscript(), 1800);
       };
       recognition.onerror = event => {
         if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
@@ -664,7 +664,7 @@ function App() {
         setCallListening(false);
         if (callFinalTranscriptRef.current.trim() && !callProcessingRef.current) {
           if (callSilenceTimerRef.current) window.clearTimeout(callSilenceTimerRef.current);
-          callSilenceTimerRef.current = window.setTimeout(() => commitCallTranscript(), 350);
+          callSilenceTimerRef.current = window.setTimeout(() => commitCallTranscript(), 1200);
         } else if (callActiveRef.current && !callProcessingRef.current && !callMicPausedRef.current) {
           callRestartTimerRef.current = window.setTimeout(() => startCallRecognition(), 500);
         }
@@ -734,6 +734,8 @@ function App() {
       setMessages(current => [...current, ...userMessages, ...replies]);
       const callsResponse = await fetch(apiUrl.replace(/\/$/, '') + '/v1/calls/settings', { headers, credentials: 'include' });
       if (callsResponse.ok) setCallSettings(await callsResponse.json());
+      const bondResponse = await fetch(apiUrl.replace(/\/$/, '') + '/v1/bond', { headers, credentials: 'include' });
+      if (bondResponse.ok) setBond(await bondResponse.json());
       if (!callActiveRef.current) return;
       if (!replies.length) {
         setCallStatus('Sylus is quiet for a moment. I’m listening again.');
@@ -1010,6 +1012,16 @@ function App() {
   }
 
   useEffect(() => { if (apiUrl) connect(false); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (active !== 'bond' || !connected) return;
+    let cancelled = false;
+    fetch(`${apiUrl.replace(/\/$/, '')}/v1/bond`, { headers, credentials: 'include' })
+      .then(response => response.ok ? response.json() : null)
+      .then(value => { if (!cancelled && value) setBond(value); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [active, connected, apiUrl, headers]);
 
   async function disconnect() {
     try { await fetch(`${apiUrl.replace(/\/$/, '')}/v1/session`, { method: 'DELETE', headers, credentials: 'include' }); } catch {}
