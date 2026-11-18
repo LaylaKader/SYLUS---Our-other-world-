@@ -1442,9 +1442,9 @@ def create_private_sticker(file: UploadFile = File(...), label: str = "New stick
     data = file.file.read(8 * 1024 * 1024 + 1)
     if len(data) > 8 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Each sticker must be 8 MB or smaller.")
-    if not data.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):
+    if not data.startswith(b"\x89PNG\r\n\x1a\n"):
         raise HTTPException(status_code=415, detail="The uploaded file is not a valid PNG.")
-    safe_label = re.sub(r"\\s+", " ", label).strip()[:100] or "New sticker"
+    safe_label = re.sub(r"\s+", " ", label).strip()[:100] or "New sticker"
     with connection() as conn:
         row = conn.execute(
             "INSERT INTO sticker_assets (label, filename, data) VALUES (%s, %s, %s) RETURNING id, label, filename, is_favorite, created_at",
