@@ -402,7 +402,7 @@ def upload_visual_reference(identity_id: UUID, file: UploadFile = File(...), _: 
         ).fetchone()
         accepted=conn.execute("SELECT 1 FROM provider_acceptances WHERE provider='cloudflare_meta_vision'").fetchone()
     analysis_notes=""
-    if accepted and settings.cloudflare_account_id and settings.cloudflare_api_token:
+    if file.content_type in {'image/jpeg','image/png','image/webp'} and accepted and settings.cloudflare_account_id and settings.cloudflare_api_token:
         try:
             reference_data="data:"+file.content_type+";base64,"+base64.b64encode(data).decode("ascii")
             response=httpx.post(
