@@ -1270,7 +1270,7 @@ def _analyze_uploaded_image(asset_id: UUID, image_bytes: bytes, content_type: st
                     "VALUES (%s,%s,'auto-sylus-reference',%s,'auto',%s)",
                     (identity[0],content_type,image_bytes,visual_description[:2000]),
                 )
-        elif re.search(r"\\b(person|man|woman|people|human)\\b", visual_description, re.I):
+        elif re.search(r"\b(person|man|woman|people|human)\b", visual_description, re.I):
             identity = conn.execute(
                 "INSERT INTO visual_identities (display_name,category,status,notes) "
                 "VALUES (%s,'other','pending',%s) RETURNING id",
