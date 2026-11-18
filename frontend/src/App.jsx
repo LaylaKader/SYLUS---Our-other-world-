@@ -654,7 +654,7 @@ function App() {
 
   async function sendCallUtterance(spokenText) {
     setCallBusy(true);
-    setCallStatus('Sylus is listening…');
+    setCallStatus('Sylus is considering his reply…');
     try {
       const response = await fetch(apiUrl.replace(/\/$/, '') + '/v1/chat', {
         method: 'POST', headers, credentials: 'include',
@@ -728,6 +728,7 @@ function App() {
     setPlayingAudioId(null);
     setCallActive(false);
     setCallListening(false);
+    setCallBusy(false);
     setCallStatus('Call ended. Your conversation remains in the chat history.');
   }
 
