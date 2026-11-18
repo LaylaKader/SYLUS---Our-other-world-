@@ -984,12 +984,12 @@ def apply_spoken_call_boundary(text: str, timezone_name: str) -> None:
 
 @app.post("/v1/proactive/poll")
 def poll_proactive_messages(_: None = Depends(require_owner)):
-    """Create spontaneous messages after the maximum silence window; no proactive cooldown is applied."""
+    """Send up to three thoughtful follow-ups per rolling hour after 60 minutes without an owner message."""
     now_utc = datetime.now(timezone.utc)
     with connection() as conn:
         row = conn.execute(
-            "SELECT messages_enabled, quiet_start, quiet_end, min_idle_minutes, min_interval_minutes, "
-            "timezone, last_proactive_at FROM proactive_contact_settings WHERE id = 1 FOR UPDATE"
+            "SELECT messages_enabled, min_idle_minutes, min_interval_minutes, timezone, last_proactive_at "
+            "FROM proactive_contact_settings WHERE id = 1 FOR UPDATE"
         ).fetchone()
         if not row or not row[0]:
             return {"sent": False, "reason": "disabled", "messages": []}
@@ -1009,40 +1009,36 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
         ).fetchone()
         last_activity = conn.execute(
             "SELECT GREATEST("
-            "COALESCE((SELECT max(created_at) FROM messages WHERE role IN ('user','assistant') AND archived_at IS NULL), '-infinity'::timestamptz), "
+            "COALESCE((SELECT max(created_at) FROM messages WHERE role='user' AND archived_at IS NULL), '-infinity'::timestamptz), "
             "COALESCE((SELECT max(last_activity_at) FROM call_sessions), '-infinity'::timestamptz))"
         ).fetchone()
         if not last_user or not last_user[0] or not last_activity or not last_activity[0]:
             return {"sent": False, "reason": "no_conversation", "messages": []}
-        tz_name = row[5] or DEFAULT_TIMEZONE
+        idle_minutes = (now_utc - last_activity[0]).total_seconds() / 60
+        if idle_minutes < row[1]:
+            return {"sent": False, "reason": "owner_recently_active", "messages": []}
+        recent_count = conn.execute(
+            "SELECT count(*) FROM messages WHERE role='assistant' "
+            "AND metadata->>'proactive'='true' AND created_at > now()-interval '60 minutes'"
+        ).fetchone()[0]
+        if recent_count >= 3:
+            return {"sent": False, "reason": "hourly_followup_limit", "messages": []}
+        last_proactive_at = row[4]
+        if last_proactive_at and (now_utc - last_proactive_at).total_seconds() < row[2] * 60:
+            return {"sent": False, "reason": "followup_spacing", "messages": []}
+        # Reserve this slot before generation so foreground polling and the background
+        # scheduler cannot generate duplicate messages at the same time.
+        conn.execute(
+            "UPDATE proactive_contact_settings SET last_proactive_at = %s, updated_at = now() WHERE id = 1",
+            (now_utc,),
+        )
+        tz_name = row[3] or DEFAULT_TIMEZONE
         try:
             local_zone = ZoneInfo(tz_name)
         except Exception:
             local_zone = ZoneInfo(DEFAULT_TIMEZONE)
             tz_name = DEFAULT_TIMEZONE
         local_now = now_utc.astimezone(local_zone)
-        local_clock = local_now.time().replace(tzinfo=None)
-        quiet_start, quiet_end = row[1], row[2]
-        # Equal start/end times explicitly mean no quiet hours.
-        quiet = False if quiet_start == quiet_end else (
-            quiet_start <= local_clock < quiet_end
-            if quiet_start < quiet_end
-            else local_clock >= quiet_start or local_clock < quiet_end
-        )
-        if quiet:
-            return {"sent": False, "reason": "quiet_hours", "messages": []}
-        idle_minutes = (now_utc - last_activity[0]).total_seconds() / 60
-        if idle_minutes < row[3]:
-            return {"sent": False, "reason": "owner_recently_active", "messages": []}
-        # Enforce the configured proactive interval. This also prevents two
-        # overlapping scheduler/browser polls from generating duplicate messages.
-        last_proactive_at = row[6]
-        if last_proactive_at and (now_utc - last_proactive_at).total_seconds() < row[4] * 60:
-            return {"sent": False, "reason": "proactive_cooldown", "messages": []}
-        conn.execute(
-            "UPDATE proactive_contact_settings SET last_proactive_at = %s, updated_at = now() WHERE id = 1",
-            (now_utc,),
-        )
         history_rows = conn.execute(
             "SELECT role, body, created_at, metadata->>'image_context' "
             "FROM messages WHERE role IN ('user','assistant') "
@@ -1054,8 +1050,9 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
     ]
     time_note = (
         f"Current owner-local time: {local_now.strftime('%A, %Y-%m-%d %H:%M:%S')} ({tz_name}). "
-        f"The owner has been away for about {int(idle_minutes)} minutes. "
-        "You are deciding whether there is something natural worth texting first."
+        f"The owner has not sent a message for about {int(idle_minutes)} minutes. "
+        "You may send a natural follow-up if you have something genuine to say. "
+        "This may be one of several separate attempts to reconnect; do not repeat yourself or pressure the owner."
     )
     try:
         bubbles = generate_proactive_bubbles(history, time_context=time_note)[:1]
@@ -1082,13 +1079,12 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
 
 
 def poll_proactive_call_invite() -> dict:
-    """Send a tappable incoming-call invitation; the owner must accept before the mic opens."""
+    """Send a tappable call invitation at any time unless the owner has explicitly paused calls."""
     now_utc = datetime.now(timezone.utc)
     with connection() as conn:
         row = conn.execute(
-            "SELECT calls_enabled, no_call_until, no_call_reason, quiet_start, quiet_end, min_idle_minutes, "
-            "min_interval_minutes, timezone, last_call_invite_at FROM proactive_contact_settings "
-            "WHERE id = 1 FOR UPDATE"
+            "SELECT calls_enabled, no_call_until, no_call_reason, min_interval_minutes, last_call_invite_at "
+            "FROM proactive_contact_settings WHERE id = 1 FOR UPDATE"
         ).fetchone()
         if not row or not row[0]:
             return {"sent": False, "reason": "calls_disabled"}
@@ -1101,44 +1097,15 @@ def poll_proactive_call_invite() -> dict:
             conn.execute(
                 "UPDATE proactive_contact_settings SET no_call_until = NULL, no_call_reason = NULL WHERE id = 1"
             )
-        tz_name = row[7] or DEFAULT_TIMEZONE
-        try:
-            zone = ZoneInfo(tz_name)
-        except Exception:
-            zone = ZoneInfo(DEFAULT_TIMEZONE)
-            tz_name = DEFAULT_TIMEZONE
-        local_now = now_utc.astimezone(zone)
-        clock = local_now.time().replace(tzinfo=None)
-        quiet_start, quiet_end = row[3], row[4]
-        quiet = False if quiet_start == quiet_end else (
-            quiet_start <= clock < quiet_end if quiet_start < quiet_end
-            else clock >= quiet_start or clock < quiet_end
-        )
-        if quiet:
-            return {"sent": False, "reason": "quiet_hours"}
-        conn.execute(
-            "UPDATE call_sessions SET ended_at=last_activity_at, "
-            "duration_seconds=GREATEST(duration_seconds,EXTRACT(EPOCH FROM (last_activity_at-started_at))::int) "
-            "WHERE ended_at IS NULL AND last_activity_at < now()-interval '2 hours'"
-        )
         active_call = conn.execute(
             "SELECT 1 FROM call_sessions WHERE ended_at IS NULL AND last_activity_at >= now()-interval '2 hours' LIMIT 1"
         ).fetchone()
         if active_call:
             return {"sent": False, "reason": "voice_call_in_progress"}
-        last_activity = conn.execute(
-            "SELECT GREATEST("
-            "COALESCE((SELECT max(created_at) FROM messages WHERE role IN ('user','assistant') AND archived_at IS NULL), '-infinity'::timestamptz), "
-            "COALESCE((SELECT max(last_activity_at) FROM call_sessions), '-infinity'::timestamptz))"
-        ).fetchone()
-        if not last_activity or not last_activity[0]:
-            return {"sent": False, "reason": "no_conversation"}
-        idle_minutes = (now_utc - last_activity[0]).total_seconds() / 60
-        if idle_minutes < row[5]:
-            return {"sent": False, "reason": "not_idle_long_enough"}
-        last_invite = row[8]
-        if last_invite and (now_utc - last_invite).total_seconds() < row[6] * 60:
-            return {"sent": False, "reason": "call_invitation_cooldown"}
+        last_invite = row[4]
+        # A short anti-duplicate interval prevents repeated ringing from the five-minute scheduler.
+        if last_invite and (now_utc - last_invite).total_seconds() < row[3] * 60:
+            return {"sent": False, "reason": "call_invitation_spacing"}
         subscriptions = conn.execute("SELECT count(*) FROM push_subscriptions").fetchone()[0]
         if not subscriptions:
             return {"sent": False, "reason": "no_push_subscription"}
@@ -1154,7 +1121,7 @@ def poll_proactive_call_invite() -> dict:
                 (now_utc,),
             )
         logging.info("Sylus call invitation accepted by %s push provider(s).", result["accepted"])
-        return {"sent": True, "accepted": result["accepted"], "idle_minutes": int(idle_minutes)}
+        return {"sent": True, "accepted": result["accepted"]}
     return {"sent": False, "reason": "push_delivery_failed", **result}
 
 
