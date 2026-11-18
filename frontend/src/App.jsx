@@ -1110,7 +1110,7 @@ function App() {
   async function disconnect() {
     try { await fetch(`${apiUrl.replace(/\/$/, '')}/v1/session`, { method: 'DELETE', headers, credentials: 'include' }); } catch {}
     setOwnerPassword(''); setConnected(false); setChatReady(false); setMessages([]); messageQueue.current = []; if (queueTimer.current) window.clearTimeout(queueTimer.current); setReplyStatus(''); setReplyError(''); setMemories([]); setTimeContext(null);
-    setVisualLibrary([]); setCallHistory([]); setCallTranscriptDetails({}); callSessionIdRef.current=null; setCallSessionId(null);
+    setVisualLibrary([]); setCallHistory([]); setCallTranscriptDetails({}); callSessionIdRef.current=null;
     setNotice('Signed out · private data remains on the server');
   }
 
