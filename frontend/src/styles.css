@@ -170,7 +170,7 @@ html,body,#root{height:100%;overflow:hidden}
 .chat-control-chip:disabled,.reset-chat-pill:disabled{opacity:.4;cursor:not-allowed;transform:none}
 .chat-control-chip.is-active,.chat-control-chip.active{color:#e9cda7;border-color:rgba(201,168,117,.48);background:rgba(201,168,117,.12)}
 .reset-chat-pill{background:rgba(120,49,70,.12);color:#c99eaa;border-color:rgba(173,91,115,.24);white-space:nowrap}
-.chat-history-view,.call-history-view{min-height:0}
+.chat-history-view,.call-history-view{min-height:0;flex:1;overflow-y:auto;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;padding-bottom:calc(48px + env(safe-area-inset-bottom))}
 .call-history-toolbar{display:flex;justify-content:space-between;align-items:center;margin:28px 0 15px;padding:13px 15px;border:1px solid var(--line);border-radius:14px;background:rgba(29,24,33,.55)}
 .call-history-toolbar>div,.icon-label-button{display:flex;align-items:center;gap:9px;color:#c7a8b7;font-size:11px}
 .call-history-list{display:grid;gap:12px}
@@ -182,7 +182,7 @@ html,body,#root{height:100%;overflow:hidden}
 .call-history-meta span{font-size:10px;color:#bbaebb}
 .call-history-meta small{font-size:9px;color:#8c7e90}
 .call-transcript-toggle{font-size:9px;padding:8px 11px}
-.call-transcript-scroll{max-height: min(48vh,460px);overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y;margin-top:14px;padding:14px;border-radius:12px;background:rgba(12,10,15,.48);border:1px solid var(--line)}
+.call-transcript-scroll{max-height:none;height:auto;overflow:visible;overscroll-behavior:auto;-webkit-overflow-scrolling:auto;touch-action:auto;margin-top:14px;padding:14px;border-radius:12px;background:rgba(12,10,15,.48);border:1px solid var(--line)}
 .call-transcript-entry{padding:9px 0;border-bottom:1px solid rgba(224,205,220,.07)}
 .call-transcript-entry:last-child{border-bottom:0}
 .call-transcript-entry p{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;line-height:1.7;color:#d9cbd8;margin:5px 0 0}
