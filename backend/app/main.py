@@ -1729,7 +1729,7 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
         except HTTPException as exc:
             logging.warning("Sylus could not deliver a requested image: %s", exc.detail)
             answer = (
-                answer + "\\n\\n" if answer else ""
+                answer + "\n\n" if answer else ""
             ) + "Tch. The image generator failed this time. I won't pretend I sent you something you can't see."
     bubbles = split_reply_bubbles(answer)
     if (web_attachments or generated_image_message) and not bubbles:
