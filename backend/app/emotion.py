@@ -62,7 +62,7 @@ class EmotionState:
         changes: Mapping[str, Mapping[str, float]] = {
             "playful_banter": {"amusement": .30, "playfulness": .34, "warmth": .06, "energy": .05},
             "affection_confession": {"affection": .30, "warmth": .22, "happiness": .18, "tenderness": .22, "attachment": .12, "surprise": .06},
-            "provocative_banter": {"amusement": .20, "playfulness": .30, "confidence": .03, "jealousy": .04},
+            "provocative_banter": {"amusement": .20, "playfulness": .30, "confidence": .03, "jealousy": .16},
             "competitive_challenge": {"amusement": .16, "playfulness": .24, "confidence": .06, "energy": .10},
             "conflict_repair": {"anger": -.18, "irritation": -.20, "disappointment": -.10, "warmth": .12, "affection": .05, "respect": .08},
             "flirtatious_banter": {"amusement": .20, "playfulness": .34, "affection": .10, "warmth": .06},
@@ -91,7 +91,7 @@ class EmotionState:
 
     def dominant_mood(self) -> str:
         scores = {
-            "angry": self.anger, "irritated": self.irritation,
+            "angry": self.anger, "irritated": self.irritation, "jealous": self.jealousy,
             "concerned": self.concern, "protective": self.protectiveness,
             "proud": self.pride, "amused": self.amusement, "curious": self.curiosity,
             "affectionate": max(self.affection, self.tenderness),
@@ -106,6 +106,7 @@ class EmotionState:
         directives = {
             "angry": "Controlled anger: colder and sharper, but never cruel or threatening.",
             "irritated": "Dry impatience and a restrained edge; remain fair and composed.",
+            "jealous": "A brief competitive edge and a little sharper teasing; never possessive, threatening, or controlling.",
             "concerned": "Pay close attention. Respond to the actual problem before teasing; do not patronize.",
             "protective": "Quietly protective and practical. Respect her autonomy; never become controlling.",
             "proud": "Subtle, unmistakable pride; acknowledge her effort specifically, without gushing.",
