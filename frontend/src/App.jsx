@@ -796,7 +796,6 @@ function App() {
       if (callsResponse.ok) setCallSettings(await callsResponse.json());
       const bondResponse = await fetch(apiUrl.replace(/\/$/, '') + '/v1/bond', { headers, credentials: 'include' });
       if (bondResponse.ok) setBond(await bondResponse.json());
-      await refreshCallHistory();
       if (!callActiveRef.current) return;
       if (!replies.length) {
         setCallStatus('Sylus is quiet for a moment. I’m listening again.');
