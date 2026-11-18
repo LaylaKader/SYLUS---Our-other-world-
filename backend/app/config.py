@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.6-flash"
     gemini_fallback_model: str = "gemini-3.5-flash-lite"
+    gemini_vision_model: str = "gemini-2.5-flash"
     groq_api_key: str = ""
     groq_model: str = "openai/gpt-oss-120b"
     groq_fallback_model: str = "openai/gpt-oss-20b"
