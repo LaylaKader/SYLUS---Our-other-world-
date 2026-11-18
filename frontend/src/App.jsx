@@ -480,7 +480,7 @@ function App() {
       // Resume immediately inside the tap handler so Android keeps the audio
       // context unlocked while the network request is in flight.
       if (context.state === 'suspended') await context.resume();
-      const response = await fetch(`${apiUrl.replace(/\\/$/, '')}/v1/voice/speech`, { method: 'POST', headers, credentials: 'include', body: JSON.stringify({ text: message.text }) });
+      const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/voice/speech`, { method: 'POST', headers, credentials: 'include', body: JSON.stringify({ text: message.text }) });
       if (!response.ok) { const failure = await response.json().catch(() => ({})); throw new Error(failure.detail || `Voice generation failed (${response.status}).`); }
       const contentType = (response.headers.get('content-type') || '').toLowerCase();
       if (!contentType.startsWith('audio/mpeg') && !contentType.startsWith('audio/mp3')) throw new Error(`Voice endpoint returned ${contentType || 'an unknown content type'}, not MP3 audio.`);
