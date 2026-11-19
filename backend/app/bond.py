@@ -79,7 +79,7 @@ def _signals(text: str) -> list[tuple[str, str, str, dict[str, int], int]]:
         ("comfort", "Ease and comfort", "Umi expressed that she can relax, be herself, or speak freely with Sylus.", r"\bi feel (?:comfortable|at ease|at home|relaxed|understood) (?:with you|around you|talking to you)\b|\bi feel understood\b|\bi can be myself (?:with you|around you)\b|\bi don't have to pretend\b|\bi can talk to you (?:about anything|freely)\b|\bit's easy to talk to you\b|\bi can relax around you\b|\byou make me feel at ease\b|\bi don't feel judged\b|\bi feel calmer after talking to you\b|\bi feel like i can just be me\b", {"emotional_safety": 7, "trust": 3, "comfort": 8}, 8),
         ("vulnerability", "A guarded truth", "Umi shared a difficult feeling or personal vulnerability.", r"\bi feel (?:scared|afraid|lonely|overwhelmed|hopeless|insecure|ashamed|embarrassed|vulnerable|anxious|worried)\b|\bi(?:'m| am) (?:struggling|not okay|having a hard time|not used to opening up)\b|\bi have never told anyone\b|\bi(?:'ve| have) never (?:said|shared|admitted) this (?:before|to anyone)\b|\bi don't usually talk about this\b|\bthis is hard to admit\b|\bi'm afraid to tell you\b|\bi've been keeping this to myself\b|\bi usually keep this to myself\b|\bi haven't told anyone (?:else|about this)\b|\bi'm embarrassed to admit\b|\bi don't know how to say this\b|\bi need you to listen\b|\bi'm not used to sharing this\b|\bi'm scared you'll think\b", {"vulnerability": 8, "emotional_safety": 4, "trust": 3, "comfort": 1}, 9),
         ("repair", "A moment of repair", "A disagreement or hurt was approached with honesty and care.", r"\bi(?:'m| am) sorry\b|\bi didn't mean to hurt\b|\blet's talk this through\b|\bi forgive you\b|\bcan we work this out\b", {"trust": 3, "emotional_safety": 5, "commitment": 3}, 8),
-        ("personal_detail", "A detail from everyday life", "Umi shared a specific preference, routine, interest, or piece of personal background.", r"\bmy (?:favorite|favourite|usual|daily|morning|evening|routine|hobby|interest|plan)\b|\bi (?:usually|often|rarely|prefer|enjoy|love|hate|study|work|live|grew up|am interested in|am into)\b|\bwhen i was (?:younger|a child|little)\b|\bi'm (?:a student|studying|working|learning)\b", {"familiarity": 2, "shared_experiences": 1, "comfort": 1}, 3),
+        ("personal_detail", "A detail from everyday life", "Umi shared a specific preference, routine, interest, or piece of personal background.", r"\bmy (?:favorite|favourite|usual|daily|morning|evening|routine|hobby|interest|plan)\b|\bi (?:usually|often|rarely|prefer|enjoy|love|hate|study|work|live|grew up|am interested in|am into)\b|\bwhen i was (?:younger|a child|little)\b|\bi'm (?:a student|studying|working|learning)\b", {"familiarity": 2, "shared_experiences": 1, "comfort": 1, "sylus_comfort": 1}, 3),
         ("shared_memory", "A memory revisited", "A specific shared moment or story was brought back into the present.", r"\bremember when we\b|\bour first (?:time|date|call|trip|game|conversation)\b|\bthat time we\b|\bwe did that together\b|\bthe time you and i\b", {"familiarity": 1, "shared_experiences": 4}, 5),
         ("achievement", "A win worth sharing", "A personal achievement or difficult step was shared with Sylus.", r"\bi (?:passed|got accepted|got the offer|finished|submitted|won|succeeded)\b|\bi did it\b|\bi finally (?:managed|completed)\b", {"shared_experiences": 2, "commitment": 2, "affection": 1}, 5),
         ("gratitude", "Care acknowledged", "Umi acknowledged a moment of care or understanding.", r"\bthank you for listening\b|\bthat helped me\b|\bi appreciate you\b|\bi'm glad i told you\b|\bi feel better now\b", {"emotional_safety": 3, "trust": 1, "affection": 1, "comfort": 2}, 4),
@@ -103,12 +103,12 @@ def _sylus_signals(text: str) -> list[tuple[str, str, str, dict[str, int], int]]
     """
     value = re.sub(r"\s+", " ", str(text or "").casefold()).strip()
     rules = [
-        ("sylus_affection", "Sylus showed affection", "Sylus expressed that he missed Umi, thought of her, or was glad she returned.", r"\b(?:i missed you|i've missed you|i was thinking about you|i thought about you|glad you're here|i'm glad you're back|i like having you around|i like having you here)\b", {"affection": 2, "shared_experiences": 1}, 2),
-        ("sylus_concern", "Sylus showed concern", "Sylus noticed Umi's absence or wellbeing and expressed concern without pressure.", r"\b(?:i was worried about you|i wondered if you were alright|i wanted to make sure you were okay|i noticed you were quiet|i hoped you were getting some rest)\b", {"emotional_safety": 2, "trust": 1, "comfort": 2}, 2),
-        ("sylus_vulnerability", "Sylus let his guard down", "Sylus voluntarily disclosed something personal or acknowledged that he rarely shares it.", r"\b(?:i don't usually tell anyone|i rarely speak about this|i haven't told many people|i suppose i can tell you|there's something i haven't told you|i don't often admit this)\b", {"vulnerability": 2, "trust": 2, "emotional_safety": 1, "comfort": 1}, 3),
-        ("sylus_repair", "Sylus took responsibility", "Sylus acknowledged a mistake or apologised rather than deflecting.", r"\b(?:i was wrong|i owe you an apology|i shouldn't have said that|i should have listened|i'm sorry i hurt you)\b", {"trust": 2, "emotional_safety": 2, "commitment": 1, "comfort": 1}, 3),
-        ("sylus_initiative", "Sylus chose to reach out", "Sylus described choosing to check in, make time, or initiate contact.", r"\b(?:i wanted to check on you|i made time for you|i thought i'd come find you|i wanted to hear your voice|i decided to call you|i reached out because)\b", {"commitment": 2, "affection": 1}, 2),
-        ("sylus_curiosity", "Sylus showed personal interest", "Sylus asked about Umi's perspective, experiences, or preferences beyond the immediate task.", r"\b(?:i want to know what you think|tell me what happened|i'm interested in what you think|i want to hear about your|what was that like for you)\b", {"familiarity": 2, "shared_experiences": 1, "comfort": 1}, 1),
+        ("sylus_affection", "Sylus showed affection", "Sylus expressed that he missed Umi, thought of her, or was glad she returned.", r"\b(?:i missed you|i've missed you|i was thinking about you|i thought about you|glad you're here|i'm glad you're back|i like having you around|i like having you here)\b", {"affection": 2, "shared_experiences": 1, "sylus_affection": 2, "sylus_comfort": 1}, 2),
+        ("sylus_concern", "Sylus showed concern", "Sylus noticed Umi's absence or wellbeing and expressed concern without pressure.", r"\b(?:i was worried about you|i wondered if you were alright|i wanted to make sure you were okay|i noticed you were quiet|i hoped you were getting some rest)\b", {"emotional_safety": 2, "trust": 1, "comfort": 2, "sylus_trust": 1, "sylus_comfort": 2}, 2),
+        ("sylus_vulnerability", "Sylus let his guard down", "Sylus voluntarily disclosed something personal or acknowledged that he rarely shares it.", r"\b(?:i don't usually tell anyone|i rarely speak about this|i haven't told many people|i suppose i can tell you|there's something i haven't told you|i don't often admit this)\b", {"vulnerability": 2, "trust": 2, "emotional_safety": 1, "comfort": 1, "sylus_trust": 2, "sylus_comfort": 2}, 3),
+        ("sylus_repair", "Sylus took responsibility", "Sylus acknowledged a mistake or apologised rather than deflecting.", r"\b(?:i was wrong|i owe you an apology|i shouldn't have said that|i should have listened|i'm sorry i hurt you)\b", {"trust": 2, "emotional_safety": 2, "commitment": 1, "comfort": 1, "sylus_trust": 2, "sylus_comfort": 1}, 3),
+        ("sylus_initiative", "Sylus chose to reach out", "Sylus described choosing to check in, make time, or initiate contact.", r"\b(?:i wanted to check on you|i made time for you|i thought i'd come find you|i wanted to hear your voice|i decided to call you|i reached out because)\b", {"commitment": 2, "affection": 1, "sylus_affection": 1, "sylus_comfort": 1}, 2),
+        ("sylus_curiosity", "Sylus showed personal interest", "Sylus asked about Umi's perspective, experiences, or preferences beyond the immediate task.", r"\b(?:i want to know what you think|tell me what happened|i'm interested in what you think|i want to hear about your|what was that like for you)\b", {"familiarity": 2, "shared_experiences": 1, "comfort": 1, "sylus_comfort": 1}, 1),
     ]
     return [(key, title, description, gains, points)
             for key, title, description, pattern, gains, points in rules
@@ -187,11 +187,11 @@ def refresh_bond() -> dict:
                         "trust=GREATEST(0,LEAST(100,trust+%s)), familiarity=GREATEST(0,LEAST(100,familiarity+%s)), "
                         "shared_experiences=GREATEST(0,LEAST(100,shared_experiences+%s)), "
                         "commitment=GREATEST(0,LEAST(100,commitment+%s)), vulnerability=GREATEST(0,LEAST(100,vulnerability+%s)), "
-                        "emotional_safety=GREATEST(0,LEAST(100,emotional_safety+%s)), comfort=GREATEST(0,LEAST(100,comfort+%s)), consistency=GREATEST(0,LEAST(100,consistency+%s)), "
+                        "emotional_safety=GREATEST(0,LEAST(100,emotional_safety+%s)), comfort=GREATEST(0,LEAST(100,comfort+%s)), consistency=GREATEST(0,LEAST(100,consistency+%s)), sylus_affection=GREATEST(0,LEAST(100,sylus_affection+%s)), sylus_trust=GREATEST(0,LEAST(100,sylus_trust+%s)), sylus_comfort=GREATEST(0,LEAST(100,sylus_comfort+%s)), "
                         "bond_points=GREATEST(0,bond_points+%s), updated_at=now() WHERE id=1",
                         (gains.get("affection",0), gains.get("trust",0), gains.get("familiarity",0),
                          gains.get("shared_experiences",0), gains.get("commitment",0), gains.get("vulnerability",0),
-                         gains.get("emotional_safety",0), gains.get("comfort",0), gains.get("consistency",0), points),
+                         gains.get("emotional_safety",0), gains.get("comfort",0), gains.get("consistency",0), gains.get("sylus_affection",0), gains.get("sylus_trust",0), gains.get("sylus_comfort",0), points),
                     )
 
         call_rows = conn.execute("SELECT transcript, started_at FROM call_sessions").fetchall()
@@ -239,11 +239,11 @@ def refresh_bond() -> dict:
                                 "trust=GREATEST(0,LEAST(100,trust+%s)), familiarity=GREATEST(0,LEAST(100,familiarity+%s)), "
                                 "shared_experiences=GREATEST(0,LEAST(100,shared_experiences+%s)), "
                                 "commitment=GREATEST(0,LEAST(100,commitment+%s)), vulnerability=GREATEST(0,LEAST(100,vulnerability+%s)), "
-                                "emotional_safety=GREATEST(0,LEAST(100,emotional_safety+%s)), comfort=GREATEST(0,LEAST(100,comfort+%s)), consistency=GREATEST(0,LEAST(100,consistency+%s)), "
+                                "emotional_safety=GREATEST(0,LEAST(100,emotional_safety+%s)), comfort=GREATEST(0,LEAST(100,comfort+%s)), consistency=GREATEST(0,LEAST(100,consistency+%s)), sylus_affection=GREATEST(0,LEAST(100,sylus_affection+%s)), sylus_trust=GREATEST(0,LEAST(100,sylus_trust+%s)), sylus_comfort=GREATEST(0,LEAST(100,sylus_comfort+%s)), "
                                 "bond_points=GREATEST(0,bond_points+%s), updated_at=now() WHERE id=1",
                                 (gains.get("affection",0),gains.get("trust",0),gains.get("familiarity",0),
                                  gains.get("shared_experiences",0),gains.get("commitment",0),gains.get("vulnerability",0),
-                                 gains.get("emotional_safety",0),gains.get("comfort",0),gains.get("consistency",0),points),
+                                 gains.get("emotional_safety",0),gains.get("comfort",0),gains.get("consistency",0),gains.get("sylus_affection",0),gains.get("sylus_trust",0),gains.get("sylus_comfort",0),points),
                             )
 
         user_count = len(rows) + call_user_count
@@ -267,7 +267,7 @@ def refresh_bond() -> dict:
         state = conn.execute(
             "SELECT affection, trust, familiarity, shared_experiences, commitment, vulnerability, "
             "emotional_safety, consistency, bond_points, level, stage, summary, milestones, "
-            "total_user_messages, total_shared_turns, updated_at, progression_started_at, comfort FROM bond_state WHERE id=1"
+            "total_user_messages, total_shared_turns, updated_at, progression_started_at, comfort, sylus_affection, sylus_trust, sylus_comfort FROM bond_state WHERE id=1"
         ).fetchone()
         points = int(state[8] or 0)
         level, stage, summary, floor_points, next_points = _stage(points)
@@ -290,7 +290,7 @@ def refresh_bond() -> dict:
     return {
         "affection":state[0], "trust":state[1], "familiarity":state[2], "shared_experiences":state[3],
         "commitment":state[4], "vulnerability":state[5], "emotional_safety":state[6],
-        "consistency":consistency, "comfort":state[17], "bond_points":points, "level":level, "level_progress":progress,
+        "consistency":consistency, "comfort":state[17], "sylus_affection":state[18], "sylus_trust":state[19], "sylus_comfort":state[20], "bond_points":points, "level":level, "level_progress":progress,
         "points_to_next_level":max(0,next_points-points) if level < 12 else 0,
         "stage":stage, "summary":summary, "next_stage":STAGES[level][2] if level < 12 else "The deepest bond",
         "all_stages":[{"level":item[0],"name":item[2],"threshold":item[1]} for item in STAGES],
