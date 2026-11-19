@@ -1730,6 +1730,13 @@ def suggest_sticker_label(file: UploadFile = File(...), _: None = Depends(requir
     )
     raw = ""
     failures = []
+    configured = []
+    if settings.gemini_api_key:
+        configured.append("Gemini")
+    if settings.groq_api_key or (settings.model_api_key and "groq.com" in settings.model_api_base_url):
+        configured.append("Groq")
+    if settings.cloudflare_account_id and settings.cloudflare_api_token:
+        configured.append("Cloudflare")
     if settings.gemini_api_key:
         try:
             response = httpx.post(
@@ -1741,6 +1748,8 @@ def suggest_sticker_label(file: UploadFile = File(...), _: None = Depends(requir
             )
             response.raise_for_status()
             raw = response.json()["candidates"][0]["content"]["parts"][0]["text"]
+        except httpx.HTTPStatusError as exc:
+            failures.append(f"Gemini HTTP {exc.response.status_code}: {exc.response.text[:180]}")
         except (httpx.HTTPError, KeyError, IndexError, ValueError, TypeError) as exc:
             failures.append("Gemini:" + type(exc).__name__)
     if not raw:
@@ -1758,6 +1767,8 @@ def suggest_sticker_label(file: UploadFile = File(...), _: None = Depends(requir
                 )
                 response.raise_for_status()
                 raw = response.json()["choices"][0]["message"]["content"]
+            except httpx.HTTPStatusError as exc:
+                failures.append(f"Groq HTTP {exc.response.status_code}: {exc.response.text[:180]}")
             except (httpx.HTTPError, KeyError, IndexError, ValueError, TypeError) as exc:
                 failures.append("Groq:" + type(exc).__name__)
     if not raw and settings.cloudflare_account_id and settings.cloudflare_api_token:
@@ -1772,6 +1783,8 @@ def suggest_sticker_label(file: UploadFile = File(...), _: None = Depends(requir
             )
             response.raise_for_status()
             raw = (response.json().get("result") or {}).get("response", "")
+        except httpx.HTTPStatusError as exc:
+            failures.append(f"Cloudflare HTTP {exc.response.status_code}: {exc.response.text[:180]}")
         except (httpx.HTTPError, KeyError, ValueError, TypeError) as exc:
             failures.append("Cloudflare:" + type(exc).__name__)
     try:
@@ -1806,8 +1819,9 @@ def suggest_sticker_label(file: UploadFile = File(...), _: None = Depends(requir
             raise ValueError("No usable sticker name was returned.")
         return {"label": label, "description": description}
     except (ValueError, TypeError, AttributeError) as exc:
-        logging.info("Sticker visual analysis unavailable providers=%s error=%s", failures, type(exc).__name__)
-        raise HTTPException(status_code=503, detail="Sticker image analysis is unavailable. You can still name and save it manually.")
+        logging.warning("Sticker visual analysis failed configured=%s failures=%s error=%s", configured, failures, type(exc).__name__)
+        reason = "; ".join(failures) if failures else ("No vision provider is configured on the server." if not configured else "The vision provider returned an empty or unreadable response.")
+        raise HTTPException(status_code=503, detail="Sticker analysis failed. " + reason[:500])
 
 @app.get("/v1/stickers/{sticker_id}")
 def get_private_sticker(sticker_id: UUID, _: None = Depends(require_owner)):
