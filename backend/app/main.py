@@ -1286,9 +1286,11 @@ def poll_proactive_call_invite(*, allow_foreground: bool = False) -> dict:
                 "COALESCE((SELECT max(last_activity_at) FROM call_sessions), '-infinity'::timestamptz))"
             ).fetchone()[0]
             elapsed_seconds = max(0.0, (now_utc - last_activity).total_seconds()) if last_activity else 0.0
-        # Roughly one spontaneous call invitation per day on average.
-        # This is a probability, not a cooldown or a clock-based restriction.
-        chance = 1.0 - math.exp(-elapsed_seconds / (24 * 60 * 60))
+        # The foreground client polls once per minute. Use a small per-poll hazard
+        # rather than scaling chance by total time since the last invitation; doing
+        # the latter on every poll makes the probability accumulate far too quickly.
+        # The last-invite timestamp is updated only after successful delivery.
+        chance = 1.0 - math.exp(-1 / (24 * 60))
         if random.random() >= chance:
             return {"sent": False, "reason": "no_call_impulse"}
     result = send_push_notification(
