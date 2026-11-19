@@ -549,6 +549,33 @@ def generate_proactive_bubbles(history: list[dict], time_context: str = "") -> l
     ).strip()
     if not recent_owner_text:
         return []
+    # Detect whether Sylus has already spoken since Umi's latest message.
+    # This is the key distinction between an opening message and a true follow-up.
+    last_user_index = max(
+        (i for i, item in enumerate(history) if item.get("role") == "user"),
+        default=-1,
+    )
+    assistant_since_last_user = any(
+        item.get("role") == "assistant" for item in history[last_user_index + 1:]
+    )
+    recent_assistant_text = [
+        str(item.get("body") or item.get("text") or "")[:500]
+        for item in history[-8:] if item.get("role") == "assistant"
+    ]
+    followup_context = (
+        "FOLLOW-UP STATE: You have already messaged Umi since her last reply, and she has not answered yet. "
+        "Do not continue, recap, or rephrase the subject of your last message. Do not repeat its question. "
+        "Treat this as a fresh text from someone with his own life, not another attempt to finish the same conversation. "
+        "You may briefly wonder whether she is busy, asleep, or simply occupied, with restrained concern, dry humour, "
+        "or a touch of impatience/longing; never guilt her or imply she owes you an answer. "
+        "Alternatively, share one small, ordinary detail from your own ongoing N109 day and let the conversation breathe. "
+        "Vary the approach across follow-ups. If you recently asked whether she was busy or asleep, do not ask again; "
+        "share a different small thought or let the message rest.\n"
+    ) if assistant_since_last_user else (
+        "OPENING STATE: Umi has not replied for a while, but you have not yet sent a proactive message in this quiet stretch. "
+        "Start a natural new exchange. You may check whether she is busy or asleep if the gap is long enough, "
+        "or share a small detail from your own day. Do not resume an old topic just because it is the last topic in the transcript.\n"
+    )
     emotion = load_emotion_state()
     memories = PostgresMemoryRetriever().retrieve(query=recent_owner_text, limit=8)
     persona = load_persona() + "\n\n" + time_context
@@ -592,10 +619,17 @@ def generate_proactive_bubbles(history: list[dict], time_context: str = "") -> l
         "Let it subtly influence whether you reach out and how you phrase it; do not name the emotion."
     )
     instruction = (
-        "Decide whether Sylus would naturally initiate contact at this moment. Consider the current owner-local time, "
+        followup_context
+        + "Decide whether Sylus would naturally initiate contact at this moment. Consider the current owner-local time, "
         "the simulated N109 clock, his independent life, his emotional state, recent messages, and whether he has already reached out. "
+        "Do not get stuck on the previous topic: a proactive follow-up should either make one gentle check-in about her absence "
+        "or introduce one fresh, low-stakes detail from his own side of the world. Do not do both mechanically, and do not repeat "
+        "the same check-in on consecutive follow-ups. His N109 life should feel active between chats: he can mention routine work, "
+        "a quiet break, reading, music, a thought about Mephisto, or another established interest when it fits. Keep these as small "
+        "personal moments, not fabricated canon events, emergencies, reports, or surveillance. Let his mood show naturally—amused, "
+        "mildly sulky, concerned, sleepy, or quietly affectionate—without manipulation or pressure. "
         "Do not obey a fixed schedule. Return strict JSON only as {\"messages\":[\"one concise message\"]} or {\"messages\":[]} "
-        "if silence feels more natural. Never fabricate an urgent incident just to create a reason to text."
+        "if silence feels more natural."
     )
     raw = OpenAICompatibleChatModel().respond(
         persona=persona,
