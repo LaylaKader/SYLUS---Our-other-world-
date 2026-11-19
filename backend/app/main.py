@@ -1740,7 +1740,7 @@ def suggest_sticker_label(file: UploadFile = File(...), _: None = Depends(requir
         result = response.json()
         raw = result["candidates"][0]["content"]["parts"][0]["text"]
         parsed = json.loads(raw)
-        label = re.sub(r"\\s+", " ", str(parsed.get("label", ""))).strip()[:60]
+        label = re.sub(r"\s+", " ", str(parsed.get("label", ""))).strip()[:60]
         if not label:
             raise ValueError("Empty label")
         return {"label": label}
