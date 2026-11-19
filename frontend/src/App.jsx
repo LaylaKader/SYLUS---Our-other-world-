@@ -289,7 +289,13 @@ function App() {
   }
 
   function renderMessageText(value) {
-    const parts = String(value || '').split(/(〔sticker:[a-z0-9-]+〕|\{sticker:[a-z0-9-]+\})/g);
+    // Private action directives are backend control data, never user-facing chat.
+    // Strip them defensively from historical messages as well as new replies.
+    const safeText = String(value || '')
+      .replace(/\[\[SYLUS_IMAGE:[\s\S]*?\]\]/gi, '')
+      .replace(/\[\[SYLUS_LINK:[\s\S]*?\]\]/gi, '')
+      .trim();
+    const parts = safeText.split(/(〔sticker:[a-z0-9-]+〕|\{sticker:[a-z0-9-]+\})/g);
     const legacy = { teacup: 'sleepy', rosebud: 'heart-hug', tarot: 'thinking', wink: 'mischief', raven: 'waiting', feather: 'wave', rose: 'heart-hug', laugh: 'laugh', smirk: 'sneaky' };
     const linkify = (text, keyPrefix) => {
       const chunks = String(text).split(/(\[[^\]]+\]\(https:\/\/[^)\s]+\)|https:\/\/[^\s<]+)/g);
