@@ -1289,10 +1289,6 @@ def poll_proactive_call_invite(*, allow_foreground: bool = False) -> dict:
         # Roughly one spontaneous call invitation per day on average.
         # This is a probability, not a cooldown or a clock-based restriction.
         chance = 1.0 - math.exp(-elapsed_seconds / (24 * 60 * 60))
-        conn.execute(
-            "UPDATE proactive_contact_settings SET last_call_invite_at=%s, updated_at=now() WHERE id=1",
-            (now_utc,),
-        )
         if random.random() >= chance:
             return {"sent": False, "reason": "no_call_impulse"}
     result = send_push_notification(
@@ -1301,9 +1297,19 @@ def poll_proactive_call_invite(*, allow_foreground: bool = False) -> dict:
         url="/?incoming-call=1",
     ) if subscriptions else {"accepted": 0, "failed": 0}
     if result.get("accepted", 0) > 0:
+        with connection() as conn:
+            conn.execute(
+                "UPDATE proactive_contact_settings SET last_call_invite_at=%s, updated_at=now() WHERE id=1",
+                (now_utc,),
+            )
         logging.info("Sylus call invitation accepted by %s push provider(s).", result["accepted"])
         return {"sent": True, "accepted": result["accepted"], "delivery": "push"}
     if allow_foreground:
+        with connection() as conn:
+            conn.execute(
+                "UPDATE proactive_contact_settings SET last_call_invite_at=%s, updated_at=now() WHERE id=1",
+                (now_utc,),
+            )
         logging.info("Sylus call invitation delivered to the active foreground session.")
         return {"sent": True, "accepted": 0, "delivery": "foreground"}
     return {"sent": False, "reason": "push_delivery_failed", **result}
