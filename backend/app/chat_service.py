@@ -576,6 +576,12 @@ def generate_proactive_bubbles(history: list[dict], time_context: str = "") -> l
         "Start a natural new exchange. You may check whether she is busy or asleep if the gap is long enough, "
         "or share a small detail from your own day. Do not resume an old topic just because it is the last topic in the transcript.\n"
     )
+    if recent_assistant_text:
+        followup_context += (
+            "Your recent outgoing messages, newest last (use these to avoid looping): "
+            + " | ".join(recent_assistant_text[-3:])
+            + "\\nDo not echo or answer your own previous question. If those messages already mentioned the same topic, choose something genuinely different.\\n"
+        )
     emotion = load_emotion_state()
     memories = PostgresMemoryRetriever().retrieve(query=recent_owner_text, limit=8)
     persona = load_persona() + "\n\n" + time_context
