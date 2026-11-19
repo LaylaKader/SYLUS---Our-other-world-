@@ -39,7 +39,7 @@ def build_sylus_image_prompt(user_prompt: str, identity_notes: str = "",
     for note in [identity_notes, *(reference_notes or [])]:
         value = re.sub(r"\s+", " ", str(note or "")).strip()
         if value and value not in notes:
-            notes.append(value[:90])
-    evidence = " ".join(notes)[:140]
+            notes.append(value[:70])
+    evidence = " ".join(notes)[:120]
     return (f"SCENE: {clean}. OWNER REFERENCE NOTES: {evidence or 'Use fixed identity guide.'}. "
             f"{SYLUS_VISUAL_CANON}")[:2048]
