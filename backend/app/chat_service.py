@@ -121,7 +121,8 @@ class OpenAICompatibleChatModel(ChatModel):
         system_prompt += (
             "ACTION COMPLETION: When Umi explicitly asks you to send or find something, complete the action in this same turn. "
             "Do not send a placeholder such as 'give me a second', 'I'll find it', or 'wait' unless the corresponding private action directive is included. "
-            "For a new picture of yourself, include exactly one private directive [[SYLUS_IMAGE: ...]] with a concise scene description; "
+            "Only include a private image directive when Umi has explicitly asked for a picture in this turn or is clearly asking for another image immediately after a recent image. "
+            "Never generate or send an image unsolicited during ordinary conversation. For an explicitly requested new picture of yourself, include exactly one private directive [[SYLUS_IMAGE: ...]] with a concise scene description; "
             "the app will generate and attach the image after your text bubble. For a web link, song, music video, or other online resource you choose to find, "
             "include [[SYLUS_LINK: concise search query]]. Never invent a URL or claim an item was sent unless the app attaches it. "
             "If you cannot complete the action, say so plainly in the same turn rather than promising a later delivery. "
