@@ -102,34 +102,34 @@ def _sylus_signals(text: str) -> list[tuple[str, str, str, dict[str, int], int]]
     Concern, invitations to stay, attentive listening, personal disclosure, playful
     familiarity and curiosity all count, with smaller weights where appropriate.
     """
-    value = re.sub(r"\\s+", " ", str(text or "").casefold()).strip()
+    value = re.sub(r"\s+", " ", str(text or "").casefold()).strip()
     rules = [
         ("sylus_affection", "Sylus showed affection", "Sylus expressed fondness, longing, or that Umi's presence matters to him.",
-         r"\\b(?:i missed you|i've missed you|i was thinking about you|i thought about you|glad you're here|i'm glad you're back|i like having you around|i like having you here|quiet without you|too quiet around here without you|miss my kitten|my kitten had run off|annoying texts)\\b|\\b(?:kitten|darling)\\b",
+         r"\b(?:i missed you|i've missed you|i was thinking about you|i thought about you|glad you're here|i'm glad you're back|i like having you around|i like having you here|quiet without you|too quiet around here without you|miss my kitten|my kitten had run off|annoying texts)\b|\b(?:kitten|darling)\b",
          {"affection": 2, "shared_experiences": 1, "sylus_affection": 2, "sylus_comfort": 1}, 2),
         ("sylus_concern", "Sylus showed concern", "Sylus noticed Umi's wellbeing, rest, safety, or daily needs.",
-         r"\\b(?:i was worried about you|i wondered if you were alright|i wanted to make sure you were okay|i noticed you were quiet|i hoped you were getting some rest|go to sleep|close your eyes|you needed it|your body doesn't usually ask|a proper meal|don't push yourself|don't overdo it)\\b",
+         r"\b(?:i was worried about you|i wondered if you were alright|i wanted to make sure you were okay|i noticed you were quiet|i hoped you were getting some rest|go to sleep|close your eyes|you needed it|your body doesn't usually ask|a proper meal|don't push yourself|don't overdo it)\b",
          {"emotional_safety": 2, "trust": 1, "comfort": 2, "sylus_trust": 1, "sylus_comfort": 2}, 2),
         ("sylus_vulnerability", "Sylus let his guard down", "Sylus disclosed something personal or acknowledged that he rarely shares it.",
-         r"\\b(?:i don't usually tell anyone|i rarely speak about this|i haven't told many people|i suppose i can tell you|there's something i haven't told you|i don't often admit this|i don't usually talk about|i've never told anyone|between you and me)\\b",
+         r"\b(?:i don't usually tell anyone|i rarely speak about this|i haven't told many people|i suppose i can tell you|there's something i haven't told you|i don't often admit this|i don't usually talk about|i've never told anyone|between you and me)\b",
          {"vulnerability": 2, "trust": 2, "emotional_safety": 1, "comfort": 1, "sylus_trust": 2, "sylus_comfort": 2}, 3),
         ("sylus_repair", "Sylus took responsibility", "Sylus acknowledged a mistake or apologised rather than deflecting.",
-         r"\\b(?:i was wrong|i owe you an apology|i shouldn't have said that|i should have listened|i'm sorry i hurt you)\\b",
+         r"\b(?:i was wrong|i owe you an apology|i shouldn't have said that|i should have listened|i'm sorry i hurt you)\b",
          {"trust": 2, "emotional_safety": 2, "commitment": 1, "comfort": 1, "sylus_trust": 2, "sylus_comfort": 1}, 3),
         ("sylus_initiative", "Sylus chose to reach out", "Sylus described choosing to check in, make time, or initiate contact.",
-         r"\\b(?:i wanted to check on you|i made time for you|i thought i'd come find you|i wanted to hear your voice|i decided to call you|i reached out because|i'll still be here when you wake up|i'll be here when you wake up)\\b",
+         r"\b(?:i wanted to check on you|i made time for you|i thought i'd come find you|i wanted to hear your voice|i decided to call you|i reached out because|i'll still be here when you wake up|i'll be here when you wake up)\b",
          {"commitment": 2, "affection": 1, "sylus_affection": 1, "sylus_comfort": 1}, 2),
         ("sylus_comfort", "Sylus showed comfort and ease", "Sylus invited closeness, offered steady presence, or made room for Umi to speak freely.",
-         r"\\b(?:come here|stay a little|stay with me|put the phone down|i'm listening|im listening|you can tell me|talk to me|i'm here|im here|we can talk|when you wake up|don't look so worried)\\b",
+         r"\b(?:come here|stay a little|stay with me|put the phone down|i'm listening|im listening|you can tell me|talk to me|i'm here|im here|we can talk|when you wake up|don't look so worried)\b",
          {"comfort": 2, "emotional_safety": 1, "sylus_comfort": 2, "sylus_affection": 1}, 2),
         ("sylus_curiosity", "Sylus showed personal interest", "Sylus asked about Umi's perspective, experiences, or preferences beyond the immediate task.",
-         r"\\b(?:i want to know what you think|tell me what happened|i'm interested in what you think|i want to hear about your|what was that like for you|what catches your eye|what about you|how was your day|how are you feeling)\\b",
+         r"\b(?:i want to know what you think|tell me what happened|i'm interested in what you think|i want to hear about your|what was that like for you|what catches your eye|what about you|how was your day|how are you feeling)\b",
          {"familiarity": 2, "shared_experiences": 1, "comfort": 1, "sylus_comfort": 1}, 1),
         ("sylus_playfulness", "Sylus shared playful familiarity", "Sylus teased Umi or responded with relaxed, familiar humour.",
-         r"\\b(?:smug as ever|you're asking for trouble|you really have no respect|don't lump me in|you'd probably|a bold claim|amusing, isn't it|ha\\.\\.\\. ha ha ha|make me regret|testing my patience)\\b",
+         r"\b(?:smug as ever|you're asking for trouble|you really have no respect|don't lump me in|you'd probably|a bold claim|amusing, isn't it|ha\.\.\. ha ha ha|make me regret|testing my patience)\b",
          {"shared_experiences": 1, "comfort": 1, "sylus_comfort": 1}, 1),
         ("sylus_self_disclosure", "Sylus shared his own life", "Sylus volunteered details about his work, routines, preferences, or what was happening in his world.",
-         r"\\b(?:i just finished|finished clearing|i've been dealing with|i was handling|i'm overseeing|i spent the day|my work|my schedule|around here without you|kieran brought|i prefer my|i like things with|i enjoy)\\b",
+         r"\b(?:i just finished|finished clearing|i've been dealing with|i was handling|i'm overseeing|i spent the day|my work|my schedule|around here without you|kieran brought|i prefer my|i like things with|i enjoy)\b",
          {"familiarity": 1, "shared_experiences": 1, "sylus_trust": 1, "sylus_comfort": 1}, 1),
     ]
     return [(key, title, description, gains, points)
