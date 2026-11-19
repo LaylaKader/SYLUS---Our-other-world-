@@ -29,7 +29,7 @@ from .migrate import run_migrations
 from .chat_service import generate_reply, generate_proactive_bubbles, split_reply_bubbles, load_emotion_state, ProviderNotConfigured, ProviderRequestFailed
 from .bond import refresh_bond
 from .web_search import discover_for_chat, is_search_followup, requested_result_limit
-from .image_delivery import extract_image_directive, extract_link_directive, should_generate_image, should_generate_sylus_image
+from .image_delivery import extract_image_directive, extract_link_directive, should_generate_image, should_generate_sylus_image, is_image_followup
 from .sylus_visual import build_sylus_image_prompt
 
 app = FastAPI(title="SYLUS private companion API", version="0.3.0")
@@ -2055,7 +2055,18 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
             for row in reversed(history_rows)
         ]
         web_attachments, web_context = discover_for_chat(text, search_history)
-    explicit_image_request = (should_generate_image(text) or should_generate_sylus_image(text)) and not reused_search_results
+    with connection() as conn:
+        recent_generated_image = conn.execute(
+            "SELECT 1 FROM media_assets a JOIN messages m ON m.id=a.message_id "
+            "WHERE a.source='generated' AND m.role='assistant' AND m.archived_at IS NULL "
+            "AND m.created_at > now() - interval '24 hours' "
+            "ORDER BY m.created_at DESC LIMIT 1"
+        ).fetchone()
+    explicit_image_request = (
+        should_generate_image(text)
+        or should_generate_sylus_image(text)
+        or is_image_followup(text, bool(recent_generated_image))
+    ) and not reused_search_results
     if explicit_image_request:
         # "Send me a picture of you" means create an image, not fetch a random web result.
         web_attachments, web_context = [], ""
@@ -2137,6 +2148,22 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
         )
     )
     bubbles = split_reply_bubbles(answer)
+    # Some providers place private action tokens inside the JSON messages array.
+    # Extract them again after envelope parsing so control tokens can never leak into chat.
+    cleaned_bubbles = []
+    for bubble in bubbles:
+        clean_bubble, nested_image_prompt = extract_image_directive(bubble)
+        clean_bubble, nested_link_query = extract_link_directive(clean_bubble)
+        if nested_image_prompt and explicit_image_request and not image_prompt:
+            image_prompt = nested_image_prompt
+        if nested_link_query and not model_link_query:
+            model_link_query = nested_link_query
+        if clean_bubble:
+            cleaned_bubbles.append(clean_bubble)
+    bubbles = cleaned_bubbles
+    if not explicit_image_request:
+        # Do not let the model initiate unsolicited image generation during ordinary chat.
+        image_prompt = None
     if (web_attachments or image_prompt) and not bubbles:
         bubbles = ["There. Try not to look so pleased with yourself."]
     with connection() as conn:
