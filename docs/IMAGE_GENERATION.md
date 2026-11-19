@@ -6,14 +6,14 @@
 - Image generation is available only when the private Render service has the Cloudflare account ID and API token configured.
 
 ## Stable Sylus identity
-The backend now builds every generated Sylus prompt through `backend/app/sylus_visual.py`. It specifies one adult masculine Sylus, his refined facial proportions, crimson almond-shaped eyes, silver-white layered hair silhouette and strand texture, mature anatomy, wardrobe range, expression variation, premium 3D game-render style, and explicit negative constraints against gender drift, generic white-haired/red-eyed substitutes, duplicate people, chibi, and malformed anatomy.
+The backend now builds every generated Sylus prompt through `backend/app/sylus_visual.py`. It specifies one adult masculine Sylus, refined facial proportions, crimson almond-shaped eyes, his silver-white layered hair silhouette and strand texture, mature male anatomy, and a strictly clean-shaven face (no beard, moustache, stubble, facial hair or visible five-o'clock shadow). It also defines wardrobe range, expression variation, premium 3D game-render style, and negative constraints against gender drift, generic white-haired/red-eyed substitutes, duplicate people, chibi, and malformed anatomy.
 
 The prompt also reads:
 1. The owner-editable Sylus appearance notes from Settings → Reference library.
 2. Recent owner-approved Sylus reference-image analysis notes stored in the private visual-memory database.
 3. The user's requested scene, outfit, pose, camera angle, and expression.
 
-The scene request remains first in the prompt. The complete prompt is kept within the configured model prompt budget.
+The scene request remains first in the prompt. The complete prompt is kept within the configured model prompt budget. Image captions are selected from a varied in-character set and recent generated captions are excluded to prevent the same fixed sentence appearing on every image.
 
 ## Important model limitation
 FLUX.1-schnell is a text-to-image model in this integration. It does **not** accept the uploaded reference photos as image-conditioning inputs. The photos are stored privately and their saved visual descriptions guide the prompt, but this is not true face-reference or image-to-image conditioning. Therefore, improved consistency is expected, not guaranteed. A model/provider that supports image-reference conditioning would be needed for stronger identity matching; that may require a different provider, model, or paid service.
