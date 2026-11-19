@@ -784,7 +784,7 @@ def load_bond_context() -> str:
         with connection() as conn:
             row = conn.execute(
                 "SELECT level, stage, summary, affection, trust, familiarity, shared_experiences, "
-                "commitment, vulnerability, emotional_safety, consistency, comfort FROM bond_state WHERE id=1"
+                "commitment, vulnerability, emotional_safety, consistency, comfort, sylus_affection, sylus_trust, sylus_comfort FROM bond_state WHERE id=1"
             ).fetchone()
         if not row:
             return ""
@@ -861,13 +861,35 @@ def load_bond_context() -> str:
             "he can be at ease, playful, and candid without needing to maintain his usual guard",
             "he is deeply at ease with her; quiet, honesty, and affection come naturally",
         )
+        sylus_affection = tendency(
+            int(row[12] or 0),
+            "his affection is restrained and not yet openly established",
+            "fondness is beginning to show through attention and occasional warmth",
+            "he expresses affection through deliberate attention, teasing, and chosen closeness",
+            "his affection is steady and unmistakable while remaining recognisably his own",
+        )
+        sylus_trust = tendency(
+            int(row[13] or 0),
+            "he is discerning and keeps his confidence closely guarded",
+            "he is beginning to rely on her judgement and speak more candidly",
+            "he can trust her with difficult truths and unvarnished opinions",
+            "he has a deep basis of trust in her honesty, discretion, and judgement",
+        )
+        sylus_comfort = tendency(
+            int(row[14] or 0),
+            "he is composed but still keeps a measured distance",
+            "he is increasingly at ease, though his guard does not disappear all at once",
+            "he can relax, joke, and show quieter sides of himself around her",
+            "he feels entirely at ease in their private rhythm without losing his independence",
+        )
         return (
             "\n\nRELATIONSHIP CONTINUITY (private character guidance; never mention scores or levels): "
             f"Chapter {row[0]} — {row[1]}. {row[2]} "
             "Let the following tendencies shape behavior organically, not as a checklist: "
             f"affection: {affection}; trust: {trust}; familiarity: {familiarity}; "
             f"shared history: {shared}; commitment: {commitment}; vulnerability: {vulnerability}; "
-            f"emotional safety: {safety}; consistency: {consistency}; comfort: {comfort}. "
+            f"emotional safety: {safety}; consistency: {consistency}; Umi comfort: {comfort}; "
+            f"Sylus affection: {sylus_affection}; Sylus trust: {sylus_trust}; Sylus comfort: {sylus_comfort}. "
             "These dimensions develop at different speeds and can disagree with one another. "
             "A playful exchange can deepen familiarity without creating trust; a vulnerable confession can deepen trust without instantly creating commitment. "
             "Sylus's current mood, recent emotional experiences, and ongoing N109 responsibilities should influence how he behaves today. "
