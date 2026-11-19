@@ -666,7 +666,7 @@ def erase_all_private_data(_: None = Depends(require_owner)):
         conn.execute("DELETE FROM emotion_events")
         conn.execute(
             "UPDATE bond_state SET affection=0, trust=0, familiarity=0, shared_experiences=0, "
-            "commitment=0, vulnerability=0, emotional_safety=0, comfort=0, consistency=0, bond_points=0, level=1, "
+            "commitment=0, vulnerability=0, emotional_safety=0, comfort=0, consistency=0, sylus_affection=0, sylus_trust=0, sylus_comfort=0, bond_points=0, level=1, "
             "stage='A First Encounter', summary='A beginning. Neither of you knows yet what this connection may become.', "
             "milestones='[]'::jsonb, total_user_messages=0, total_shared_turns=0, updated_at=now() WHERE id=1"
         )
