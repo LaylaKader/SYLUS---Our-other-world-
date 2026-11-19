@@ -77,6 +77,40 @@ def chat_provider_configured() -> bool:
     )) or bool(settings.cloudflare_account_id and settings.cloudflare_api_token)
 
 DEFAULT_TIMEZONE = "Asia/Dhaka"
+N109_TIME_OFFSET = timedelta(hours=2)
+
+
+def _n109_clock(owner_local: datetime) -> datetime:
+    return owner_local + N109_TIME_OFFSET
+
+
+def _n109_daily_rhythm(hour: int) -> str:
+    if 5 <= hour < 9:
+        return "morning briefings, reviewing overnight developments, and the day's first decisions"
+    if 9 <= hour < 13:
+        return "Onychinus operations, negotiations, Protocore logistics, and intelligence work"
+    if 13 <= hour < 16:
+        return "a meal break, checking in with his people, or a quieter stretch between obligations"
+    if 16 <= hour < 20:
+        return "meetings, security decisions, planning, and overseeing the organisation"
+    if 20 <= hour < 24:
+        return "private work, records, reading, music, or winding down after business"
+    return "late-night work, a rare quiet hour, or sleep when his responsibilities allow"
+
+
+def _elapsed_phrase(seconds: int) -> str:
+    seconds = max(0, int(seconds))
+    if seconds < 60:
+        return f"{seconds} seconds"
+    minutes = seconds // 60
+    if minutes < 60:
+        return f"about {minutes} minute" + ("" if minutes == 1 else "s")
+    hours, remaining = divmod(minutes, 60)
+    if hours < 24:
+        return f"about {hours} hour" + ("" if hours == 1 else "s") + (f" and {remaining} minutes" if remaining else "")
+    days, remaining_hours = divmod(hours, 24)
+    return f"about {days} day" + ("" if days == 1 else "s") + (f" and {remaining_hours} hours" if remaining_hours else "")
+
 
 _origins = [item.strip() for item in settings.cors_allowed_origins.split(",") if item.strip()]
 app.add_middleware(
@@ -321,11 +355,16 @@ def time_context(_: None = Depends(require_owner)):
         tz_name = DEFAULT_TIMEZONE
     now_utc = datetime.now(timezone.utc)
     now_local = now_utc.astimezone(local_zone)
+    n109_local = _n109_clock(now_local)
     last_utc = row[0] if row else None
     last_local = last_utc.astimezone(local_zone) if last_utc else None
     elapsed_seconds = max(0, int((now_utc - last_utc).total_seconds())) if last_utc else None
     return {
         "timezone": tz_name, "now_utc": now_utc.isoformat(), "now_local": now_local.isoformat(),
+        "n109_timezone_offset_hours": 2, "n109_local": n109_local.isoformat(),
+        "n109_local_time": n109_local.strftime("%A, %Y-%m-%d %H:%M:%S"),
+        "n109_daily_rhythm": _n109_daily_rhythm(n109_local.hour),
+        "elapsed_since_last_user_message": _elapsed_phrase(elapsed_seconds) if elapsed_seconds is not None else None,
         "local_date": now_local.date().isoformat(), "weekday": now_local.strftime("%A"),
         "local_time": now_local.strftime("%H:%M:%S"),
         "chat_ready": chat_provider_configured(),
@@ -1132,20 +1171,8 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
             local_zone = ZoneInfo(DEFAULT_TIMEZONE)
             tz_name = DEFAULT_TIMEZONE
         local_now = now_utc.astimezone(local_zone)
-        n109_now = now_utc.astimezone(ZoneInfo("Asia/Shanghai"))
-        hour = n109_now.hour
-        if 5 <= hour < 9:
-            rhythm = "morning briefings and the day's first decisions"
-        elif 9 <= hour < 13:
-            rhythm = "operations, negotiations, and business"
-        elif 13 <= hour < 16:
-            rhythm = "a meal break or a quieter hour"
-        elif 16 <= hour < 20:
-            rhythm = "meetings, planning, and overseeing operations"
-        elif 20 <= hour < 24:
-            rhythm = "private work, reading, or winding down"
-        else:
-            rhythm = "late-night work or sleep, depending on the day"
+        n109_now = _n109_clock(local_now)
+        rhythm = _n109_daily_rhythm(n109_now.hour)
         history_rows = conn.execute(
             "SELECT role, body, created_at, metadata->>'image_context' "
             "FROM messages WHERE role IN ('user','assistant') "
@@ -1155,15 +1182,20 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
         {"role": r[0], "body": r[1][:1800], "created_at": r[2].isoformat(), "image_context": r[3]}
         for r in reversed(history_rows)
     ]
+    idle_seconds = int(decision["idle_minutes"] * 60)
+    idle_phrase = _elapsed_phrase(idle_seconds)
     contact_note = (
-        f"The owner has been inactive for about {int(decision['idle_minutes'])} minutes. "
+        f"Umi has been away from the conversation for {idle_phrase} (about {int(decision['idle_minutes'])} minutes). "
         + ("You have already sent a message since her last reply. This is a separate follow-up; "
            "do not repeat yourself or pressure her.\n" if decision["is_followup"] else
            "This is your opportunity to initiate a conversation naturally.\n")
+        + ("If it feels natural, you may gently acknowledge that she has been quiet for half an hour or longer "
+           "(perhaps she is busy or has fallen asleep). Keep it affectionate or lightly teasing, never accusatory, "
+           "possessive, or guilt-inducing. Do not imply she owes you a reply.\n" if decision["idle_minutes"] >= 30 else "")
     )
     time_note = (
         f"Current owner-local time: {local_now.strftime('%A, %Y-%m-%d %H:%M:%S')} ({tz_name}). "
-        f"Simulated N109 clock: {n109_now.strftime('%A, %H:%M')} (UTC+08:00; an internal fictional clock, not official canon). "
+        f"Simulated N109 clock: {n109_now.strftime('%A, %Y-%m-%d %H:%M')} (exactly two hours ahead of Umi's local clock; private fictional continuity, not official canon). "
         f"Possible N109 daily rhythm at this hour: {rhythm}. This is atmosphere, not a report of a specific event. "
         "The two worlds have separate clocks. Reach out naturally, in your own voice. " + contact_note
     )
@@ -1802,15 +1834,16 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
         tz_name = DEFAULT_TIMEZONE
     now_utc = datetime.now(timezone.utc)
     now_local = now_utc.astimezone(local_zone)
-    n109_now = now_utc.astimezone(ZoneInfo("Asia/Shanghai"))
+    n109_now = _n109_clock(local_now)
     gap = ""
     if previous:
         seconds = max(0, int((now_utc - previous[0]).total_seconds()))
-        gap = f" Time since the owner's previous message: {seconds} seconds."
+        gap = f" Time since Umi's previous message: {_elapsed_phrase(seconds)} ({seconds} seconds)."
     time_note = (
         f"Current owner-local time: {now_local.strftime('%A, %Y-%m-%d %H:%M:%S')} ({tz_name}). "
-        f"Current UTC: {now_utc.isoformat()}. Simulated N109 local clock: {n109_now.strftime('%A, %Y-%m-%d %H:%M:%S')} (UTC+08:00; internal fictional clock, not official canon). "
-        f"The N109 and Umi's worlds keep separate clocks. Use this context naturally when relevant; do not announce it unnecessarily.{gap}"
+        f"Current UTC: {now_utc.isoformat()}. Simulated N109 local clock: {n109_now.strftime('%A, %Y-%m-%d %H:%M:%S')} (exactly two hours ahead of Umi's local clock; private fictional continuity, not official canon). "
+        f"N109's current daily rhythm: {_n109_daily_rhythm(n109_now.hour)}. "
+        f"The two worlds keep separate clocks, with N109 two hours ahead. Use this context naturally when relevant; do not announce it unnecessarily.{gap}"
     )
     if admin_override:
         time_note += (
