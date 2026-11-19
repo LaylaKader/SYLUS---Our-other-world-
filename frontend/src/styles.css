@@ -502,3 +502,9 @@ body{
   .composer-caption{font-size:6px;letter-spacing:.8px}
 }
 @media(prefers-reduced-motion:reduce){.message-row{animation:none}}
+
+
+/* Voice-call language control */
+.voice-call-language{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;margin:8px auto 14px;color:#b8a8b5;font-size:11px}
+.voice-call-language select{max-width:100%;min-width:180px;border:1px solid rgba(201,168,117,.28);border-radius:9px;background:#17131c;color:#eadde7;padding:9px 12px;font:inherit}
+.voice-call-language select:focus{outline:2px solid rgba(201,168,117,.4);outline-offset:2px}
