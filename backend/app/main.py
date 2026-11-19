@@ -81,7 +81,10 @@ N109_TIME_OFFSET = timedelta(hours=2)
 
 
 def _n109_clock(owner_local: datetime) -> datetime:
-    return owner_local + N109_TIME_OFFSET
+    # Keep the displayed N109 UTC offset consistent with its two-hour lead.
+    owner_offset = owner_local.utcoffset() or timedelta(0)
+    n109_wall_time = owner_local.replace(tzinfo=None) + N109_TIME_OFFSET
+    return n109_wall_time.replace(tzinfo=timezone(owner_offset + N109_TIME_OFFSET))
 
 
 def _n109_daily_rhythm(hour: int) -> str:
