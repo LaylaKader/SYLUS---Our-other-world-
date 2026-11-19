@@ -147,8 +147,20 @@ def _stage(points: int) -> tuple[int, str, str, int, int]:
             break
     return current[0], current[2], current[3], current[1], next_stage[1]
 
+def _sylus_dimension_gains(gains: dict[str, int]) -> dict[str, int]:
+    """Translate evidence from Sylus's own messages into his six reciprocal meters."""
+    return {
+        "familiarity": max(0, int(gains.get("familiarity", 0))),
+        "shared_experiences": max(0, int(gains.get("shared_experiences", 0))),
+        "commitment": max(0, int(gains.get("commitment", 0))),
+        "vulnerability": max(0, int(gains.get("vulnerability", 0))),
+        "emotional_safety": max(0, int(gains.get("emotional_safety", 0))),
+    }
+
+
 def _record_sylus_dimensions(conn, event_key: str, title: str, description: str, gains: dict[str, int]) -> None:
     """Idempotently backfill Sylus's six additional reciprocal dimensions without changing legacy meters."""
+    dimensions = _sylus_dimension_gains(gains)
     inserted = conn.execute(
         "INSERT INTO bond_events (event_key, title, description, source_message_id) "
         "VALUES (%s, %s, %s, NULL) ON CONFLICT (event_key) DO NOTHING RETURNING id",
@@ -162,11 +174,9 @@ def _record_sylus_dimensions(conn, event_key: str, title: str, description: str,
         "sylus_shared_experiences=GREATEST(0,LEAST(100,sylus_shared_experiences+%s)), "
         "sylus_commitment=GREATEST(0,LEAST(100,sylus_commitment+%s)), "
         "sylus_vulnerability=GREATEST(0,LEAST(100,sylus_vulnerability+%s)), "
-        "sylus_emotional_safety=GREATEST(0,LEAST(100,sylus_emotional_safety+%s)), "
-        "sylus_consistency=GREATEST(0,LEAST(100,sylus_consistency+%s)), updated_at=now() WHERE id=1",
-        (gains.get("sylus_familiarity", 0), gains.get("sylus_shared_experiences", 0),
-         gains.get("sylus_commitment", 0), gains.get("sylus_vulnerability", 0),
-         gains.get("sylus_emotional_safety", 0), gains.get("sylus_consistency", 0)),
+        "sylus_emotional_safety=GREATEST(0,LEAST(100,sylus_emotional_safety+%s)), updated_at=now() WHERE id=1",
+        (dimensions["familiarity"], dimensions["shared_experiences"], dimensions["commitment"],
+         dimensions["vulnerability"], dimensions["emotional_safety"]),
     )
 
 
@@ -258,7 +268,7 @@ def refresh_bond() -> dict:
                     continue
                 sylus_dimension_daily[cap_key] += 1
                 _record_sylus_dimensions(
-                    conn, "sylus-dim-v1:" + str(assistant_id) + ":" + key,
+                    conn, "sylus-dim-v2:" + str(assistant_id) + ":" + key,
                     title, description, gains,
                 )
 
@@ -327,7 +337,7 @@ def refresh_bond() -> dict:
                         continue
                     sylus_call_dimension_daily[cap_key] += 1
                     _record_sylus_dimensions(
-                        conn, "sylus-call-dim-v1:" + started_at.isoformat() + ":" + str(item_index) + ":" + key,
+                        conn, "sylus-call-dim-v2:" + started_at.isoformat() + ":" + str(item_index) + ":" + key,
                         title, description, gains,
                     )
 
@@ -344,10 +354,20 @@ def refresh_bond() -> dict:
         consistency = _clamp(min(100, active_days * 4) * time_decay)
         familiarity_from_time = min(100, active_days * 1.5)
         activity_points = active_days * 2
+        # Sylus's consistency is based on days he actually replied, including voice calls,
+        # rather than copied from the owner's activity or inferred from a single warm message.
+        sylus_active_days = len(
+            {r[2].date() for r in assistant_rows if r[2]}
+            | {r[1].date() for r in call_rows if r[1] and any(
+                item.get("role") == "assistant" and item.get("text") for item in (r[0] or [])
+            )}
+        )
+        sylus_consistency = _clamp(min(100, sylus_active_days * 4) * time_decay)
         conn.execute(
             "UPDATE bond_state SET familiarity=GREATEST(%s,LEAST(100,ROUND(familiarity*%s)::int)), consistency=%s, "
-            "bond_points=GREATEST(bond_points, %s), total_user_messages=%s, total_shared_turns=%s WHERE id=1",
-            (familiarity_from_time, time_decay, consistency, activity_points, user_count, turns),
+            "sylus_consistency=%s, bond_points=GREATEST(bond_points, %s), "
+            "total_user_messages=%s, total_shared_turns=%s WHERE id=1",
+            (familiarity_from_time, time_decay, consistency, sylus_consistency, activity_points, user_count, turns),
         )
         state = conn.execute(
             "SELECT affection, trust, familiarity, shared_experiences, commitment, vulnerability, "
