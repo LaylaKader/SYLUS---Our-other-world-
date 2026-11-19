@@ -1837,7 +1837,7 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
         tz_name = DEFAULT_TIMEZONE
     now_utc = datetime.now(timezone.utc)
     now_local = now_utc.astimezone(local_zone)
-    n109_now = _n109_clock(local_now)
+    n109_now = _n109_clock(now_local)
     gap = ""
     if previous:
         seconds = max(0, int((now_utc - previous[0]).total_seconds()))
