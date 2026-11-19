@@ -1174,7 +1174,7 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
             local_zone = ZoneInfo(DEFAULT_TIMEZONE)
             tz_name = DEFAULT_TIMEZONE
         local_now = now_utc.astimezone(local_zone)
-        n109_now = _n109_clock(local_now)
+        n109_now = _n109_clock(now_local)
         rhythm = _n109_daily_rhythm(n109_now.hour)
         history_rows = conn.execute(
             "SELECT role, body, created_at, metadata->>'image_context' "
