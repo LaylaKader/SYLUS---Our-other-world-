@@ -29,7 +29,7 @@ from .migrate import run_migrations
 from .chat_service import generate_reply, generate_proactive_bubbles, split_reply_bubbles, load_emotion_state, ProviderNotConfigured, ProviderRequestFailed
 from .bond import refresh_bond
 from .web_search import discover_for_chat, is_search_followup, requested_result_limit
-from .image_delivery import extract_image_directive, extract_link_directive, should_generate_image
+from .image_delivery import extract_image_directive, extract_link_directive, should_generate_image, should_generate_sylus_image
 from .sylus_visual import build_sylus_image_prompt
 
 app = FastAPI(title="SYLUS private companion API", version="0.3.0")
@@ -2026,7 +2026,7 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
             for row in reversed(history_rows)
         ]
         web_attachments, web_context = discover_for_chat(text, search_history)
-    explicit_image_request = should_generate_image(text) and not reused_search_results
+    explicit_image_request = (should_generate_image(text) or should_generate_sylus_image(text)) and not reused_search_results
     if explicit_image_request:
         # "Send me a picture of you" means create an image, not fetch a random web result.
         web_attachments, web_context = [], ""
