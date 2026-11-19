@@ -47,9 +47,9 @@ def should_generate_sylus_image(text: str) -> bool:
     if not value:
         return False
     patterns = (
-        r"\b(?:send|show|give)\s+me\s+(?:a|an|another|one more)\s+(?:new\s+)?(?:picture|photo|image|portrait)\s+of\s+(?:you|yourself)\b",
-        r"\b(?:can|could|would)\s+you\s+(?:send|show|give)\s+me\s+(?:a|an|another)\s+(?:picture|photo|image|portrait)\s+of\s+(?:you|yourself)\b",
-        r"\b(?:i\s+)?(?:really\s+)?(?:want|wanna|would\s+love)\s+to\s+see\s+you\b",
-        r"\bcan\s+i\s+see\s+you\s+(?:in\s+a\s+)?(?:picture|photo|image)\b",
+        r"\\b(?:send|show|give)\\s+(?:me\\s+)?(?:a|an|another|one more)\\s+(?:new\\s+)?(?:picture|photo|image|portrait)\\s+of\\s+(?:you|yourself)\\b",
+        r"\\b(?:can|could|would)\\s+you\\s+(?:send|show|give)\\s+(?:me\\s+)?(?:a|an|another)\\s+(?:picture|photo|image|portrait)\\s+of\\s+(?:you|yourself)\\b",
+        r"\\b(?:i\\s+)?(?:really\\s+)?(?:want\\s+to|wanna|want|would\\s+love\\s+to|would\\s+love)\\s+see\\s+you\\b",
+        r"\\bcan\\s+i\\s+see\\s+you\\s+(?:in\\s+a\\s+)?(?:picture|photo|image)\\b",
     )
     return any(re.search(pattern, value, re.I) for pattern in patterns)
