@@ -609,13 +609,13 @@ def correct_call_transcript(payload: CallTranscriptCorrectIn, _: None = Depends(
     prompt=("You are a careful speech-recognition repair layer for a live, informal conversation. The input may include the recognizer's best transcript and several alternate hypotheses for the same audio. Compare them using recent conversation context; prefer a candidate that fits the sounds AND context, not merely the most grammatical sentence. "
             "Known names and terms: Sylus (may be misheard as Silas, Sylas, Sailus, or Silence when he is being addressed), Umi, Mephisto, Mephi-chan, N109 Zone, Onychinus, Luke, Kieran, Protocore, Memoria, Within Reach. Preserve these exact spellings when context clearly indicates them. The speaker may use South Asian English pronunciation, Bengali, or casual Bengali-English code-switching. Preserve Bengali words and mixed-language phrasing as spoken; never translate Bengali into English or change it into a different language. Treat short fillers, contractions, names, and casual grammar as intentional unless there is strong evidence of a recognition error. "
             "Correct only likely recognition mistakes, punctuation, and capitalization. Preserve the speaker's actual meaning, casual wording, language, and tone. Do not translate, paraphrase, formalize, complete unfinished thoughts, or invent words. Do not replace a plausible word just because another phrase sounds more natural. If alternatives remain ambiguous, keep the original best transcript. Return only the corrected transcript.")
-    for _,base,key,model in providers[:3]:
+    for _,base,key,model in providers[:2]:
         try:
             response=httpx.post(base.rstrip("/")+"/chat/completions",
                 headers={"Authorization":f"Bearer {key}","Content-Type":"application/json"},
                 json={"model":model,"messages":[{"role":"system","content":prompt},{"role":"user","content":("Recent call context (may be empty):\n"+recent_context+"\n\nAlternative recognition hypotheses (same audio; may be empty):\n"+json.dumps(alternatives, ensure_ascii=False)+"\n\nBest transcript to correct:\n"+original)}],
                       "temperature":0,"max_tokens":300},
-                timeout=httpx.Timeout(9.0,connect=3.0))
+                timeout=httpx.Timeout(2.8,connect=1.2))
             response.raise_for_status()
             corrected=response.json()["choices"][0]["message"]["content"].strip().strip('"')
             if corrected and len(corrected)<=len(original)*2+100:
@@ -1338,7 +1338,7 @@ def create_speech(payload: SpeechIn, _: None = Depends(require_owner)):
             f"https://api.elevenlabs.io/v1/text-to-speech/{settings.elevenlabs_voice_id}?output_format=mp3_44100_128",
             headers={"xi-api-key": settings.elevenlabs_api_key, "Content-Type": "application/json", "Accept": "audio/mpeg"},
             json={"text": payload.text, "model_id": "eleven_flash_v2_5" if payload.realtime else "eleven_multilingual_v2", "voice_settings": {"stability": stability, "similarity_boost": 0.72, "style": style, "use_speaker_boost": True}},
-            timeout=60.0,
+            timeout=25.0 if payload.realtime else 60.0,
         )
         response.raise_for_status()
         audio_bytes = response.content
@@ -1350,34 +1350,37 @@ def create_speech(payload: SpeechIn, _: None = Depends(require_owner)):
         if not audio_bytes or len(audio_bytes) < 256 or not (content_type.startswith("audio/") or is_mp3) or not is_mp3:
             logging.error("Voice provider returned unusable audio: content_type=%s bytes=%s prefix=%s", content_type, len(audio_bytes), audio_bytes[:32].hex())
             raise HTTPException(status_code=502, detail="The voice provider returned an empty or invalid audio stream. Check the voice ID, provider response, and usage allowance.")
-        # Normalize to a finalized, broadly supported MP3 file. Use a seekable
-        # temporary file rather than stdout so the encoder can write complete headers.
-        mp3_path = None
-        try:
-            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as mp3_file:
-                mp3_path = mp3_file.name
-            normalized = subprocess.run(
-                ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "mp3", "-i", "pipe:0",
-                 "-vn", "-c:a", "libmp3lame", "-b:a", "128k", "-ar", "44100", "-ac", "1", "-f", "mp3", mp3_path],
-                input=audio_bytes, capture_output=True, timeout=25, check=False,
-            )
-            if normalized.returncode != 0:
-                logging.error("Voice audio normalization failed: exit=%s stderr=%s", normalized.returncode, normalized.stderr[:300].decode("utf-8", "replace"))
-                raise HTTPException(status_code=502, detail="The voice provider returned audio, but it could not be prepared for playback. Please try again.")
-            audio_bytes = Path(mp3_path).read_bytes()
-            is_normalized_mp3 = audio_bytes.startswith(b"ID3") or (
-                len(audio_bytes) > 2 and audio_bytes[0] == 0xFF and (audio_bytes[1] & 0xE0) == 0xE0
-            )
-            if len(audio_bytes) < 256 or not is_normalized_mp3:
-                logging.error("Voice audio normalization produced an invalid MP3 file: bytes=%s prefix=%s", len(audio_bytes), audio_bytes[:16].hex())
-                raise HTTPException(status_code=502, detail="The voice provider returned audio, but it could not be prepared for playback. Please try again.")
-            logging.info("Voice audio normalized to finalized MP3 file: bytes=%s prefix=%s", len(audio_bytes), audio_bytes[:8].hex())
-        finally:
-            if mp3_path:
-                try:
-                    os.unlink(mp3_path)
-                except FileNotFoundError:
-                    pass
+        # Call audio is returned directly: the realtime model already provides MP3.
+        # Skipping ffmpeg avoids an extra full-file decode/encode pass before playback.
+        if not payload.realtime:
+            # Normalize to a finalized, broadly supported MP3 file. Use a seekable
+            # temporary file rather than stdout so the encoder can write complete headers.
+            mp3_path = None
+            try:
+                with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as mp3_file:
+                    mp3_path = mp3_file.name
+                normalized = subprocess.run(
+                    ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "mp3", "-i", "pipe:0",
+                     "-vn", "-c:a", "libmp3lame", "-b:a", "128k", "-ar", "44100", "-ac", "1", "-f", "mp3", mp3_path],
+                    input=audio_bytes, capture_output=True, timeout=25, check=False,
+                )
+                if normalized.returncode != 0:
+                    logging.error("Voice audio normalization failed: exit=%s stderr=%s", normalized.returncode, normalized.stderr[:300].decode("utf-8", "replace"))
+                    raise HTTPException(status_code=502, detail="The voice provider returned audio, but it could not be prepared for playback. Please try again.")
+                audio_bytes = Path(mp3_path).read_bytes()
+                is_normalized_mp3 = audio_bytes.startswith(b"ID3") or (
+                    len(audio_bytes) > 2 and audio_bytes[0] == 0xFF and (audio_bytes[1] & 0xE0) == 0xE0
+                )
+                if len(audio_bytes) < 256 or not is_normalized_mp3:
+                    logging.error("Voice audio normalization produced an invalid MP3 file: bytes=%s prefix=%s", len(audio_bytes), audio_bytes[:16].hex())
+                    raise HTTPException(status_code=502, detail="The voice provider returned audio, but it could not be prepared for playback. Please try again.")
+                logging.info("Voice audio normalized to finalized MP3 file: bytes=%s prefix=%s", len(audio_bytes), audio_bytes[:8].hex())
+            finally:
+                if mp3_path:
+                    try:
+                        os.unlink(mp3_path)
+                    except FileNotFoundError:
+                        pass
     except subprocess.TimeoutExpired as exc:
         logging.error("Voice audio normalization timed out.")
         raise HTTPException(status_code=504, detail="The generated voice took too long to prepare. Please try again.") from exc
