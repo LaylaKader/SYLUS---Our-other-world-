@@ -619,7 +619,7 @@ def generate_proactive_bubbles(history: list[dict], time_context: str = "") -> l
                 f"〔sticker:{row[0]}〕 ({str(row[1])[:60]})" for row in custom_stickers
             )
             persona += (
-                "\\n\\nOWNER'S PRIVATE STICKERS: You can use these exact sticker tokens in your own chat replies: "
+                "\n\nOWNER'S PRIVATE STICKERS: You can use these exact sticker tokens in your own chat replies: "
                 + available
                 + ". Choose a sticker only when its expression or action genuinely fits; use sparingly. "
                 "Never invent sticker IDs or claim to have sent one unless you include its exact token."
