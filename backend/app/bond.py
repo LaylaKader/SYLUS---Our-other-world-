@@ -314,6 +314,23 @@ def refresh_bond() -> dict:
                                  gains.get("emotional_safety",0),gains.get("comfort",0),gains.get("consistency",0),gains.get("sylus_affection",0),gains.get("sylus_trust",0),gains.get("sylus_comfort",0),points),
                             )
 
+        # Include historical voice-call replies in Sylus's additional dimensions too.
+        sylus_call_dimension_daily: dict[tuple[str, str], int] = defaultdict(int)
+        for transcript, started_at in call_rows:
+            for item_index, item in enumerate(transcript or []):
+                if item.get("role") != "assistant" or not item.get("text"):
+                    continue
+                day_key = started_at.date().isoformat()
+                for key, title, description, gains, _points in _sylus_signals(str(item["text"])):
+                    cap_key = (day_key, key)
+                    if sylus_call_dimension_daily[cap_key] >= 3:
+                        continue
+                    sylus_call_dimension_daily[cap_key] += 1
+                    _record_sylus_dimensions(
+                        conn, "sylus-call-dim-v1:" + started_at.isoformat() + ":" + str(item_index) + ":" + key,
+                        title, description, gains,
+                    )
+
         user_count = len(rows) + call_user_count
         turns = min(user_count, conn.execute(
             "SELECT count(*) FROM messages WHERE role='assistant' AND archived_at IS NULL"
