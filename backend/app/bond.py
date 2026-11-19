@@ -147,6 +147,29 @@ def _stage(points: int) -> tuple[int, str, str, int, int]:
             break
     return current[0], current[2], current[3], current[1], next_stage[1]
 
+def _record_sylus_dimensions(conn, event_key: str, title: str, description: str, gains: dict[str, int]) -> None:
+    """Idempotently backfill Sylus's six additional reciprocal dimensions without changing legacy meters."""
+    inserted = conn.execute(
+        "INSERT INTO bond_events (event_key, title, description, source_message_id) "
+        "VALUES (%s, %s, %s, NULL) ON CONFLICT (event_key) DO NOTHING RETURNING id",
+        (event_key, title, description),
+    ).fetchone()
+    if not inserted:
+        return
+    conn.execute(
+        "UPDATE bond_state SET "
+        "sylus_familiarity=GREATEST(0,LEAST(100,sylus_familiarity+%s)), "
+        "sylus_shared_experiences=GREATEST(0,LEAST(100,sylus_shared_experiences+%s)), "
+        "sylus_commitment=GREATEST(0,LEAST(100,sylus_commitment+%s)), "
+        "sylus_vulnerability=GREATEST(0,LEAST(100,sylus_vulnerability+%s)), "
+        "sylus_emotional_safety=GREATEST(0,LEAST(100,sylus_emotional_safety+%s)), "
+        "sylus_consistency=GREATEST(0,LEAST(100,sylus_consistency+%s)), updated_at=now() WHERE id=1",
+        (gains.get("sylus_familiarity", 0), gains.get("sylus_shared_experiences", 0),
+         gains.get("sylus_commitment", 0), gains.get("sylus_vulnerability", 0),
+         gains.get("sylus_emotional_safety", 0), gains.get("sylus_consistency", 0)),
+    )
+
+
 def refresh_bond() -> dict:
     """Backfill unseen user events once, then return the durable relationship state."""
     with connection() as conn:
@@ -223,6 +246,21 @@ def refresh_bond() -> dict:
                          gains.get("shared_experiences",0), gains.get("commitment",0), gains.get("vulnerability",0),
                          gains.get("emotional_safety",0), gains.get("comfort",0), gains.get("consistency",0), gains.get("sylus_affection",0), gains.get("sylus_trust",0), gains.get("sylus_comfort",0), gains.get("sylus_familiarity",0), gains.get("sylus_shared_experiences",0), gains.get("sylus_commitment",0), gains.get("sylus_vulnerability",0), gains.get("sylus_emotional_safety",0), gains.get("sylus_consistency",0), points),
                     )
+
+        # Independently backfill the six newly introduced Sylus-side dimensions.
+        # A versioned event key makes this safe for all historical messages and repeated refreshes.
+        sylus_dimension_daily: dict[tuple[str, str], int] = defaultdict(int)
+        for assistant_id, assistant_body, assistant_created_at in assistant_rows:
+            day_key = assistant_created_at.date().isoformat()
+            for key, title, description, gains, _points in _sylus_signals(str(assistant_body or "")):
+                cap_key = (day_key, key)
+                if sylus_dimension_daily[cap_key] >= 3:
+                    continue
+                sylus_dimension_daily[cap_key] += 1
+                _record_sylus_dimensions(
+                    conn, "sylus-dim-v1:" + str(assistant_id) + ":" + key,
+                    title, description, gains,
+                )
 
         call_rows = conn.execute("SELECT transcript, started_at FROM call_sessions").fetchall()
         call_user_count = 0
