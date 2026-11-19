@@ -1,6 +1,6 @@
 import unittest
 
-from app.bond import _sylus_signals
+from app.bond import _signals, _sylus_signals
 
 
 class ReciprocalBondTests(unittest.TestCase):
@@ -13,6 +13,11 @@ class ReciprocalBondTests(unittest.TestCase):
         signal = next(item for item in signals if item[0] == "sylus_vulnerability")
         self.assertGreater(signal[3]["trust"], 0)
         self.assertGreater(signal[3]["vulnerability"], 0)
+
+    def test_user_comfort_is_tracked_separately(self):
+        signals = _signals("I feel comfortable around you. I can be myself with you.")
+        comfort = next(item for item in signals if item[0] == "comfort")
+        self.assertGreater(comfort[3]["comfort"], 0)
 
     def test_repetitive_generic_reply_does_not_award_bond(self):
         self.assertEqual(_sylus_signals("Very well. What would you like to do?"), [])
