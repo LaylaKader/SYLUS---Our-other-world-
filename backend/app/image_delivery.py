@@ -40,3 +40,16 @@ def should_generate_image(text: str) -> bool:
         r"\b(?:draw|make|create|generate|paint|illustrate)\b.{0,80}\b(?:you and me|us together|a new picture)\b",
     )
     return any(re.search(pattern, value, re.I) for pattern in patterns)
+
+def should_generate_sylus_image(text: str) -> bool:
+    """Recognize direct requests for a new picture of Sylus as generation, not web search."""
+    value = (text or "").strip()
+    if not value:
+        return False
+    patterns = (
+        r"\b(?:send|show|give)\s+me\s+(?:a|an|another|one more)\s+(?:new\s+)?(?:picture|photo|image|portrait)\s+of\s+(?:you|yourself)\b",
+        r"\b(?:can|could|would)\s+you\s+(?:send|show|give)\s+me\s+(?:a|an|another)\s+(?:picture|photo|image|portrait)\s+of\s+(?:you|yourself)\b",
+        r"\b(?:i\s+)?(?:really\s+)?(?:want|wanna|would\s+love)\s+to\s+see\s+you\b",
+        r"\bcan\s+i\s+see\s+you\s+(?:in\s+a\s+)?(?:picture|photo|image)\b",
+    )
+    return any(re.search(pattern, value, re.I) for pattern in patterns)
