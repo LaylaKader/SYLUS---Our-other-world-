@@ -4,7 +4,7 @@ import unittest
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost/test")
 os.environ.setdefault("SYLUS_OWNER_TOKEN", "test-owner-token")
 
-from app.bond import _signals, _sylus_signals
+from app.bond import _signals, _sylus_signals, _sylus_dimension_gains
 
 
 class ReciprocalBondTests(unittest.TestCase):
@@ -45,6 +45,16 @@ class ReciprocalBondTests(unittest.TestCase):
         ]
         for dimension in dimensions:
             self.assertGreater(combined.get(dimension, 0), 0, dimension)
+
+    def test_sylus_dimension_mapping_uses_his_actual_signal_evidence(self):
+        mapped = _sylus_dimension_gains({
+            "familiarity": 2, "shared_experiences": 1, "commitment": 2,
+            "vulnerability": 2, "emotional_safety": 1, "comfort": 2,
+        })
+        self.assertEqual(mapped, {
+            "familiarity": 2, "shared_experiences": 1, "commitment": 2,
+            "vulnerability": 2, "emotional_safety": 1,
+        })
 
     def test_user_comfort_is_tracked_separately(self):
         signals = _signals("I feel comfortable around you. I can be myself with you.")
