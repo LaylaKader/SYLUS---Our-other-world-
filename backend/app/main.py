@@ -1740,6 +1740,23 @@ def suggest_sticker_label(file: UploadFile = File(...), _: None = Depends(requir
             raw = response.json()["candidates"][0]["content"]["parts"][0]["text"]
         except (httpx.HTTPError, KeyError, IndexError, ValueError, TypeError) as exc:
             failures.append("Gemini:" + type(exc).__name__)
+    if not raw:
+        groq_key = settings.groq_api_key or (settings.model_api_key if "groq.com" in settings.model_api_base_url else "")
+        if groq_key:
+            try:
+                response = httpx.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
+                    json={"model": "meta-llama/llama-4-scout-17b-16e-instruct", "messages": [{"role": "user", "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{encoded}"}}
+                    ]}], "max_tokens": 180, "temperature": 0.1},
+                    timeout=35.0,
+                )
+                response.raise_for_status()
+                raw = response.json()["choices"][0]["message"]["content"]
+            except (httpx.HTTPError, KeyError, IndexError, ValueError, TypeError) as exc:
+                failures.append("Groq:" + type(exc).__name__)
     if not raw and settings.cloudflare_account_id and settings.cloudflare_api_token:
         try:
             response = httpx.post(
