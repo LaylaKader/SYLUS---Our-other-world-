@@ -161,6 +161,7 @@ function App() {
   const [callStatus, setCallStatus] = useState('A private voice channel with Sylus.');
   const [callTranscript, setCallTranscript] = useState('');
   const [callCorrectionEnabled, setCallCorrectionEnabled] = useState(() => { try { return window.localStorage.getItem('sylus-call-correction') !== 'false'; } catch { return true; } });
+  const [callRecognitionLanguage, setCallRecognitionLanguage] = useState(() => { try { return window.localStorage.getItem('sylus-call-language') || 'en-IN'; } catch { return 'en-IN'; } });
   const callSessionIdRef = useRef(null);
   const callStartedAtRef = useRef(null);
   const [callHistory, setCallHistory] = useState([]);
@@ -822,7 +823,7 @@ function App() {
     try {
       const recognition = new Recognition();
       callRecognitionRef.current = recognition;
-      recognition.lang = 'en-US';
+      recognition.lang = callRecognitionLanguage;
       recognition.continuous = true;
       recognition.interimResults = true;
       recognition.maxAlternatives = 3;
@@ -851,7 +852,7 @@ function App() {
         // Interim results mean the recognizer is still hearing/decoding speech.
         // Reset the quiet timer on every result, but submit only after a final segment.
         if (callSilenceTimerRef.current) window.clearTimeout(callSilenceTimerRef.current);
-        if (callFinalTranscriptRef.current) callSilenceTimerRef.current = window.setTimeout(() => commitCallTranscript(), 2500);
+        if (callFinalTranscriptRef.current) callSilenceTimerRef.current = window.setTimeout(() => commitCallTranscript(), 1700);
       };
       recognition.onerror = event => {
         if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
@@ -872,7 +873,7 @@ function App() {
         setCallListening(false);
         if (callFinalTranscriptRef.current.trim() && !callProcessingRef.current && !callMicPausedRef.current) {
           if (callSilenceTimerRef.current) window.clearTimeout(callSilenceTimerRef.current);
-          callSilenceTimerRef.current = window.setTimeout(() => commitCallTranscript(), 1500);
+          callSilenceTimerRef.current = window.setTimeout(() => commitCallTranscript(), 900);
         } else if (callActiveRef.current && !callProcessingRef.current && !callMicPausedRef.current) {
           callRestartTimerRef.current = window.setTimeout(() => startCallRecognition(), 500);
         }
@@ -894,7 +895,7 @@ function App() {
     }
     if (context.state === 'suspended') await context.resume();
     const response = await fetch(apiUrl.replace(/\/$/, '') + '/v1/voice/speech', {
-      method: 'POST', headers, credentials: 'include', body: JSON.stringify({ text })
+      method: 'POST', headers, credentials: 'include', body: JSON.stringify({ text, realtime: true })
     });
     if (!response.ok) {
       const failure = await response.json().catch(() => ({}));
@@ -1373,6 +1374,7 @@ function App() {
           <h2>Speaking with <em>Sylus</em></h2>
           <div className={'voice-call-orb' + (callActive ? ' is-active' : '') + (callListening ? ' is-listening' : '')}><span>{callActive ? (callListening ? 'LISTENING' : callBusy ? 'THINKING' : 'CONNECTED') : 'STANDBY'}</span></div>
           <p className="voice-call-status" role="status">{callStatus}</p>
+          <label className="voice-call-language">Speech recognition language <select value={callRecognitionLanguage} onChange={event => { const value = event.target.value; setCallRecognitionLanguage(value); try { window.localStorage.setItem('sylus-call-language', value); } catch {} }} disabled={callActive}><option value="en-IN">English · South Asia</option><option value="en-US">English · US</option><option value="en-GB">English · UK</option><option value="bn-BD">বাংলা · বাংলাদেশ</option></select></label>
           {callTranscript && <div className="voice-call-transcript"><span>LIVE TRANSCRIPTION · YOU CAN EDIT</span><textarea value={callTranscript} onChange={e => setCallTranscript(e.target.value)} rows={3} aria-label="Edit your call transcription" style={{width:'100%',resize:'vertical',background:'transparent',color:'inherit',border:'1px solid rgba(180,150,120,.25)',borderRadius:10,padding:10,font:'inherit'}}/><small className="field-help">Pause the microphone if you want to correct the words yourself before sending.</small></div>}
           {!callActive ? <>{incomingCall && <p className="voice-call-incoming">✦ Sylus is calling. Answer when you’re ready.</p>}<div className="voice-call-actions"><button className="primary-button voice-call-start" onClick={beginVoiceCall} disabled={!connected || !chatReady || !timeContext?.voice_ready}><Phone size={16}/> {incomingCall ? 'Accept call' : 'Start voice call'}</button>{incomingCall && <button className="secondary-button" onClick={() => { setIncomingCall(false); setCallOpen(false); setCallStatus('Call invitation declined.'); }}>Decline</button>}</div></> : <div className="voice-call-actions"><button className="secondary-button" onClick={() => { callMicPausedRef.current = false; startCallRecognition(); }} disabled={callListening || callBusy}><Mic size={15}/> Speak</button><button className="secondary-button" onClick={finishCallSpeaking} disabled={!callListening || callBusy}>I'm finished</button>{!callListening && callTranscript.trim() && !callBusy && <button className="secondary-button" onClick={() => {callFinalTranscriptRef.current=callTranscript.trim();commitCallTranscript();}}>Send edited text</button>}<button className="secondary-button" onClick={pauseCallMicrophone}><MicOff size={15}/> Pause mic</button><button className="voice-call-end" onClick={endVoiceCall}><PhoneOff size={16}/> End call</button></div>}
           <p className="voice-call-footnote">Your speech is transcribed by your browser’s speech-recognition service and sent as text to your private Sylus server. Microphone recordings are not stored by this app. Incoming invitations can arrive as notifications, but you must accept in the app; the browser cannot keep the microphone open in the background.</p>
