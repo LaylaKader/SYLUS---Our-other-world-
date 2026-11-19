@@ -123,6 +123,9 @@ function App() {
   const [replyError, setReplyError] = useState('');
   const messageQueue = useRef([]);
   const queueTimer = useRef(null);
+  const typingTimer = useRef(null);
+  const ownerTypingRef = useRef(false);
+  const [ownerTyping, setOwnerTyping] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState(null);
   const [editingMessageText, setEditingMessageText] = useState('');
   const [messageActionBusy, setMessageActionBusy] = useState(false);
@@ -489,10 +492,32 @@ function App() {
     } finally { setChecking(false); }
   }
 
+  function handleDraftChange(value) {
+    setDraft(value);
+    if (typingTimer.current) window.clearTimeout(typingTimer.current);
+    const activelyTyping = Boolean(value.trim());
+    ownerTypingRef.current = activelyTyping;
+    setOwnerTyping(activelyTyping);
+    if (activelyTyping) {
+      typingTimer.current = window.setTimeout(() => {
+        ownerTypingRef.current = false;
+        setOwnerTyping(false);
+        if (messageQueue.current.length && !sending) {
+          if (queueTimer.current) window.clearTimeout(queueTimer.current);
+          queueTimer.current = window.setTimeout(() => flushMessageQueue(), 450);
+        }
+      }, 2200);
+    }
+  }
+
   async function flushMessageQueue() {
     if (queueTimer.current) window.clearTimeout(queueTimer.current);
     queueTimer.current = null;
     if (sending || !messageQueue.current.length) return;
+    if (ownerTypingRef.current) {
+      queueTimer.current = window.setTimeout(() => flushMessageQueue(), 700);
+      return;
+    }
     const batch = messageQueue.current.splice(0);
     setSending(true);
     setReplyStatus('thinking');
@@ -542,7 +567,7 @@ function App() {
       setSending(false);
       if (messageQueue.current.length) {
         setReplyStatus('waiting');
-        queueTimer.current = window.setTimeout(() => flushMessageQueue(), 1300);
+        queueTimer.current = window.setTimeout(() => flushMessageQueue(), 2400);
       }
     }
   }
@@ -552,6 +577,9 @@ function App() {
     const text = draft.trim();
     if (!text || !connected || !chatReady) return;
     setDraft('');
+    if (typingTimer.current) window.clearTimeout(typingTimer.current);
+    ownerTypingRef.current = false;
+    setOwnerTyping(false);
     setComposerNotice('');
     setReplyError('');
     setReplyStatus('waiting');
@@ -561,7 +589,7 @@ function App() {
     messageQueue.current.push({ id: pendingId, text });
     setMessages(current => [...current, optimisticMessage]);
     if (queueTimer.current) window.clearTimeout(queueTimer.current);
-    queueTimer.current = window.setTimeout(() => flushMessageQueue(), 1400);
+    queueTimer.current = window.setTimeout(() => flushMessageQueue(), 2400);
   }
 
   function decodeBase64Url(value) {
@@ -1303,7 +1331,7 @@ function App() {
           {composerNotice && <div className="composer-feedback" role="alert">{composerNotice}</div>}{replyStatus === 'waiting' && <div className="chat-presence waiting" role="status"><span className="presence-dot"/><span>Waiting for you to finish…</span></div>}{sending && <div className="typing-row" role="status" aria-label="Sylus is thinking"><div className="message-avatar"><Crown size={15}/></div><div className="typing-bubble"><span/><span/><span/></div><span className="presence-caption">Sylus is thinking</span></div>}{replyStatus === 'silent' && <div className="chat-presence quiet" role="status"><span className="presence-dot"/><span>Sylus is quiet for now.</span></div>}{replyStatus === 'error' && <div className="chat-presence failed" role="alert"><span className="presence-dot"/><span>Message delivery failed. {replyError || 'Please try again.'}</span></div>}
         </div>}
         </div>
-        <div className="composer-wrap"><form className="composer" onSubmit={sendMessage}><input ref={imageInputRef} className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={e => uploadImage(e.target.files?.[0])}/><button type="button" className="composer-tool" title="Send an image" aria-label="Send an image" disabled={!connected || uploadingImage} onClick={() => imageInputRef.current?.click()}><Camera size={18}/></button><button type="button" className="composer-tool sticker-toggle" title="Choose a sticker" aria-label="Choose a sticker" disabled={!connected || !chatReady} onClick={() => setStickerPickerOpen(open => !open)}><Sparkles size={18}/></button><textarea value={draft} onChange={e => setDraft(e.target.value)} placeholder={connected ? (chatReady ? 'Say something…' : 'Chat model not configured yet…') : 'Connect your private instance to begin…'} rows={1} disabled={!connected || !chatReady} onKeyDown={e => {if(e.key === 'Enter' && !e.shiftKey){e.preventDefault();sendMessage(e);}}}/><div className="composer-actions"><span className="composer-hint">{sending ? 'Sending…' : replyStatus === 'waiting' ? 'Reading…' : uploadingImage ? 'Uploading…' : '↵ to send'}</span><button className="send-button" type="submit" disabled={!connected || !chatReady || !draft.trim()} aria-label="Send message"><Send size={16}/></button></div></form>{stickerPickerOpen && <div className="sticker-picker" role="group" aria-label="Sylus sticker collection"><div className="sticker-picker-heading"><span>OUR LITTLE COLLECTION</span><button type="button" className="text-action" onClick={() => setStickerPickerOpen(false)}>Close</button></div><div className="sticker-picker-tabs"><button type="button" className={stickerPickerTab === 'favorites' ? 'active' : ''} onClick={() => setStickerPickerTab('favorites')}>★ Favorites</button><button type="button" className={stickerPickerTab === 'all' ? 'active' : ''} onClick={() => setStickerPickerTab('all')}>All stickers</button></div><div className="sticker-picker-grid">{allStickerOptions.filter(sticker => stickerPickerTab === 'all' || (sticker.custom ? sticker.is_favorite : favoriteStickerIds.includes(sticker.id))).map(sticker => <div className="sticker-option-wrap" key={sticker.id}><button type="button" className="sticker-option" onClick={() => addStickerToDraft(sticker)}><img className="sticker-art" src={sticker.src} alt="" loading="lazy"/><span>{sticker.label}</span></button><button type="button" className={((sticker.custom && sticker.is_favorite) || (!sticker.custom && favoriteStickerIds.includes(sticker.id))) ? 'sticker-star is-favorite' : 'sticker-star'} onClick={() => toggleStickerFavorite(sticker)} aria-label="Toggle favorite"><Star size={14} fill={((sticker.custom && sticker.is_favorite) || (!sticker.custom && favoriteStickerIds.includes(sticker.id))) ? 'currentColor' : 'none'}/></button></div>)}</div>{stickerPickerTab === 'favorites' && !allStickerOptions.some(sticker => sticker.custom ? sticker.is_favorite : favoriteStickerIds.includes(sticker.id)) && <p className="field-help">No favorites yet. Open All Stickers and tap the star on the ones you want here.</p>}</div>}<div className="composer-caption"><span>SYLUS IS A PRIVATE, PERSONAL COMPANION</span><span>✦</span><span>YOUR WORLD, YOUR RULES</span></div></div>
+        <div className="composer-wrap"><form className="composer" onSubmit={sendMessage}><input ref={imageInputRef} className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={e => uploadImage(e.target.files?.[0])}/><button type="button" className="composer-tool" title="Send an image" aria-label="Send an image" disabled={!connected || uploadingImage} onClick={() => imageInputRef.current?.click()}><Camera size={18}/></button><button type="button" className="composer-tool sticker-toggle" title="Choose a sticker" aria-label="Choose a sticker" disabled={!connected || !chatReady} onClick={() => setStickerPickerOpen(open => !open)}><Sparkles size={18}/></button><textarea value={draft} onChange={e => handleDraftChange(e.target.value)} placeholder={connected ? (chatReady ? 'Say something…' : 'Chat model not configured yet…') : 'Connect your private instance to begin…'} rows={1} disabled={!connected || !chatReady} onKeyDown={e => {if(e.key === 'Enter' && !e.shiftKey){e.preventDefault();sendMessage(e);}}}/><div className="composer-actions"><span className="composer-hint">{sending ? 'Sending…' : replyStatus === 'waiting' ? 'Reading…' : uploadingImage ? 'Uploading…' : '↵ to send'}</span><button className="send-button" type="submit" disabled={!connected || !chatReady || !draft.trim()} aria-label="Send message"><Send size={16}/></button></div></form>{stickerPickerOpen && <div className="sticker-picker" role="group" aria-label="Sylus sticker collection"><div className="sticker-picker-heading"><span>OUR LITTLE COLLECTION</span><button type="button" className="text-action" onClick={() => setStickerPickerOpen(false)}>Close</button></div><div className="sticker-picker-tabs"><button type="button" className={stickerPickerTab === 'favorites' ? 'active' : ''} onClick={() => setStickerPickerTab('favorites')}>★ Favorites</button><button type="button" className={stickerPickerTab === 'all' ? 'active' : ''} onClick={() => setStickerPickerTab('all')}>All stickers</button></div><div className="sticker-picker-grid">{allStickerOptions.filter(sticker => stickerPickerTab === 'all' || (sticker.custom ? sticker.is_favorite : favoriteStickerIds.includes(sticker.id))).map(sticker => <div className="sticker-option-wrap" key={sticker.id}><button type="button" className="sticker-option" onClick={() => addStickerToDraft(sticker)}><img className="sticker-art" src={sticker.src} alt="" loading="lazy"/><span>{sticker.label}</span></button><button type="button" className={((sticker.custom && sticker.is_favorite) || (!sticker.custom && favoriteStickerIds.includes(sticker.id))) ? 'sticker-star is-favorite' : 'sticker-star'} onClick={() => toggleStickerFavorite(sticker)} aria-label="Toggle favorite"><Star size={14} fill={((sticker.custom && sticker.is_favorite) || (!sticker.custom && favoriteStickerIds.includes(sticker.id))) ? 'currentColor' : 'none'}/></button></div>)}</div>{stickerPickerTab === 'favorites' && !allStickerOptions.some(sticker => sticker.custom ? sticker.is_favorite : favoriteStickerIds.includes(sticker.id)) && <p className="field-help">No favorites yet. Open All Stickers and tap the star on the ones you want here.</p>}</div>}<div className="composer-caption"><span>SYLUS IS A PRIVATE, PERSONAL COMPANION</span><span>✦</span><span>YOUR WORLD, YOUR RULES</span></div></div>
       </section>}
 
 
