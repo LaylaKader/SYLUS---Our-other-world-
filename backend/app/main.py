@@ -1863,6 +1863,35 @@ def delete_private_sticker(sticker_id: UUID, _: None = Depends(require_owner)):
     return {"deleted": True, "id": str(row[0])}
 
 @app.post("/v1/media/generate", response_model=MessageOut)
+def _next_sylus_image_caption() -> str:
+    """Choose a natural, non-repeating image caption without another model call."""
+    options = [
+        "A little glimpse of my day.",
+        "Thought you might like this view.",
+        "There. A moment from my side of the world.",
+        "Consider this a private showing.",
+        "A snapshot. Don't get used to me indulging you.",
+        "Something to keep you company.",
+        "There you are. A little something for you.",
+        "A rare look behind the curtain.",
+        "I thought I'd let you see for yourself.",
+        "One moment, captured before I get back to work.",
+        "Since you asked so nicely.",
+        "Keep it. I don't share every moment with just anyone.",
+    ]
+    try:
+        with connection() as conn:
+            rows = conn.execute(
+                "SELECT m.body FROM media_assets a JOIN messages m ON m.id=a.message_id "
+                "WHERE a.source='generated' ORDER BY m.created_at DESC LIMIT 5"
+            ).fetchall()
+        recent = {str(row[0] or "") for row in rows}
+    except Exception:
+        recent = set()
+    available = [caption for caption in options if caption not in recent]
+    return random.choice(available or options)
+
+
 def _generate_and_store_assistant_image(prompt: str, caption: str = "For you.") -> MessageOut:
     """Generate a real image and persist it as an assistant-owned media attachment."""
     if not (settings.cloudflare_account_id and settings.cloudflare_api_token):
@@ -2123,7 +2152,7 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
         try:
             # Create the media row after the text reply so persisted chat order is natural.
             generated_image_message = _generate_and_store_assistant_image(
-                image_prompt, "There. Don't say I never indulge your curiosity."
+                image_prompt, _next_sylus_image_caption()
             )
         except HTTPException as exc:
             logging.warning("Sylus could not deliver a requested image: %s", exc.detail)
