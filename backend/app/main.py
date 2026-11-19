@@ -1709,6 +1709,46 @@ def create_private_sticker(file: UploadFile = File(...), label: str = Form(defau
         ).fetchone()
     return {"id": str(row[0]), "label": row[1], "filename": row[2], "is_favorite": row[3], "created_at": row[4], "src": f"/v1/stickers/{row[0]}"}
 
+@app.post("/v1/stickers/suggest-label")
+def suggest_sticker_label(file: UploadFile = File(...), _: None = Depends(require_owner)):
+    """Suggest a short, descriptive sticker name using the configured Gemini vision model."""
+    if file.content_type not in ("image/png", "image/jpeg", "image/webp"):
+        raise HTTPException(status_code=415, detail="Upload a PNG, JPG, or WebP sticker.")
+    data = file.file.read(4 * 1024 * 1024 + 1)
+    if len(data) > 4 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Sticker image must be 4 MB or smaller.")
+    if not settings.gemini_api_key:
+        raise HTTPException(status_code=503, detail="Image naming is unavailable because no Gemini vision key is configured.")
+    mime_type = file.content_type
+    encoded = base64.b64encode(data).decode("ascii")
+    prompt = (
+        "Look at this single chat sticker. Give it a short, useful name (2 to 5 words) "
+        "based on the visible character, object, expression, and action. Examples: "
+        "'Sleepy White Bunny', 'Blushing and Hiding', 'Tiny Heart Hug'. "
+        "Do not describe the transparent checkerboard or invent a character identity. "
+        "Return only JSON: {\\"label\\":\\"...\\"}."
+    )
+    try:
+        response = httpx.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{settings.gemini_vision_model}:generateContent",
+            params={"key": settings.gemini_api_key},
+            json={"contents": [{"parts": [{"text": prompt}, {"inline_data": {"mime_type": mime_type, "data": encoded}}]}],
+                  "generationConfig": {"temperature": 0.2, "maxOutputTokens": 60, "responseMimeType": "application/json"}},
+            timeout=25.0,
+        )
+        response.raise_for_status()
+        result = response.json()
+        raw = result["candidates"][0]["content"]["parts"][0]["text"]
+        parsed = json.loads(raw)
+        label = re.sub(r"\\s+", " ", str(parsed.get("label", ""))).strip()[:60]
+        if not label:
+            raise ValueError("Empty label")
+        return {"label": label}
+    except (httpx.HTTPError, KeyError, IndexError, ValueError, TypeError) as exc:
+        logging.info("Sticker label suggestion unavailable (%s).", type(exc).__name__)
+        raise HTTPException(status_code=502, detail="Could not identify this sticker right now. You can still name it manually.")
+
+
 @app.get("/v1/stickers/{sticker_id}")
 def get_private_sticker(sticker_id: UUID, _: None = Depends(require_owner)):
     with connection() as conn:
