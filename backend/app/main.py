@@ -222,6 +222,7 @@ class ChatTurnOut(BaseModel):
 
 class SpeechIn(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
+    realtime: bool = False
 
 class CallTurnIn(BaseModel):
     session_id: UUID
@@ -606,7 +607,7 @@ def correct_call_transcript(payload: CallTranscriptCorrectIn, _: None = Depends(
     if settings.cloudflare_account_id and settings.cloudflare_api_token:
         providers.append(("Cloudflare",f"https://api.cloudflare.com/client/v4/accounts/{settings.cloudflare_account_id}/ai/v1",settings.cloudflare_api_token,settings.cloudflare_chat_model))
     prompt=("You are a careful speech-recognition repair layer for a live, informal conversation. The input may include the recognizer's best transcript and several alternate hypotheses for the same audio. Compare them using recent conversation context; prefer a candidate that fits the sounds AND context, not merely the most grammatical sentence. "
-            "Known names and terms: Sylus (may be misheard as Silas, Sylas, Sailus, or Silence when he is being addressed), Umi, Mephisto, Mephi-chan, N109 Zone, Onychinus, Luke, Kieran, Protocore, Memoria, Within Reach. Preserve these exact spellings when context clearly indicates them. "
+            "Known names and terms: Sylus (may be misheard as Silas, Sylas, Sailus, or Silence when he is being addressed), Umi, Mephisto, Mephi-chan, N109 Zone, Onychinus, Luke, Kieran, Protocore, Memoria, Within Reach. Preserve these exact spellings when context clearly indicates them. The speaker may use South Asian English pronunciation, Bengali, or casual Bengali-English code-switching. Preserve Bengali words and mixed-language phrasing as spoken; never translate Bengali into English or "correct" it into a different language. Treat short fillers, contractions, names, and casual grammar as intentional unless there is strong evidence of a recognition error. "
             "Correct only likely recognition mistakes, punctuation, and capitalization. Preserve the speaker's actual meaning, casual wording, language, and tone. Do not translate, paraphrase, formalize, complete unfinished thoughts, or invent words. Do not replace a plausible word just because another phrase sounds more natural. If alternatives remain ambiguous, keep the original best transcript. Return only the corrected transcript.")
     for _,base,key,model in providers[:3]:
         try:
@@ -1336,7 +1337,7 @@ def create_speech(payload: SpeechIn, _: None = Depends(require_owner)):
         response = httpx.post(
             f"https://api.elevenlabs.io/v1/text-to-speech/{settings.elevenlabs_voice_id}?output_format=mp3_44100_128",
             headers={"xi-api-key": settings.elevenlabs_api_key, "Content-Type": "application/json", "Accept": "audio/mpeg"},
-            json={"text": payload.text, "model_id": "eleven_multilingual_v2", "voice_settings": {"stability": stability, "similarity_boost": 0.72, "style": style, "use_speaker_boost": True}},
+            json={"text": payload.text, "model_id": "eleven_flash_v2_5" if payload.realtime else "eleven_multilingual_v2", "voice_settings": {"stability": stability, "similarity_boost": 0.72, "style": style, "use_speaker_boost": True}},
             timeout=60.0,
         )
         response.raise_for_status()
