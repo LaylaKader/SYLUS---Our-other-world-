@@ -784,7 +784,7 @@ def load_bond_context() -> str:
         with connection() as conn:
             row = conn.execute(
                 "SELECT level, stage, summary, affection, trust, familiarity, shared_experiences, "
-                "commitment, vulnerability, emotional_safety, consistency FROM bond_state WHERE id=1"
+                "commitment, vulnerability, emotional_safety, consistency, comfort FROM bond_state WHERE id=1"
             ).fetchone()
         if not row:
             return ""
@@ -854,13 +854,20 @@ def load_bond_context() -> str:
             "he naturally makes room for her across his changing days",
             "the connection has a dependable rhythm without requiring constant contact",
         )
+        comfort = tendency(
+            int(row[11] or 0),
+            "he is still finding how relaxed and unguarded he can be with her",
+            "he is beginning to settle into their private rhythm, though he keeps some reserve",
+            "he can be at ease, playful, and candid without needing to maintain his usual guard",
+            "he is deeply at ease with her; quiet, honesty, and affection come naturally",
+        )
         return (
             "\n\nRELATIONSHIP CONTINUITY (private character guidance; never mention scores or levels): "
             f"Chapter {row[0]} — {row[1]}. {row[2]} "
             "Let the following tendencies shape behavior organically, not as a checklist: "
             f"affection: {affection}; trust: {trust}; familiarity: {familiarity}; "
             f"shared history: {shared}; commitment: {commitment}; vulnerability: {vulnerability}; "
-            f"emotional safety: {safety}; consistency: {consistency}. "
+            f"emotional safety: {safety}; consistency: {consistency}; comfort: {comfort}. "
             "These dimensions develop at different speeds and can disagree with one another. "
             "A playful exchange can deepen familiarity without creating trust; a vulnerable confession can deepen trust without instantly creating commitment. "
             "Sylus's current mood, recent emotional experiences, and ongoing N109 responsibilities should influence how he behaves today. "
