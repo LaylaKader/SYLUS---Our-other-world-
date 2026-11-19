@@ -771,7 +771,7 @@ def load_live_clock_context() -> str:
         now_local = now_utc.astimezone(zone)
         n109 = now_local.replace(tzinfo=None) + __import__("datetime").timedelta(hours=2)
         return (
-            f"\\n\\nLIVE CLOCK (generated now for this exact reply): Umi's current local time is "
+            f"\n\nLIVE CLOCK (generated now for this exact reply): Umi's current local time is "
             f"{now_local.strftime('%A, %Y-%m-%d %H:%M:%S')} ({zone_name}); "
             f"the fictional N109 clock is {n109.strftime('%A, %Y-%m-%d %H:%M:%S')} (exactly two hours ahead). "
             "This clock supersedes any clock time mentioned in older messages. "
@@ -780,7 +780,7 @@ def load_live_clock_context() -> str:
         )
     except Exception:
         logging.exception("Could not construct live clock context.")
-        return "\\n\\nLIVE CLOCK: Use the current server-supplied time context when available; never treat an old user-mentioned time as current."
+        return "\n\nLIVE CLOCK: Use the current server-supplied time context when available; never treat an old user-mentioned time as current."
 
 
 def load_n109_life_context() -> str:
