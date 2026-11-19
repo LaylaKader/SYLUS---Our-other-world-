@@ -278,8 +278,6 @@ def refresh_bond() -> dict:
         ).fetchall()
         sylus_contribution_count = sum(1 for r in milestones if str(r[0]).startswith(("sylus:", "sylus-call:")))
         owner_contribution_count = sum(1 for r in milestones if str(r[0]).startswith(("message:", "call:")))
-        sylus_contribution_count = sum(1 for r in milestones if str(r[0]).startswith(("sylus:", "sylus-call:")))
-        owner_contribution_count = sum(1 for r in milestones if str(r[0]).startswith(("message:", "call:")))
         milestone_list = [
             {"key":r[0], "title":r[1], "description":r[2], "date":r[3].isoformat()}
             for r in reversed(milestones)
