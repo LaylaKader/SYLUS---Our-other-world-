@@ -612,17 +612,19 @@ def generate_proactive_bubbles(history: list[dict], time_context: str = "") -> l
     try:
         with connection() as conn:
             custom_stickers = conn.execute(
-                "SELECT id, label FROM sticker_assets ORDER BY is_favorite DESC, created_at DESC LIMIT 40"
+                "SELECT id, label, visual_description FROM sticker_assets ORDER BY is_favorite DESC, created_at DESC LIMIT 40"
             ).fetchall()
         if custom_stickers:
-            available = ", ".join(
-                f"〔sticker:{row[0]}〕 ({str(row[1])[:60]})" for row in custom_stickers
+            available = "; ".join(
+                f"〔sticker:{row[0]}〕 label={str(row[1])[:60]}; visual_reading={str(row[2] or 'not analysed yet')[:220]}"
+                for row in custom_stickers
             )
             persona += (
-                "\n\nOWNER'S PRIVATE STICKERS: You can use these exact sticker tokens in your own chat replies: "
+                "\n\nOWNER'S PRIVATE STICKERS — VISUAL CATALOGUE: You may use these exact sticker tokens in your replies. "
+                "The visual_reading describes what the image depicts. Choose based on its actual expression or action, not its filename. "
+                "If it says not analysed yet, do not pretend you have seen it. "
                 + available
-                + ". Choose a sticker only when its expression or action genuinely fits; use sparingly. "
-                "Never invent sticker IDs or claim to have sent one unless you include its exact token."
+                + ". Use at most one fitting sticker, sparingly. Never invent sticker IDs."
             )
     except Exception as exc:
         logging.debug("Private sticker context unavailable (%s)", type(exc).__name__)
