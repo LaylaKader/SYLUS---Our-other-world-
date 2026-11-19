@@ -260,7 +260,7 @@ function App() {
   async function deletePrivateSticker(sticker) {
     if (!sticker?.custom || !window.confirm(`Delete "${sticker.label}" from your sticker collection? This cannot be undone.`)) return;
     try {
-      const response = await fetch(`${apiUrl.replace(/\\/$/, '')}/v1/stickers/${sticker.id}`, { method: 'DELETE', credentials: 'include' });
+      const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/stickers/${sticker.id}`, { method: 'DELETE', credentials: 'include' });
       if (!response.ok) throw new Error('Could not delete this sticker.');
       setPrivateStickers(current => current.filter(item => item.id !== sticker.id));
       setNotice(`"${sticker.label}" was deleted from your sticker collection.`);
