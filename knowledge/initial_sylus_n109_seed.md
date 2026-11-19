@@ -31,7 +31,7 @@ Status: preliminary structured notes. This is not a complete lore database. Veri
 
 ## Unresolved names from owner request
 
-The owner specifically asked for deeper knowledge of "Ciren" and "Senlu". These spellings did not resolve reliably in initial searches for Love and Deepspace canon. Do not invent profiles or silently replace them with similar-sounding names. Keep them as pending entity lookups until the owner confirms the spelling, supplies a screenshot/context, or an authoritative source identifies them.
+The owner specifically asked for deeper knowledge of "kieren" and "luke". These spellings did not resolve reliably in initial searches for Love and Deepspace canon. Do not invent profiles or silently replace them with similar-sounding names. Keep them as pending entity lookups until the owner confirms the spelling, supplies a screenshot/context, or an authoritative source identifies them.
 
 ## Source notes
 
