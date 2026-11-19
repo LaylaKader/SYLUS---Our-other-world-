@@ -243,7 +243,7 @@ def refresh_bond() -> dict:
                                 "bond_points=GREATEST(0,bond_points+%s), updated_at=now() WHERE id=1",
                                 (gains.get("affection",0),gains.get("trust",0),gains.get("familiarity",0),
                                  gains.get("shared_experiences",0),gains.get("commitment",0),gains.get("vulnerability",0),
-                                 gains.get("emotional_safety",0),gains.get("consistency",0),gains.get("comfort",0),points),
+                                 gains.get("emotional_safety",0),gains.get("comfort",0),gains.get("consistency",0),points),
                             )
 
         user_count = len(rows) + call_user_count
@@ -297,6 +297,6 @@ def refresh_bond() -> dict:
         "stage":stage, "summary":summary, "next_stage":STAGES[level][2] if level < 12 else "The deepest bond",
         "all_stages":[{"level":item[0],"name":item[2],"threshold":item[1]} for item in STAGES],
         "milestones":milestone_list,
-        "total_user_messages":state[13], "total_shared_turns":state[14], "your_contributions":owner_contribution_count, "sylus_contributions":sylus_contribution_count, "your_contributions":owner_contribution_count, "sylus_contributions":sylus_contribution_count,
+        "total_user_messages":state[13], "total_shared_turns":state[14], "your_contributions":owner_contribution_count, "sylus_contributions":sylus_contribution_count,
         "updated_at":updated.isoformat(),
     }
