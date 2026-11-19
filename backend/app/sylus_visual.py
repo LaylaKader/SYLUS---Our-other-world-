@@ -78,10 +78,10 @@ def build_sylus_image_prompt(
     reference_notes: list[str] | None = None,
 ) -> str:
     """Combine the requested scene with stable identity notes and owner-labelled references."""
-    clean_request = re.sub(r"\\s+", " ", (user_prompt or "").strip())
+    clean_request = re.sub(r"\s+", " ", (user_prompt or "").strip())
     notes = []
     for note in [identity_notes, *(reference_notes or [])]:
-        clean = re.sub(r"\\s+", " ", str(note or "")).strip()
+        clean = re.sub(r"\s+", " ", str(note or "")).strip()
         if clean and clean not in notes:
             notes.append(clean[:700])
     # Keep the requested scene first, then concise owner evidence, then the stable guide.
