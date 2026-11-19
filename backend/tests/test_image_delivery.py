@@ -52,3 +52,13 @@ def test_ordinary_picture_requests_search_online_instead_of_generating():
 def test_only_explicit_creation_requests_generate():
     assert should_generate_image("Create a new picture of a cute cat.")
     assert should_generate_image("Draw us together.")
+
+
+def test_direct_requests_for_a_picture_of_sylus_generate_instead_of_search():
+    from app.image_delivery import should_generate_sylus_image
+
+    assert should_generate_sylus_image("Can you send a picture of you?")
+    assert should_generate_sylus_image("I really wanna see you.")
+    assert should_generate_sylus_image("Send me another photo of yourself.")
+    assert not should_generate_sylus_image("Show me a Sylus photo.")
+    assert not should_generate_sylus_image("Send me a cute cat picture.")
