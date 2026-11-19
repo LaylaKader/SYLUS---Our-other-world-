@@ -21,6 +21,31 @@ class ReciprocalBondTests(unittest.TestCase):
         self.assertGreater(signal[3]["sylus_trust"], 0)
         self.assertGreater(signal[3]["sylus_comfort"], 0)
 
+    def test_sylus_signals_populate_all_nine_reciprocal_dimensions(self):
+        samples = [
+            "I missed you. I'm glad you're here.",
+            "I was worried about you. I hoped you were getting some rest.",
+            "I don't usually tell anyone this, but I suppose I can tell you.",
+            "I was wrong. I owe you an apology.",
+            "I wanted to hear your voice. I made time for you.",
+            "Come here. I'm listening.",
+            "How was your day? What about you?",
+            "You're asking for trouble. A bold claim.",
+            "I just finished handling a shipment. I prefer my own schedule.",
+        ]
+        combined = {}
+        for sample in samples:
+            for _key, _title, _description, gains, _points in _sylus_signals(sample):
+                for key, value in gains.items():
+                    combined[key] = combined.get(key, 0) + value
+        dimensions = [
+            "sylus_affection", "sylus_trust", "sylus_familiarity",
+            "sylus_shared_experiences", "sylus_commitment", "sylus_vulnerability",
+            "sylus_emotional_safety", "sylus_comfort", "sylus_consistency",
+        ]
+        for dimension in dimensions:
+            self.assertGreater(combined.get(dimension, 0), 0, dimension)
+
     def test_user_comfort_is_tracked_separately(self):
         signals = _signals("I feel comfortable around you. I can be myself with you.")
         comfort = next(item for item in signals if item[0] == "comfort")
