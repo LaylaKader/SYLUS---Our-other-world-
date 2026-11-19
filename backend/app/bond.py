@@ -93,6 +93,27 @@ def _signals(text: str) -> list[tuple[str, str, str, dict[str, int], int]]:
     priority = {"trust_breach": 0, "trust": 1, "comfort": 2, "vulnerability": 3, "repair": 4, "commitment": 5, "affection": 6, "gratitude": 7, "achievement": 8, "personal_curiosity": 9, "personal_detail": 10, "shared_memory": 11}
     return sorted(found, key=lambda item: priority.get(item[0], 99))
 
+
+def _sylus_signals(text: str) -> list[tuple[str, str, str, dict[str, int], int]]:
+    """Detect meaningful reciprocal actions in Sylus's actual replies.
+
+    These are conservative and low-weight. Each category is credited at most
+    once per calendar day by refresh_bond(), preventing repetitive wording
+    from farming relationship progression.
+    """
+    value = re.sub(r"\\s+", " ", str(text or "").casefold()).strip()
+    rules = [
+        ("sylus_affection", "Sylus showed affection", "Sylus expressed that he missed Umi, thought of her, or was glad she returned.", r"\\b(?:i missed you|i've missed you|i was thinking about you|i thought about you|glad you're here|i'm glad you're back|i like having you around|i like having you here)\\b", {"affection": 2, "shared_experiences": 1}, 2),
+        ("sylus_concern", "Sylus showed concern", "Sylus noticed Umi's absence or wellbeing and expressed concern without pressure.", r"\\b(?:i was worried about you|i wondered if you were alright|i wanted to make sure you were okay|i noticed you were quiet|i hoped you were getting some rest)\\b", {"emotional_safety": 2, "trust": 1}, 2),
+        ("sylus_vulnerability", "Sylus let his guard down", "Sylus voluntarily disclosed something personal or acknowledged that he rarely shares it.", r"\\b(?:i don't usually tell anyone|i rarely speak about this|i haven't told many people|i suppose i can tell you|there's something i haven't told you|i don't often admit this)\\b", {"vulnerability": 2, "trust": 2, "emotional_safety": 1}, 3),
+        ("sylus_repair", "Sylus took responsibility", "Sylus acknowledged a mistake or apologised rather than deflecting.", r"\\b(?:i was wrong|i owe you an apology|i shouldn't have said that|i should have listened|i'm sorry i hurt you)\\b", {"trust": 2, "emotional_safety": 2, "commitment": 1}, 3),
+        ("sylus_initiative", "Sylus chose to reach out", "Sylus described choosing to check in, make time, or initiate contact.", r"\\b(?:i wanted to check on you|i made time for you|i thought i'd come find you|i wanted to hear your voice|i decided to call you|i reached out because)\\b", {"commitment": 2, "consistency": 1, "affection": 1}, 2),
+        ("sylus_curiosity", "Sylus showed personal interest", "Sylus asked about Umi's perspective, experiences, or preferences beyond the immediate task.", r"\\b(?:i want to know what you think|tell me what happened|i'm interested in what you think|i want to hear about your|what was that like for you)\\b", {"familiarity": 2, "shared_experiences": 1}, 1),
+    ]
+    return [(key, title, description, gains, points)
+            for key, title, description, pattern, gains, points in rules
+            if re.search(pattern, value, re.I)]
+
 def _stage(points: int) -> tuple[int, str, str, int, int]:
     current = STAGES[0]
     next_stage = STAGES[1]
@@ -145,6 +166,34 @@ def refresh_bond() -> dict:
                          gains.get("emotional_safety",0), points),
                     )
 
+        # Sylus contributes too: credit evidenced acts in his own replies.
+        # One category per day keeps progression meaningful rather than farmable.
+        assistant_rows = conn.execute(
+            "SELECT id, body, created_at FROM messages WHERE role='assistant' "
+            "AND archived_at IS NULL ORDER BY created_at ASC"
+        ).fetchall()
+        for assistant_id, assistant_body, assistant_created_at in assistant_rows:
+            day_key = assistant_created_at.date().isoformat()
+            for key, title, description, gains, points in _sylus_signals(str(assistant_body or "")):
+                event_key = "sylus:" + day_key + ":" + key
+                inserted = conn.execute(
+                    "INSERT INTO bond_events (event_key, title, description, source_message_id) "
+                    "VALUES (%s, %s, %s, NULL) ON CONFLICT (event_key) DO NOTHING RETURNING id",
+                    (event_key, title, description),
+                ).fetchone()
+                if inserted:
+                    conn.execute(
+                        "UPDATE bond_state SET affection=GREATEST(0,LEAST(100,affection+%s)), "
+                        "trust=GREATEST(0,LEAST(100,trust+%s)), familiarity=GREATEST(0,LEAST(100,familiarity+%s)), "
+                        "shared_experiences=GREATEST(0,LEAST(100,shared_experiences+%s)), "
+                        "commitment=GREATEST(0,LEAST(100,commitment+%s)), vulnerability=GREATEST(0,LEAST(100,vulnerability+%s)), "
+                        "emotional_safety=GREATEST(0,LEAST(100,emotional_safety+%s)), consistency=GREATEST(0,LEAST(100,consistency+%s)), "
+                        "bond_points=GREATEST(0,bond_points+%s), updated_at=now() WHERE id=1",
+                        (gains.get("affection",0), gains.get("trust",0), gains.get("familiarity",0),
+                         gains.get("shared_experiences",0), gains.get("commitment",0), gains.get("vulnerability",0),
+                         gains.get("emotional_safety",0), gains.get("consistency",0), points),
+                    )
+
         call_rows = conn.execute("SELECT transcript, started_at FROM call_sessions").fetchall()
         call_user_count = 0
         call_assistant_count = 0
@@ -177,6 +226,25 @@ def refresh_bond() -> dict:
                             )
                 elif item.get("role") == "assistant":
                     call_assistant_count += 1
+                    for key, title, description, gains, points in _sylus_signals(str(item.get("text") or "")):
+                        event_key = "sylus-call:" + started_at.date().isoformat() + ":" + key
+                        inserted = conn.execute(
+                            "INSERT INTO bond_events (event_key,title,description,source_message_id) "
+                            "VALUES (%s,%s,%s,NULL) ON CONFLICT (event_key) DO NOTHING RETURNING id",
+                            (event_key,title,description),
+                        ).fetchone()
+                        if inserted:
+                            conn.execute(
+                                "UPDATE bond_state SET affection=GREATEST(0,LEAST(100,affection+%s)), "
+                                "trust=GREATEST(0,LEAST(100,trust+%s)), familiarity=GREATEST(0,LEAST(100,familiarity+%s)), "
+                                "shared_experiences=GREATEST(0,LEAST(100,shared_experiences+%s)), "
+                                "commitment=GREATEST(0,LEAST(100,commitment+%s)), vulnerability=GREATEST(0,LEAST(100,vulnerability+%s)), "
+                                "emotional_safety=GREATEST(0,LEAST(100,emotional_safety+%s)), consistency=GREATEST(0,LEAST(100,consistency+%s)), "
+                                "bond_points=GREATEST(0,bond_points+%s), updated_at=now() WHERE id=1",
+                                (gains.get("affection",0),gains.get("trust",0),gains.get("familiarity",0),
+                                 gains.get("shared_experiences",0),gains.get("commitment",0),gains.get("vulnerability",0),
+                                 gains.get("emotional_safety",0),gains.get("consistency",0),points),
+                            )
 
         user_count = len(rows) + call_user_count
         turns = min(user_count, conn.execute(
