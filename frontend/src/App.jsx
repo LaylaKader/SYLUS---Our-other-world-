@@ -808,7 +808,7 @@ function App() {
     let corrected=phrase;
     if(callCorrectionEnabled){
       setCallStatus('Cleaning up the transcription…');
-      try{const r=await fetch(apiUrl.replace(/\/$/, '')+'/v1/calls/correct-transcript',{method:'POST',headers,credentials:'include',body:JSON.stringify({text:phrase,alternatives,session_id:callSessionIdRef.current})});if(r.ok){const v=await r.json();if(v.text?.trim())corrected=v.text.trim();}}catch{}
+      try{const controller=new AbortController();const timeoutId=window.setTimeout(()=>controller.abort(),3500);const r=await fetch(apiUrl.replace(/\/$/, '')+'/v1/calls/correct-transcript',{method:'POST',headers,credentials:'include',signal:controller.signal,body:JSON.stringify({text:phrase,alternatives,session_id:callSessionIdRef.current})});window.clearTimeout(timeoutId);if(r.ok){const v=await r.json();if(v.text?.trim())corrected=v.text.trim();}}catch{}
     }
     setCallTranscript(corrected);sendCallUtterance(corrected);
   }
