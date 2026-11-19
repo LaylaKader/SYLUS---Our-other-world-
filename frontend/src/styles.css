@@ -508,3 +508,11 @@ body{
 .voice-call-language{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;margin:8px auto 14px;color:#b8a8b5;font-size:11px}
 .voice-call-language select{max-width:100%;min-width:180px;border:1px solid rgba(201,168,117,.28);border-radius:9px;background:#17131c;color:#eadde7;padding:9px 12px;font:inherit}
 .voice-call-language select:focus{outline:2px solid rgba(201,168,117,.4);outline-offset:2px}
+
+/* Sticker Studio naming and review controls */
+.sticker-result-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.sticker-result-actions .secondary-button{white-space:nowrap}
+.sticker-result-preview{padding:8px}
+.sticker-result-preview img{width:100%;height:100%;object-fit:contain;image-rendering:auto}
+.sticker-result-card .settings-input{color:#f0e7ed}
+@media(max-width:520px){.sticker-result-actions{width:100%;justify-content:flex-start}.sticker-results-heading{flex-direction:column}}
