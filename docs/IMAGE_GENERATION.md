@@ -1,26 +1,37 @@
-# Assistant-generated image messages
+# Sylus image generation and visual continuity
 
-## Intended behavior
-Sylus can decide that an image would add value to a conversation and send it as a separate assistant message attachment. The owner can also explicitly ask him to create an image. Images should feel contextual rather than being generated after every request.
+## Current generation path
+- The backend uses Cloudflare Workers AI `@cf/black-forest-labs/flux-1-schnell` for text-to-image generation.
+- The backend stores generated images as private media attachments and applies a daily safety limit.
+- Image generation is available only when the private Render service has the Cloudflare account ID and API token configured.
 
-## Generation flow
-1. The agent decides whether an image is appropriate or the owner explicitly requests one.
-2. Build an original image prompt using the user's request, approved style preferences, and the character visual guide.
-3. Call a replaceable server-side ImageGenerator provider adapter.
-4. Store the result in private object storage; keep only an opaque storage key and metadata in PostgreSQL.
-5. Attach the image to an assistant message and deliver it as a normal chat item.
-6. Keep the prompt/provider metadata for troubleshooting and let the owner delete the image.
+## Stable Sylus identity
+The backend now builds every generated Sylus prompt through `backend/app/sylus_visual.py`. It specifies one adult masculine Sylus, his refined facial proportions, crimson almond-shaped eyes, silver-white layered hair silhouette and strand texture, mature anatomy, wardrobe range, expression variation, premium 3D game-render style, and explicit negative constraints against gender drift, generic white-haired/red-eyed substitutes, duplicate people, chibi, and malformed anatomy.
 
-## Style and character
-Default Sylus imagery should follow the user's selected in-game 3D visual style, not chibi. Preserve his recognizable appearance and outfit continuity where the prompt calls for him. Use original generated scenes; do not scrape, train on, or redistribute copyrighted game assets without permission. Do not promise exact replication of game renders.
+The prompt also reads:
+1. The owner-editable Sylus appearance notes from Settings → Reference library.
+2. Recent owner-approved Sylus reference-image analysis notes stored in the private visual-memory database.
+3. The user's requested scene, outfit, pose, camera angle, and expression.
+
+The scene request remains first in the prompt. The complete prompt is kept within the configured model prompt budget.
+
+## Important model limitation
+FLUX.1-schnell is a text-to-image model in this integration. It does **not** accept the uploaded reference photos as image-conditioning inputs. The photos are stored privately and their saved visual descriptions guide the prompt, but this is not true face-reference or image-to-image conditioning. Therefore, improved consistency is expected, not guaranteed. A model/provider that supports image-reference conditioning would be needed for stronger identity matching; that may require a different provider, model, or paid service.
+
+## Add the supplied Sylus references
+Open Settings → Reference library → Sylus reference. Upload the owner's close-up face/expression images and outfit sheet there. Keep the images in the Sylus collection, not Umi/MC or Other people. Add or refine the appearance notes in the same collection. The reference photos attached to a ChatGPT conversation are not automatically copied into the private Render database.
+
+Recommended reference set:
+- Clear frontal and three-quarter face close-ups for facial proportions and eye shape.
+- Side-profile / expression close-ups for nose, jaw, fringe and expression range.
+- Full-body outfit sheet for tailoring, silhouette and wardrobe variety.
+Avoid using a collage as the only face reference when separate, clear images are available.
 
 ## Privacy and cost
 - Provider credentials stay server-side.
-- Attachments are private by default and served using owner-authorized short-lived URLs.
-- No public buckets or permanent public image URLs.
-- No automatic paid fallback. Show a clear error if the configured provider is unavailable or over quota.
-- Make provider, cost/usage limits, image dimensions, and generation history inspectable.
-- Do not silently generate images in the background if doing so incurs a charge.
+- Reference photos and generated media remain in the owner-only database and are served through authenticated endpoints.
+- Do not put private photos or API keys in the public repository.
+- No paid fallback is silently invoked; generation fails clearly when the configured provider is unavailable or the daily limit is reached.
 
-## Implementation status
-The database attachment table and replaceable Python interfaces are present. A real provider adapter, private object-storage implementation, chat endpoint, UI rendering, and end-to-end tests are not yet connected. Therefore image sending is specified but not yet operational.
+## Limitations
+Text prompting cannot guarantee exact reproduction of copyrighted game renders, a fixed face across every seed, exact individual hair-strand counts, or exact outfit details. Describing hair as fine separated strand groups and preserving the same silhouette is more actionable than asking the model for an arbitrary exact strand count.
