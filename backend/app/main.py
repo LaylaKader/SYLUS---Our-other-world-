@@ -1789,17 +1789,17 @@ def suggest_sticker_label(file: UploadFile = File(...), _: None = Depends(requir
                 except json.JSONDecodeError:
                     continue
         if isinstance(parsed, dict):
-            label = re.sub(r"\\s+", " ", str(parsed.get("label", ""))).strip()[:60]
-            description = re.sub(r"\\s+", " ", str(parsed.get("description", ""))).strip()[:900]
+            label = re.sub(r"\s+", " ", str(parsed.get("label", ""))).strip()[:60]
+            description = re.sub(r"\s+", " ", str(parsed.get("description", ""))).strip()[:900]
         else:
             # Preserve a useful vision response even when the provider returns plain text.
-            description = re.sub(r"\\s+", " ", cleaned).strip().strip(chr(34))[:900]
-            description = re.sub(r"^(?:description|analysis|this sticker shows)\\s*[:\\-]\\s*", "", description, flags=re.I)
+            description = re.sub(r"\s+", " ", cleaned).strip().strip(chr(34))[:900]
+            description = re.sub(r"^(?:description|analysis|this sticker shows)\s*[:-]\s*", "", description, flags=re.I)
             words = re.findall(r"[A-Za-z0-9-]+", description)
             label = " ".join(words[:4]).strip().title()[:60]
         if not label or not description:
             raise ValueError("Incomplete sticker analysis.")
-        if re.fullmatch(r"(?:sticker|image|unknown|new sticker)(?:\\s+\\d+)?", label, flags=re.I):
+        if re.fullmatch(r"(?:sticker|image|unknown|new sticker)(?:\s+\d+)?", label, flags=re.I):
             words = re.findall(r"[A-Za-z0-9-]+", description)
             label = " ".join(words[:4]).strip().title()[:60]
         if not label:
