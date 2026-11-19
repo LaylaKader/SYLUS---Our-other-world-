@@ -1149,9 +1149,21 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
         if not last_user or not last_user[0] or not last_activity or not last_activity[0]:
             return {"sent": False, "reason": "no_conversation", "messages": []}
 
+        bond_row = conn.execute(
+            "SELECT level, affection, commitment, consistency FROM bond_state WHERE id=1"
+        ).fetchone()
+        bond_level = int(bond_row[0] or 1) if bond_row else 1
+        bond_affection = int(bond_row[1] or 0) if bond_row else 0
+        bond_commitment = int(bond_row[2] or 0) if bond_row else 0
+        bond_consistency = int(bond_row[3] or 0) if bond_row else 0
+        # Keep the owner's configured chance as the baseline, while letting a deeper
+        # relationship make a natural check-in somewhat more likely (never above 100%).
+        bond_drive = min(1.12, 0.98 + max(0, bond_level - 1) * 0.012
+                         + (bond_affection + bond_commitment + bond_consistency) / 4000)
+        effective_chance = min(100, round(int(row[8] if row[8] is not None else 50) * bond_drive))
         decision = proactive_contact_decision(
             now_utc, last_activity[0], row[4], int(row[5] or 0), row[6],
-            int(row[1] or 0), int(row[2] or 0), int(row[7] or 60), int(row[8] if row[8] is not None else 50),
+            int(row[1] or 0), int(row[2] or 0), int(row[7] or 60), effective_chance,
         )
         if not decision["due"]:
             if decision["cycle_count"] != int(row[5] or 0) or decision["pause_until"] != row[6]:
