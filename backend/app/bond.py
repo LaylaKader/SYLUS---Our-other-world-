@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 import hashlib
 from collections import defaultdict
+from math import log1p
 from datetime import datetime, timezone
 from .db import connection
 
@@ -356,18 +357,31 @@ def refresh_bond() -> dict:
         activity_points = active_days * 2
         # Sylus's consistency is based on days he actually replied, including voice calls,
         # rather than copied from the owner's activity or inferred from a single warm message.
-        sylus_active_days = len(
-            {r[2].date() for r in assistant_rows if r[2]}
-            | {r[1].date() for r in call_rows if r[1] and any(
-                item.get("role") == "assistant" and item.get("text") for item in (r[0] or [])
-            )}
-        )
+        sylus_active_dates = {r[2].date() for r in assistant_rows if r[2]}
+        sylus_call_sessions = 0
+        for transcript, started_at in call_rows:
+            if started_at and any(
+                item.get("role") == "assistant" and item.get("text") for item in (transcript or [])
+            ):
+                sylus_active_dates.add(started_at.date())
+                sylus_call_sessions += 1
+        sylus_active_days = len(sylus_active_dates)
+        owner_active_dates = {r[2].date() for r in rows if r[2]} | call_days
+        shared_active_days = len(sylus_active_dates & owner_active_dates)
         sylus_consistency = _clamp(min(100, sylus_active_days * 4) * time_decay)
+        # Familiarity grows through sustained two-way conversation, with diminishing returns.
+        # Shared experiences count completed voice sessions and days on which both sides spoke.
+        sylus_turn_count = len(assistant_rows) + call_assistant_count
+        sylus_familiarity_floor = min(45, round(5 * log1p(sylus_turn_count)) + min(15, sylus_active_days * 2))
+        sylus_shared_experiences_floor = min(45, sylus_call_sessions * 3 + shared_active_days * 2)
         conn.execute(
             "UPDATE bond_state SET familiarity=GREATEST(%s,LEAST(100,ROUND(familiarity*%s)::int)), consistency=%s, "
+            "sylus_familiarity=GREATEST(sylus_familiarity,%s), "
+            "sylus_shared_experiences=GREATEST(sylus_shared_experiences,%s), "
             "sylus_consistency=%s, bond_points=GREATEST(bond_points, %s), "
             "total_user_messages=%s, total_shared_turns=%s WHERE id=1",
-            (familiarity_from_time, time_decay, consistency, sylus_consistency, activity_points, user_count, turns),
+            (familiarity_from_time, time_decay, consistency, sylus_familiarity_floor,
+             sylus_shared_experiences_floor, sylus_consistency, activity_points, user_count, turns),
         )
         state = conn.execute(
             "SELECT affection, trust, familiarity, shared_experiences, commitment, vulnerability, "
