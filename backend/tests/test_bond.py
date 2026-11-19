@@ -33,6 +33,19 @@ class ReciprocalBondTests(unittest.TestCase):
         signals = _sylus_signals("I was worried about you. I hoped you were getting some rest.")
         self.assertIn("sylus_concern", [item[0] for item in signals])
 
+    def test_existing_naturalistic_affection_and_presence_are_recognized(self):
+        signals = _sylus_signals("Decided it's entirely too quiet around here without you interrupting.")
+        self.assertIn("sylus_affection", [item[0] for item in signals])
+
+    def test_invitation_to_closeness_counts_as_comfort(self):
+        signals = _sylus_signals("Come here. Put the phone down and close your eyes for a bit.")
+        self.assertIn("sylus_comfort", [item[0] for item in signals])
+
+    def test_personal_world_disclosure_counts_toward_reciprocal_trust(self):
+        signals = _sylus_signals("Finished clearing out a minor dispute over a shipment.")
+        disclosure = next(item for item in signals if item[0] == "sylus_self_disclosure")
+        self.assertGreater(disclosure[3]["sylus_trust"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()
