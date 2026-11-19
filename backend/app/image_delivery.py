@@ -53,3 +53,16 @@ def should_generate_sylus_image(text: str) -> bool:
         r"\bcan\s+i\s+see\s+you\s+(?:in\s+a\s+)?(?:picture|photo|image)\b",
     )
     return any(re.search(pattern, value, re.I) for pattern in patterns)
+
+
+def is_image_followup(text: str, has_recent_generated_image: bool = False) -> bool:
+    """Treat short 'another one' replies as image requests only when a recent image exists."""
+    if not has_recent_generated_image:
+        return False
+    value = (text or "").strip()
+    return bool(re.search(
+        r"\b(?:send|show|give)\s+(?:me\s+)?(?:another|one more|a different)\s+(?:one|picture|photo|image)\b|"
+        r"\b(?:another one|one more|a different one)\b",
+        value,
+        re.I,
+    ))
