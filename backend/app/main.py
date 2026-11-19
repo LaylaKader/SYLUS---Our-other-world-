@@ -30,6 +30,7 @@ from .chat_service import generate_reply, generate_proactive_bubbles, split_repl
 from .bond import refresh_bond
 from .web_search import discover_for_chat, is_search_followup, requested_result_limit
 from .image_delivery import extract_image_directive, extract_link_directive, should_generate_image
+from .sylus_visual import build_sylus_image_prompt
 
 app = FastAPI(title="SYLUS private companion API", version="0.3.0")
 
@@ -1872,14 +1873,25 @@ def _generate_and_store_assistant_image(prompt: str, caption: str = "For you.") 
         ).fetchone()[0]
     if recent_generations >= settings.cloudflare_image_limit_24h:
         raise HTTPException(status_code=429, detail=f"Daily image safety limit reached ({settings.cloudflare_image_limit_24h} images per 24 hours).")
-    sylus_direction = (
-        "Character direction: Sylus from Love and Deepspace, tall adult man, silver-white hair, vivid crimson eyes, "
-        "refined sharp features, natural adult anatomy, recognizable high-quality 3D game-render appearance, "
-        "elegant dark clothing with restrained red details. Cinematic lighting, detailed realistic materials, "
-        "dark elegant atmosphere, restrained ruby and champagne-gold accents. Avoid chibi, flat 2D anime, "
-        "exaggerated anatomy, text, watermark, and UI."
-    )
-    final_prompt = f"{prompt.strip()}. {sylus_direction}"
+    # FLUX.1-schnell is text-to-image. Use the owner's private, labelled visual
+    # reference collection as textual evidence; do not imply pixel-level image conditioning.
+    identity_notes = ""
+    reference_notes = []
+    with connection() as conn:
+        identity = conn.execute(
+            "SELECT notes FROM visual_identities WHERE category='sylus' AND status='confirmed' "
+            "ORDER BY created_at LIMIT 1"
+        ).fetchone()
+        if identity:
+            identity_notes = identity[0] or ""
+        rows = conn.execute(
+            "SELECT r.analysis_notes FROM visual_reference_images r "
+            "JOIN visual_identities i ON i.id=r.identity_id "
+            "WHERE i.category='sylus' AND i.status='confirmed' AND r.analysis_notes <> '' "
+            "ORDER BY r.created_at DESC LIMIT 6"
+        ).fetchall()
+        reference_notes = [row[0] for row in rows if row[0]]
+    final_prompt = build_sylus_image_prompt(prompt, identity_notes, reference_notes)
     try:
         response = httpx.post(
             f"https://api.cloudflare.com/client/v4/accounts/{settings.cloudflare_account_id}/ai/run/@cf/black-forest-labs/flux-1-schnell",
