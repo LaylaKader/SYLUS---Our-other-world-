@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "SYLUS — A world of our own",
+  "name": "SYLUS — A World of Our Own",
   "short_name": "SYLUS",
-  "description": "A private world of our own.",
+  "description": "A private AI companion with persistent conversations, character-driven responses, saved memories, simulated emotion, relationship progression, and personal media and voice features.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
