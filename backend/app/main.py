@@ -1693,7 +1693,7 @@ def list_private_stickers(_: None = Depends(require_owner)):
     return [{"id": str(row[0]), "label": row[1], "filename": row[2], "is_favorite": row[3], "created_at": row[4], "src": f"/v1/stickers/{row[0]}"} for row in rows]
 
 @app.post("/v1/stickers")
-def create_private_sticker(file: UploadFile = File(...), label: str = Form(default="New sticker"), _: None = Depends(require_owner)):
+def create_private_sticker(file: UploadFile = File(...), label: str = Form(default="New sticker"), visual_description: str = Form(default=""), _: None = Depends(require_owner)):
     if file.content_type != "image/png":
         raise HTTPException(status_code=415, detail="Stickers must be transparent PNG files.")
     data = file.file.read(8 * 1024 * 1024 + 1)
@@ -1702,52 +1702,71 @@ def create_private_sticker(file: UploadFile = File(...), label: str = Form(defau
     if not data.startswith(b"\x89PNG\r\n\x1a\n"):
         raise HTTPException(status_code=415, detail="The uploaded file is not a valid PNG.")
     safe_label = re.sub(r"\s+", " ", label).strip()[:100] or "New sticker"
+    safe_description = re.sub(r"\s+", " ", visual_description).strip()[:900]
     with connection() as conn:
         row = conn.execute(
-            "INSERT INTO sticker_assets (label, filename, data) VALUES (%s, %s, %s) RETURNING id, label, filename, is_favorite, created_at",
-            (safe_label, (file.filename or "sticker.png")[:160], data),
+            "INSERT INTO sticker_assets (label, filename, data, visual_description) VALUES (%s, %s, %s, %s) RETURNING id, label, filename, is_favorite, created_at",
+            (safe_label, (file.filename or "sticker.png")[:160], data, safe_description),
         ).fetchone()
     return {"id": str(row[0]), "label": row[1], "filename": row[2], "is_favorite": row[3], "created_at": row[4], "src": f"/v1/stickers/{row[0]}"}
 
 @app.post("/v1/stickers/suggest-label")
 def suggest_sticker_label(file: UploadFile = File(...), _: None = Depends(require_owner)):
-    """Suggest a short, descriptive sticker name using the configured Gemini vision model."""
+    """Analyse sticker pixels and return a short name plus visual description."""
     if file.content_type not in ("image/png", "image/jpeg", "image/webp"):
         raise HTTPException(status_code=415, detail="Upload a PNG, JPG, or WebP sticker.")
     data = file.file.read(4 * 1024 * 1024 + 1)
     if len(data) > 4 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Sticker image must be 4 MB or smaller.")
-    if not settings.gemini_api_key:
-        raise HTTPException(status_code=503, detail="Image naming is unavailable because no Gemini vision key is configured.")
     mime_type = file.content_type
     encoded = base64.b64encode(data).decode("ascii")
     prompt = (
-        "Look at this single chat sticker. Give it a short, useful name (2 to 5 words) "
-        "based on the visible character, object, expression, and action. Examples: "
-        "'Sleepy White Bunny', 'Blushing and Hiding', 'Tiny Heart Hug'. "
-        "Do not describe the transparent checkerboard or invent a character identity. "
-        "Return only JSON: {\"label\":\"...\"}."
+        "Inspect this actual sticker image. Return JSON with label (2 to 5 words) and description "
+        "(one sentence, maximum 45 words). Describe visible subject, pose, facial expression, "
+        "gesture, useful colours and mood. Ignore transparent areas. Do not guess identity or invent details."
     )
+    raw = ""
+    failures = []
+    if settings.gemini_api_key:
+        try:
+            response = httpx.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{settings.gemini_vision_model}:generateContent",
+                params={"key": settings.gemini_api_key},
+                json={"contents": [{"parts": [{"text": prompt}, {"inline_data": {"mime_type": mime_type, "data": encoded}}]}],
+                      "generationConfig": {"temperature": 0.1, "maxOutputTokens": 180, "responseMimeType": "application/json"}},
+                timeout=35.0,
+            )
+            response.raise_for_status()
+            raw = response.json()["candidates"][0]["content"]["parts"][0]["text"]
+        except (httpx.HTTPError, KeyError, IndexError, ValueError, TypeError) as exc:
+            failures.append("Gemini:" + type(exc).__name__)
+    if not raw and settings.cloudflare_account_id and settings.cloudflare_api_token:
+        try:
+            response = httpx.post(
+                f"https://api.cloudflare.com/client/v4/accounts/{settings.cloudflare_account_id}/ai/run/@cf/meta/llama-3.2-11b-vision-instruct",
+                headers={"Authorization": f"Bearer {settings.cloudflare_api_token}", "Content-Type": "application/json"},
+                json={"messages": [{"role": "user", "content": [{"type": "text", "text": prompt},
+                      {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{encoded}"}}]}],
+                      "max_tokens": 180, "temperature": 0.1},
+                timeout=35.0,
+            )
+            response.raise_for_status()
+            raw = (response.json().get("result") or {}).get("response", "")
+        except (httpx.HTTPError, KeyError, ValueError, TypeError) as exc:
+            failures.append("Cloudflare:" + type(exc).__name__)
     try:
-        response = httpx.post(
-            f"https://generativelanguage.googleapis.com/v1beta/models/{settings.gemini_vision_model}:generateContent",
-            params={"key": settings.gemini_api_key},
-            json={"contents": [{"parts": [{"text": prompt}, {"inline_data": {"mime_type": mime_type, "data": encoded}}]}],
-                  "generationConfig": {"temperature": 0.2, "maxOutputTokens": 60, "responseMimeType": "application/json"}},
-            timeout=25.0,
-        )
-        response.raise_for_status()
-        result = response.json()
-        raw = result["candidates"][0]["content"]["parts"][0]["text"]
-        parsed = json.loads(raw)
+        if not raw:
+            raise ValueError("No vision provider returned a result.")
+        cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw.strip(), flags=re.I)
+        parsed = json.loads(cleaned)
         label = re.sub(r"\s+", " ", str(parsed.get("label", ""))).strip()[:60]
-        if not label:
-            raise ValueError("Empty label")
-        return {"label": label}
-    except (httpx.HTTPError, KeyError, IndexError, ValueError, TypeError) as exc:
-        logging.info("Sticker label suggestion unavailable (%s).", type(exc).__name__)
-        raise HTTPException(status_code=502, detail="Could not identify this sticker right now. You can still name it manually.")
-
+        description = re.sub(r"\s+", " ", str(parsed.get("description", ""))).strip()[:900]
+        if not label or not description:
+            raise ValueError("Incomplete sticker analysis.")
+        return {"label": label, "description": description}
+    except (ValueError, TypeError, AttributeError) as exc:
+        logging.info("Sticker visual analysis unavailable providers=%s error=%s", failures, type(exc).__name__)
+        raise HTTPException(status_code=503, detail="Sticker image analysis is unavailable. You can still name and save it manually.")
 
 @app.get("/v1/stickers/{sticker_id}")
 def get_private_sticker(sticker_id: UUID, _: None = Depends(require_owner)):
