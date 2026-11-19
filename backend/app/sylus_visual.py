@@ -34,7 +34,7 @@ watermark, logo, UI.
 
 def build_sylus_image_prompt(user_prompt: str, identity_notes: str = "",
                              reference_notes: list[str] | None = None) -> str:
-    clean = re.sub(r"\s+", " ", (user_prompt or "").strip())[:280]
+    clean = re.sub(r"\s+", " ", (user_prompt or "").strip())[:220]
     notes = []
     for note in [identity_notes, *(reference_notes or [])]:
         value = re.sub(r"\s+", " ", str(note or "")).strip()
