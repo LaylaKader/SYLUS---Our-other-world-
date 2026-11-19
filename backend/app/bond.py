@@ -217,11 +217,11 @@ def refresh_bond() -> dict:
                         "trust=GREATEST(0,LEAST(100,trust+%s)), familiarity=GREATEST(0,LEAST(100,familiarity+%s)), "
                         "shared_experiences=GREATEST(0,LEAST(100,shared_experiences+%s)), "
                         "commitment=GREATEST(0,LEAST(100,commitment+%s)), vulnerability=GREATEST(0,LEAST(100,vulnerability+%s)), "
-                        "emotional_safety=GREATEST(0,LEAST(100,emotional_safety+%s)), comfort=GREATEST(0,LEAST(100,comfort+%s)), consistency=GREATEST(0,LEAST(100,consistency+%s)), sylus_affection=GREATEST(0,LEAST(100,sylus_affection+%s)), sylus_trust=GREATEST(0,LEAST(100,sylus_trust+%s)), sylus_comfort=GREATEST(0,LEAST(100,sylus_comfort+%s)), "
+                        "emotional_safety=GREATEST(0,LEAST(100,emotional_safety+%s)), comfort=GREATEST(0,LEAST(100,comfort+%s)), consistency=GREATEST(0,LEAST(100,consistency+%s)), sylus_affection=GREATEST(0,LEAST(100,sylus_affection+%s)), sylus_trust=GREATEST(0,LEAST(100,sylus_trust+%s)), sylus_comfort=GREATEST(0,LEAST(100,sylus_comfort+%s)), sylus_familiarity=GREATEST(0,LEAST(100,sylus_familiarity+%s)), sylus_shared_experiences=GREATEST(0,LEAST(100,sylus_shared_experiences+%s)), sylus_commitment=GREATEST(0,LEAST(100,sylus_commitment+%s)), sylus_vulnerability=GREATEST(0,LEAST(100,sylus_vulnerability+%s)), sylus_emotional_safety=GREATEST(0,LEAST(100,sylus_emotional_safety+%s)), sylus_consistency=GREATEST(0,LEAST(100,sylus_consistency+%s)), "
                         "bond_points=GREATEST(0,bond_points+%s), updated_at=now() WHERE id=1",
                         (gains.get("affection",0), gains.get("trust",0), gains.get("familiarity",0),
                          gains.get("shared_experiences",0), gains.get("commitment",0), gains.get("vulnerability",0),
-                         gains.get("emotional_safety",0), gains.get("comfort",0), gains.get("consistency",0), gains.get("sylus_affection",0), gains.get("sylus_trust",0), gains.get("sylus_comfort",0), points),
+                         gains.get("emotional_safety",0), gains.get("comfort",0), gains.get("consistency",0), gains.get("sylus_affection",0), gains.get("sylus_trust",0), gains.get("sylus_comfort",0), gains.get("sylus_familiarity",0), gains.get("sylus_shared_experiences",0), gains.get("sylus_commitment",0), gains.get("sylus_vulnerability",0), gains.get("sylus_emotional_safety",0), gains.get("sylus_consistency",0), points),
                     )
 
         call_rows = conn.execute("SELECT transcript, started_at FROM call_sessions").fetchall()
@@ -269,11 +269,11 @@ def refresh_bond() -> dict:
                                 "trust=GREATEST(0,LEAST(100,trust+%s)), familiarity=GREATEST(0,LEAST(100,familiarity+%s)), "
                                 "shared_experiences=GREATEST(0,LEAST(100,shared_experiences+%s)), "
                                 "commitment=GREATEST(0,LEAST(100,commitment+%s)), vulnerability=GREATEST(0,LEAST(100,vulnerability+%s)), "
-                                "emotional_safety=GREATEST(0,LEAST(100,emotional_safety+%s)), comfort=GREATEST(0,LEAST(100,comfort+%s)), consistency=GREATEST(0,LEAST(100,consistency+%s)), sylus_affection=GREATEST(0,LEAST(100,sylus_affection+%s)), sylus_trust=GREATEST(0,LEAST(100,sylus_trust+%s)), sylus_comfort=GREATEST(0,LEAST(100,sylus_comfort+%s)), "
+                                "emotional_safety=GREATEST(0,LEAST(100,emotional_safety+%s)), comfort=GREATEST(0,LEAST(100,comfort+%s)), consistency=GREATEST(0,LEAST(100,consistency+%s)), sylus_affection=GREATEST(0,LEAST(100,sylus_affection+%s)), sylus_trust=GREATEST(0,LEAST(100,sylus_trust+%s)), sylus_comfort=GREATEST(0,LEAST(100,sylus_comfort+%s)), sylus_familiarity=GREATEST(0,LEAST(100,sylus_familiarity+%s)), sylus_shared_experiences=GREATEST(0,LEAST(100,sylus_shared_experiences+%s)), sylus_commitment=GREATEST(0,LEAST(100,sylus_commitment+%s)), sylus_vulnerability=GREATEST(0,LEAST(100,sylus_vulnerability+%s)), sylus_emotional_safety=GREATEST(0,LEAST(100,sylus_emotional_safety+%s)), sylus_consistency=GREATEST(0,LEAST(100,sylus_consistency+%s)), "
                                 "bond_points=GREATEST(0,bond_points+%s), updated_at=now() WHERE id=1",
                                 (gains.get("affection",0),gains.get("trust",0),gains.get("familiarity",0),
                                  gains.get("shared_experiences",0),gains.get("commitment",0),gains.get("vulnerability",0),
-                                 gains.get("emotional_safety",0),gains.get("comfort",0),gains.get("consistency",0),gains.get("sylus_affection",0),gains.get("sylus_trust",0),gains.get("sylus_comfort",0),points),
+                                 gains.get("emotional_safety",0),gains.get("comfort",0),gains.get("consistency",0),gains.get("sylus_affection",0),gains.get("sylus_trust",0),gains.get("sylus_comfort",0),gains.get("sylus_familiarity",0),gains.get("sylus_shared_experiences",0),gains.get("sylus_commitment",0),gains.get("sylus_vulnerability",0),gains.get("sylus_emotional_safety",0),gains.get("sylus_consistency",0),points),
                             )
 
         user_count = len(rows) + call_user_count
@@ -297,7 +297,7 @@ def refresh_bond() -> dict:
         state = conn.execute(
             "SELECT affection, trust, familiarity, shared_experiences, commitment, vulnerability, "
             "emotional_safety, consistency, bond_points, level, stage, summary, milestones, "
-            "total_user_messages, total_shared_turns, updated_at, progression_started_at, comfort, sylus_affection, sylus_trust, sylus_comfort FROM bond_state WHERE id=1"
+            "total_user_messages, total_shared_turns, updated_at, progression_started_at, comfort, sylus_affection, sylus_trust, sylus_comfort, sylus_familiarity, sylus_shared_experiences, sylus_commitment, sylus_vulnerability, sylus_emotional_safety, sylus_consistency FROM bond_state WHERE id=1"
         ).fetchone()
         points = int(state[8] or 0)
         level, stage, summary, floor_points, next_points = _stage(points)
@@ -320,7 +320,7 @@ def refresh_bond() -> dict:
     return {
         "affection":state[0], "trust":state[1], "familiarity":state[2], "shared_experiences":state[3],
         "commitment":state[4], "vulnerability":state[5], "emotional_safety":state[6],
-        "consistency":consistency, "comfort":state[17], "sylus_affection":state[18], "sylus_trust":state[19], "sylus_comfort":state[20], "bond_points":points, "level":level, "level_progress":progress,
+        "consistency":consistency, "comfort":state[17], "sylus_affection":state[18], "sylus_trust":state[19], "sylus_comfort":state[20], "sylus_familiarity":state[21], "sylus_shared_experiences":state[22], "sylus_commitment":state[23], "sylus_vulnerability":state[24], "sylus_emotional_safety":state[25], "sylus_consistency":state[26], "bond_points":points, "level":level, "level_progress":progress,
         "points_to_next_level":max(0,next_points-points) if level < 12 else 0,
         "stage":stage, "summary":summary, "next_stage":STAGES[level][2] if level < 12 else "The deepest bond",
         "all_stages":[{"level":item[0],"name":item[2],"threshold":item[1]} for item in STAGES],
