@@ -1759,7 +1759,7 @@ def suggest_sticker_label(file: UploadFile = File(...), _: None = Depends(requir
                 response = httpx.post(
                     "https://api.groq.com/openai/v1/chat/completions",
                     headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
-                    json={"model": "meta-llama/llama-4-scout-17b-16e-instruct", "messages": [{"role": "user", "content": [
+                    json={"model": "qwen/qwen3.8-27b", "messages": [{"role": "user", "content": [
                         {"type": "text", "text": prompt},
                         {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{encoded}"}}
                     ]}], "max_tokens": 180, "temperature": 0.1},
