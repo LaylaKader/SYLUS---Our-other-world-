@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 import hashlib
+from collections import defaultdict
 from datetime import datetime, timezone
 from .db import connection
 
