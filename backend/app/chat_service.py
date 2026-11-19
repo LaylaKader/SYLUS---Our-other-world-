@@ -755,6 +755,34 @@ def load_persona() -> str:
     return path.read_text(encoding="utf-8")
 
 
+def load_live_clock_context() -> str:
+    """Build a fresh clock note for every generation; never let an old chat timestamp freeze time."""
+    try:
+        with connection() as conn:
+            row = conn.execute("SELECT timezone FROM owner_runtime_context WHERE id=1").fetchone()
+        zone_name = row[0] if row and row[0] else "Asia/Dhaka"
+        from zoneinfo import ZoneInfo
+        try:
+            zone = ZoneInfo(zone_name)
+        except Exception:
+            zone_name = "Asia/Dhaka"
+            zone = ZoneInfo(zone_name)
+        now_utc = datetime.now(timezone.utc)
+        now_local = now_utc.astimezone(zone)
+        n109 = now_local.replace(tzinfo=None) + __import__("datetime").timedelta(hours=2)
+        return (
+            f"\\n\\nLIVE CLOCK (generated now for this exact reply): Umi's current local time is "
+            f"{now_local.strftime('%A, %Y-%m-%d %H:%M:%S')} ({zone_name}); "
+            f"the fictional N109 clock is {n109.strftime('%A, %Y-%m-%d %H:%M:%S')} (exactly two hours ahead). "
+            "This clock supersedes any clock time mentioned in older messages. "
+            "If Umi said 'it's 4 PM' in an earlier message, that was true at that message's timestamp only; "
+            "advance time naturally using the message timestamps and this live clock. Never keep repeating an old hour."
+        )
+    except Exception:
+        logging.exception("Could not construct live clock context.")
+        return "\\n\\nLIVE CLOCK: Use the current server-supplied time context when available; never treat an old user-mentioned time as current."
+
+
 def load_n109_life_context() -> str:
     """Load enduring parts of Sylus's independent world and responsibilities."""
     try:
