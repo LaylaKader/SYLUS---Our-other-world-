@@ -1726,7 +1726,7 @@ def suggest_sticker_label(file: UploadFile = File(...), _: None = Depends(requir
         "based on the visible character, object, expression, and action. Examples: "
         "'Sleepy White Bunny', 'Blushing and Hiding', 'Tiny Heart Hug'. "
         "Do not describe the transparent checkerboard or invent a character identity. "
-        "Return only JSON: {\\"label\\":\\"...\\"}."
+        "Return only JSON: {\"label\":\"...\"}."
     )
     try:
         response = httpx.post(
