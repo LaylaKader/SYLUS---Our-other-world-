@@ -1721,9 +1721,12 @@ def suggest_sticker_label(file: UploadFile = File(...), _: None = Depends(requir
     mime_type = file.content_type
     encoded = base64.b64encode(data).decode("ascii")
     prompt = (
-        "Inspect this actual sticker image. Return JSON with label (2 to 5 words) and description "
-        "(one sentence, maximum 45 words). Describe visible subject, pose, facial expression, "
-        "gesture, useful colours and mood. Ignore transparent areas. Do not guess identity or invent details."
+        "You are naming a single chat sticker from the attached image. Look at the image itself, not its filename. "
+        "Return ONLY a JSON object with exactly two string keys: label and description. "
+        "The label must be a specific, concise name of 2 to 5 words based on the visible subject, action, or expression. "
+        "Never use generic names such as Sticker 1, Sticker, Image, Unknown, or New sticker. "
+        "The description must be one useful sentence under 45 words describing the visible subject, pose, facial expression, "
+        "gesture, colours, and mood. Ignore transparent areas. If the subject is unclear, describe only what is visible."
     )
     raw = ""
     failures = []
@@ -1774,12 +1777,33 @@ def suggest_sticker_label(file: UploadFile = File(...), _: None = Depends(requir
     try:
         if not raw:
             raise ValueError("No vision provider returned a result.")
-        cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw.strip(), flags=re.I)
-        parsed = json.loads(cleaned)
-        label = re.sub(r"\s+", " ", str(parsed.get("label", ""))).strip()[:60]
-        description = re.sub(r"\s+", " ", str(parsed.get("description", ""))).strip()[:900]
+        cleaned = raw.strip()
+        # Some vision providers wrap JSON in prose or ignore the JSON-only instruction.
+        parsed = None
+        decoder = json.JSONDecoder()
+        for offset, char in enumerate(cleaned):
+            if char == "{":
+                try:
+                    parsed, _ = decoder.raw_decode(cleaned[offset:])
+                    break
+                except json.JSONDecodeError:
+                    continue
+        if isinstance(parsed, dict):
+            label = re.sub(r"\\s+", " ", str(parsed.get("label", ""))).strip()[:60]
+            description = re.sub(r"\\s+", " ", str(parsed.get("description", ""))).strip()[:900]
+        else:
+            # Preserve a useful vision response even when the provider returns plain text.
+            description = re.sub(r"\\s+", " ", cleaned).strip().strip(chr(34))[:900]
+            description = re.sub(r"^(?:description|analysis|this sticker shows)\\s*[:\\-]\\s*", "", description, flags=re.I)
+            words = re.findall(r"[A-Za-z0-9-]+", description)
+            label = " ".join(words[:4]).strip().title()[:60]
         if not label or not description:
             raise ValueError("Incomplete sticker analysis.")
+        if re.fullmatch(r"(?:sticker|image|unknown|new sticker)(?:\\s+\\d+)?", label, flags=re.I):
+            words = re.findall(r"[A-Za-z0-9-]+", description)
+            label = " ".join(words[:4]).strip().title()[:60]
+        if not label:
+            raise ValueError("No usable sticker name was returned.")
         return {"label": label, "description": description}
     except (ValueError, TypeError, AttributeError) as exc:
         logging.info("Sticker visual analysis unavailable providers=%s error=%s", failures, type(exc).__name__)
