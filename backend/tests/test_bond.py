@@ -1,4 +1,8 @@
+import os
 import unittest
+
+os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost/test")
+os.environ.setdefault("SYLUS_OWNER_TOKEN", "test-owner-token")
 
 from app.bond import _signals, _sylus_signals
 
