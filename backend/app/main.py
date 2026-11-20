@@ -569,7 +569,7 @@ def call_turn(payload: CallTurnIn, background_tasks: BackgroundTasks, _: None = 
                   "If she asks whether you can hear her, respond as someone on the active call. Keep spoken replies natural and concise.")
     reply_started = time()
     try:
-        answer=generate_reply(spoken,str(anchor[0]),history,time_context=call_context)
+        answer=generate_reply(spoken,str(anchor[0]),history,time_context=call_context,call_mode=True)
         logging.info("Voice-call reply generation completed in %.2fs (input_chars=%s, output_chars=%s).", time() - reply_started, len(spoken), len(answer or ""))
     except ProviderNotConfigured as exc:
         raise HTTPException(status_code=503,detail=str(exc)) from exc
@@ -1391,9 +1391,23 @@ def scheduled_proactive_messages(authorization: str | None = Header(default=None
 
 @app.post("/v1/voice/speech")
 def create_speech(payload: SpeechIn, _: None = Depends(require_owner)):
+    return _create_speech_response(payload, call_mode=False)
+
+
+@app.post("/v1/calls/speech")
+def create_call_speech(payload: SpeechIn, _: None = Depends(require_owner)):
+    return _create_speech_response(payload, call_mode=True)
+
+
+def _create_speech_response(payload: SpeechIn, *, call_mode: bool):
     speech_started = time()
-    fish_ready = bool(settings.fish_api_key and settings.fish_reference_id)
-    elevenlabs_ready = bool(settings.elevenlabs_api_key and settings.elevenlabs_voice_id)
+    fish_api_key = (settings.call_fish_api_key or settings.fish_api_key) if call_mode else settings.fish_api_key
+    fish_reference_id = (settings.call_fish_reference_id or settings.fish_reference_id) if call_mode else settings.fish_reference_id
+    fish_model = (settings.call_fish_audio_model or settings.fish_audio_model) if call_mode else settings.fish_audio_model
+    elevenlabs_api_key = settings.elevenlabs_api_key
+    elevenlabs_voice_id = settings.elevenlabs_voice_id
+    fish_ready = bool(fish_api_key and fish_reference_id)
+    elevenlabs_ready = bool(elevenlabs_api_key and elevenlabs_voice_id)
     if not fish_ready and not elevenlabs_ready:
         raise HTTPException(
             status_code=503,
@@ -1408,14 +1422,14 @@ def create_speech(payload: SpeechIn, _: None = Depends(require_owner)):
             response = httpx.post(
                 "https://api.fish.audio/v1/tts",
                 headers={
-                    "Authorization": f"Bearer {settings.fish_api_key}",
+                    "Authorization": f"Bearer {fish_api_key}",
                     "Content-Type": "application/json",
                     "Accept": "audio/mpeg",
-                    "model": settings.fish_audio_model or "s2.1-pro-free",
+                    "model": fish_model or "s2.1-pro-free",
                 },
                 json={
                     "text": payload.text,
-                    "reference_id": settings.fish_reference_id,
+                    "reference_id": fish_reference_id,
                     "format": "mp3",
                 },
                 timeout=60.0 if payload.realtime else 90.0,
@@ -1434,8 +1448,8 @@ def create_speech(payload: SpeechIn, _: None = Depends(require_owner)):
             if emotion.anger >= 0.35 or emotion.irritation >= 0.45:
                 stability, style = 0.68, 0.12
             response = httpx.post(
-                f"https://api.elevenlabs.io/v1/text-to-speech/{settings.elevenlabs_voice_id}?output_format=mp3_44100_128",
-                headers={"xi-api-key": settings.elevenlabs_api_key, "Content-Type": "application/json", "Accept": "audio/mpeg"},
+                f"https://api.elevenlabs.io/v1/text-to-speech/{elevenlabs_voice_id}?output_format=mp3_44100_128",
+                headers={"xi-api-key": elevenlabs_api_key, "Content-Type": "application/json", "Accept": "audio/mpeg"},
                 json={"text": payload.text, "model_id": "eleven_flash_v2_5" if payload.realtime else "eleven_multilingual_v2", "voice_settings": {"stability": stability, "similarity_boost": 0.72, "style": style, "use_speaker_boost": True}},
                 timeout=25.0 if payload.realtime else 60.0,
             )
