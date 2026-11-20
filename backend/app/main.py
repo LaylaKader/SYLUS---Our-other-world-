@@ -1832,7 +1832,7 @@ def compose_sound_design(payload: SoundComposeIn, _: None = Depends(require_owne
                 params={"key": settings.gemini_api_key},
                 json={"contents": [{"parts": [{"text": prompt}]}],
                       "generationConfig": {"temperature": 0.85, "maxOutputTokens": 900, "responseMimeType": "application/json"}},
-                timeout=30.0,
+                timeout=60.0,
             )
             response.raise_for_status()
             raw = response.json()["candidates"][0]["content"]["parts"][0]["text"]
