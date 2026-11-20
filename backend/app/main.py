@@ -998,7 +998,7 @@ def update_call_settings(payload: CallSettingsUpdate, _: None = Depends(require_
 
 def extract_admin_instruction(text: str) -> tuple[bool, str]:
     """Recognise an explicit, message-leading address to the app administrator."""
-    match = re.match(r"^\\s*admin(?:\\s*[:,—-]\\s*|\\s+)([\\s\\S]+)$", text or "", flags=re.I)
+    match = re.match(r"^\s*admin(?:\s*[:,—-]\s*|\s+)([\s\S]+)$", text or "", flags=re.I)
     return (True, match.group(1).strip()) if match else (False, (text or "").strip())
 
 
@@ -1017,12 +1017,12 @@ def _admin_restriction_expiry(value: str, timezone_name: str) -> tuple[datetime 
     if any(word in value for word in ("today", "tonight")):
         from datetime import time as clock_time
         return datetime.combine(now_local.date(), clock_time(23, 59, 59), tzinfo=zone), "until the end of today"
-    duration = re.search(r"for\\s+(\\d+)\\s*(hours?|hrs?|minutes?|mins?|days?)", value)
+    duration = re.search(r"for\s+(\d+)\s*(hours?|hrs?|minutes?|mins?|days?)", value)
     if duration:
         amount, unit = int(duration.group(1)), duration.group(2)
         seconds = amount * (86400 if unit.startswith("day") else 3600 if unit.startswith(("hour", "hr")) else 60)
         return now_local + timedelta(seconds=seconds), f"for {amount} {unit}"
-    clock = re.search(r"until\\s+(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm)?", value)
+    clock = re.search(r"until\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", value)
     if clock:
         from datetime import time as clock_time
         hour, minute, suffix = int(clock.group(1)), int(clock.group(2) or 0), clock.group(3)
