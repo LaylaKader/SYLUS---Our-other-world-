@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import StickerStudio from './StickerStudio.jsx';
+import RingtoneStudio, { getStoredRingtone } from './RingtoneStudio.jsx';
 import {ArrowLeft, Bell, Bird, BookHeart, Camera, ChevronDown, CircleHelp, Clock3, Crown, Heart, Image, LockKeyhole, Menu, MessageCircle, MoreHorizontal, Send, Settings, ShieldCheck, Sparkles, Star, X, RefreshCw, Phone, PhoneOff, Mic, MicOff, History, Volume2, Trash2, Headphones} from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? window.location.origin : '');
@@ -387,13 +388,25 @@ function App() {
     return () => { stopped = true; window.clearInterval(interval); };
   }, [connected, proactiveSettings?.messages_enabled, proactiveSettings?.calls_enabled, apiUrl, headers]);
 
-  function playAlertTone(kind) {
+  async function playAlertTone(kind) {
     if (!alertSoundsEnabled || alertVolume <= 0) return;
+    try {
+      const custom = await getStoredRingtone(kind);
+      if (custom?.blob) {
+        const url = URL.createObjectURL(custom.blob);
+        const audio = new Audio(url);
+        audio.volume = Math.max(0, Math.min(1, alertVolume));
+        audio.onended = () => URL.revokeObjectURL(url);
+        audio.onerror = () => URL.revokeObjectURL(url);
+        await audio.play();
+        return;
+      }
+    } catch (error) { console.warn('Custom ringtone unavailable; using built-in tone:', error); }
     try {
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
       if (!AudioContextClass) return;
       const ctx = alertAudioContextRef.current || (alertAudioContextRef.current = new AudioContextClass());
-      if (ctx.state === 'suspended') ctx.resume();
+      if (ctx.state === 'suspended') await ctx.resume();
       const now = ctx.currentTime;
       const master = ctx.createGain();
       master.gain.value = Math.max(0, Math.min(1, alertVolume)) * 0.22;
@@ -419,7 +432,6 @@ function App() {
       master.gain.setValueAtTime(0.0001, now + (kind === 'call' ? 2.7 : 0.75));
     } catch (error) { console.warn('SYLUS alert sound unavailable:', error); }
   }
-
   async function refreshVisualLibrary() {
     try { const r = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/visual-memory`, { headers, credentials: 'include' }); if (r.ok) setVisualLibrary(await r.json()); } catch {}
   }
@@ -1450,6 +1462,7 @@ function App() {
           <input id="alert-volume" type="range" min="0" max="1" step="0.05" value={alertVolume} onChange={e=>{const value=Number(e.target.value);setAlertVolume(value);try{window.localStorage.setItem('sylus-alert-volume',String(value));}catch{}}} />
           <div className="settings-actions" style={{marginTop:10}}><button className="secondary-button" onClick={()=>playAlertTone('message')} disabled={!alertSoundsEnabled}>Preview message chime</button><button className="secondary-button" onClick={()=>playAlertTone('call')} disabled={!alertSoundsEnabled}>Preview call ringtone</button></div>
           <p className="field-help">These are original synthesized tones, not copied game music. Android's system sound for background push notifications is controlled by Android and may remain different.</p>
+           <RingtoneStudio />
           <div className="settings-divider"/><div className="settings-title"><div><span className="card-kicker">BACKGROUND DELIVERY</span><h2>Push notifications</h2></div><Bell size={19}/></div><p>{pushStatus?.subscribed ? 'This device is subscribed to Sylus notifications.' : pushStatus?.configured ? 'Push is ready. Notifications stay enabled on this device once browser permission is granted.' : 'Push delivery needs VAPID keys in the private server settings.'}</p>{connected && pushStatus?.configured && <button className="secondary-button" onClick={pushStatus.subscribed ? disablePushNotifications : enablePushNotifications} disabled={pushBusy}>{pushBusy ? 'Updating…' : pushStatus.subscribed ? 'Disable notifications on this device' : 'Keep notifications on'}</button>}<p className="field-help">The background scheduler checks about every 5 minutes; actual delivery can be delayed by GitHub Actions or Android battery settings. {pushStatus?.subscribed ? 'This device is registered for alerts; Sylus can send a notification when a proactive message is generated.' : 'This device is not registered yet. Enable notifications once and allow them in Android. SYLUS will restore the subscription automatically on later sign-ins.'} You can turn alerts off here or in Android Settings → Apps → Sylus → Notifications. Notifications contain only a short message preview.</p>{connected && pushStatus?.subscribed && <button className="secondary-button" onClick={testPushNotification} disabled={pushBusy}>{pushBusy ? 'Sending test…' : 'Send test notification'}</button>}
          <div className="settings-divider"/>
          <div className="settings-title"><div><span className="card-kicker" style={{color:'#c98a80'}}>A CLEAN BEGINNING</span><h2>Start a New World</h2></div><Trash2 size={19}/></div>
