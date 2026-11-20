@@ -1,260 +1,31 @@
 import React, { useEffect, useRef, useState } from 'react';
-
-const DB_NAME = 'sylus-ringtone-library';
-const STORE = 'ringtones';
-const DB_VERSION = 1;
-
-function openRingtoneDb() {
-  return new Promise((resolve, reject) => {
-    if (!window.indexedDB) return reject(new Error('This browser does not support local audio storage.'));
-    const request = window.indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error('Could not open ringtone storage.'));
-  });
-}
-
-export async function getStoredRingtone(kind) {
-  try {
-    const db = await openRingtoneDb();
-    return await new Promise((resolve, reject) => {
-      const request = db.transaction(STORE, 'readonly').objectStore(STORE).get(kind);
-      request.onsuccess = () => { resolve(request.result || null); db.close(); };
-      request.onerror = () => { reject(request.error); db.close(); };
-    });
-  } catch { return null; }
-}
-
-async function saveStoredRingtone(kind, blob, name) {
-  const db = await openRingtoneDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, 'readwrite');
-    tx.objectStore(STORE).put({ blob, name, updatedAt: Date.now() }, kind);
-    tx.oncomplete = () => { db.close(); resolve(); };
-    tx.onerror = () => { db.close(); reject(tx.error || new Error('Could not save ringtone.')); };
-  });
-}
-
-async function deleteStoredRingtone(kind) {
-  const db = await openRingtoneDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, 'readwrite');
-    tx.objectStore(STORE).delete(kind);
-    tx.oncomplete = () => { db.close(); resolve(); };
-    tx.onerror = () => { db.close(); reject(tx.error); };
-  });
-}
-
-function encodeWav(buffer) {
-  const channels = Math.min(buffer.numberOfChannels, 2);
-  const frames = buffer.length;
-  const bytes = 2;
-  const size = frames * channels * bytes;
-  const output = new ArrayBuffer(44 + size);
-  const view = new DataView(output);
-  const write = (offset, value) => [...value].forEach((char, i) => view.setUint8(offset + i, char.charCodeAt(0)));
-  write(0, 'RIFF'); view.setUint32(4, 36 + size, true); write(8, 'WAVE'); write(12, 'fmt ');
-  view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, channels, true);
-  view.setUint32(24, buffer.sampleRate, true); view.setUint32(28, buffer.sampleRate * channels * bytes, true);
-  view.setUint16(32, channels * bytes, true); view.setUint16(34, 16, true); write(36, 'data'); view.setUint32(40, size, true);
-  const data = Array.from({ length: channels }, (_, c) => buffer.getChannelData(c));
-  let offset = 44;
-  for (let i = 0; i < frames; i += 1) for (let c = 0; c < channels; c += 1) {
-    const sample = Math.max(-1, Math.min(1, data[c][i]));
-    view.setInt16(offset, sample < 0 ? sample * 32768 : sample * 32767, true);
-    offset += 2;
-  }
-  return new Blob([output], { type: 'audio/wav' });
-}
-
-async function makePromptTone(description) {
-  const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-  if (!Offline) throw new Error('This browser cannot generate audio tones.');
-  const words = description.toLowerCase();
-  const dark = /dark|deep|ominous|danger|n109|mysterious|low|midnight/.test(words);
-  const soft = /soft|gentle|tender|romantic|warm|heart|intimate|dream/.test(words);
-  const metallic = /metal|steel|crystal|bell|chime|glass|spark/.test(words);
-  const heartbeat = /heartbeat|pulse|throb/.test(words);
-  const base = dark ? 146.83 : soft ? 392 : 293.66;
-  const duration = 4.2;
-  const ctx = new Offline(1, Math.ceil(44100 * duration), 44100);
-  const master = ctx.createGain();
-  master.gain.value = 0.72;
-  const filter = ctx.createBiquadFilter();
-  filter.type = metallic ? 'highpass' : 'lowpass';
-  filter.frequency.value = metallic ? 520 : dark ? 1050 : 3600;
-  master.connect(filter); filter.connect(ctx.destination);
-  const notes = heartbeat
-    ? [{f:base,t:.05,d:.18},{f:base*1.18,t:.28,d:.12},{f:base,t:1.15,d:.18},{f:base*1.18,t:1.38,d:.12},{f:base,t:2.5,d:.18},{f:base*1.18,t:2.73,d:.12}]
-    : [{f:base,t:.08,d:.55},{f:base*1.25,t:.72,d:.5},{f:base*1.5,t:1.42,d:.72},{f:base*1.25,t:2.45,d:.48},{f:base*1.12,t:3.12,d:.75}];
-  notes.forEach((note, index) => {
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = metallic ? 'sine' : dark ? 'triangle' : 'sine';
-    osc.frequency.setValueAtTime(note.f, note.t);
-    if (metallic) {
-      const overtone = ctx.createOscillator();
-      const overtoneGain = ctx.createGain();
-      overtone.type = 'sine'; overtone.frequency.value = note.f * 2.76;
-      overtoneGain.gain.setValueAtTime(.12, note.t);
-      overtoneGain.gain.exponentialRampToValueAtTime(.0001, note.t + note.d);
-      overtone.connect(overtoneGain); overtoneGain.connect(master);
-      overtone.start(note.t); overtone.stop(note.t + note.d + .02);
-    }
-    const peak = soft ? .24 : .34;
-    gain.gain.setValueAtTime(.0001, note.t);
-    gain.gain.exponentialRampToValueAtTime(peak, note.t + .035);
-    gain.gain.exponentialRampToValueAtTime(.0001, note.t + note.d);
-    osc.connect(gain); gain.connect(master);
-    osc.start(note.t); osc.stop(note.t + note.d + .03);
-  });
-  const rendered = await ctx.startRendering();
-  return encodeWav(rendered);
-}
-
-export default function RingtoneStudio({ onSaved }) {
-  const [kind, setKind] = useState('message');
-  const [description, setDescription] = useState('A dark, elegant N109 signal: low metallic resonance, a restrained heartbeat pulse, then a crystal chime.');
-  const [fileName, setFileName] = useState('');
-  const [decoded, setDecoded] = useState(null);
-  const [start, setStart] = useState(0);
-  const [end, setEnd] = useState(0);
-  const [saved, setSaved] = useState({ message: null, call: null });
-  const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState('');
-  const previewRef = useRef(null);
-  const audioRef = useRef(null);
-  const [previewUrl, setPreviewUrl] = useState('');
-
-  useEffect(() => {
-    let active = true;
-    Promise.all([getStoredRingtone('message'), getStoredRingtone('call')]).then(([message, call]) => {
-      if (active) setSaved({ message, call });
-    });
-    return () => { active = false; if (previewUrl) URL.revokeObjectURL(previewUrl); };
-  }, [previewUrl]);
-
-  function showPreview(blob) {
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    const url = URL.createObjectURL(blob);
-    setPreviewUrl(url);
-    if (audioRef.current) {
-      audioRef.current.src = url;
-      audioRef.current.play().catch(() => setStatus('Tap Play preview to hear the audio.'));
-    }
-  }
-
-  async function loadFile(file) {
-    if (!file) return;
-    if (file.size > 25 * 1024 * 1024) { setStatus('Please choose an audio file smaller than 25 MB.'); return; }
-    setBusy(true); setStatus('Reading your audio…');
-    try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      const ctx = new AudioCtx();
-      const buffer = await ctx.decodeAudioData(await file.arrayBuffer());
-      await ctx.close();
-      setDecoded(buffer); setStart(0); setEnd(Math.min(buffer.duration, 12)); setFileName(file.name);
-      setStatus('Audio loaded. Choose a short section, then save it as a message or call ringtone.');
-    } catch { setStatus('I could not read that audio format. Try MP3, WAV, M4A, AAC, OGG, or WebM.'); }
-    finally { setBusy(false); }
-  }
-
-  async function saveTrimmed() {
-    if (!decoded) return;
-    const from = Math.max(0, Math.min(start, decoded.duration));
-    const to = Math.max(from + .25, Math.min(end, decoded.duration, 20));
-    const length = Math.max(1, Math.floor((to - from) * decoded.sampleRate));
-    const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-    if (!Offline) { setStatus('Audio trimming is not supported in this browser.'); return; }
-    setBusy(true);
-    try {
-      const channels = Math.min(decoded.numberOfChannels, 2);
-      const ctx = new Offline(channels, length, decoded.sampleRate);
-      const source = ctx.createBufferSource();
-      const cropped = ctx.createBuffer(channels, length, decoded.sampleRate);
-      for (let c = 0; c < channels; c += 1) cropped.copyToChannel(decoded.getChannelData(c).slice(Math.floor(from * decoded.sampleRate), Math.floor(from * decoded.sampleRate) + length), c);
-      source.buffer = cropped; source.connect(ctx.destination); source.start(0);
-      const rendered = await ctx.startRendering();
-      const blob = encodeWav(rendered);
-      await saveStoredRingtone(kind, blob, fileName || 'Custom audio');
-      setSaved(current => ({ ...current, [kind]: { blob, name: fileName || 'Custom audio' } }));
-      showPreview(blob); onSaved?.(kind);
-      setStatus(`Saved as your ${kind} ringtone.`);
-    } catch (error) { setStatus(error.message || 'Could not save that ringtone.'); }
-    finally { setBusy(false); }
-  }
-
-  async function generate() {
-    if (!description.trim()) return;
-    setBusy(true); setStatus('Composing an original sound from your description…');
-    try {
-      const blob = await makePromptTone(description);
-      await saveStoredRingtone(kind, blob, 'Prompt composition');
-      setSaved(current => ({ ...current, [kind]: { blob, name: 'Prompt composition' } }));
-      showPreview(blob); onSaved?.(kind);
-      setStatus(`Your original ${kind} sound is ready and saved on this device.`);
-    } catch (error) { setStatus(error.message || 'Could not generate that sound.'); }
-    finally { setBusy(false); }
-  }
-
-  function downloadSaved() {
-    const item = saved[kind];
-    if (!item?.blob) return;
-    const url = URL.createObjectURL(item.blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `sylus-${kind}-ringtone.wav`;
-    link.click();
-    URL.revokeObjectURL(url);
-  }
-
-  async function remove() {
-    await deleteStoredRingtone(kind);
-    setSaved(current => ({ ...current, [kind]: null }));
-    onSaved?.(kind);
-    setStatus(`Removed your custom ${kind} ringtone.`);
-  }
-
-  return <div className="ringtone-studio" style={{marginTop:18,padding:16,border:'1px solid rgba(196,157,128,.24)',borderRadius:14,background:'rgba(18,15,19,.34)'}}>
-    <div className="card-kicker">PERSONAL SOUND DESIGN · N109</div>
-    <h3 style={{margin:'6px 0 8px',fontFamily:'inherit'}}>Ringtone Atelier</h3>
-    <p className="field-help">Make separate message and call sounds. Upload a clip and trim it, or describe an original sound for the built-in synthesizer to compose. Your audio stays in this browser on this device.</p>
-    <label className="field-label" style={{marginTop:12}}>WHICH SOUND ARE YOU MAKING?</label>
-    <div className="settings-actions">
-      <button type="button" className={kind==='message'?'primary-button':'secondary-button'} onClick={()=>setKind('message')}>Message alert</button>
-      <button type="button" className={kind==='call'?'primary-button':'secondary-button'} onClick={()=>setKind('call')}>Incoming call</button>
-    </div>
-    <div style={{marginTop:16}}>
-      <label className="field-label">1 · UPLOAD YOUR AUDIO</label>
-      <input ref={previewRef} type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.webm" className="settings-input" onChange={e=>loadFile(e.target.files?.[0])}/>
-      {decoded && <div style={{marginTop:12}}>
-        <p className="field-help">{fileName} · {decoded.duration.toFixed(1)} seconds</p>
-        <label className="field-label">START · {start.toFixed(1)}s</label>
-        <input type="range" min="0" max={Math.max(.1,Math.min(20,decoded.duration)-.25)} step=".1" value={Math.min(start,decoded.duration-.25)} onChange={e=>setStart(Number(e.target.value))} style={{width:'100%'}}/>
-        <label className="field-label">END · {end.toFixed(1)}s (MAX 20 SECONDS)</label>
-        <input type="range" min={Math.min(start+.25,decoded.duration)} max={Math.min(20,decoded.duration)} step=".1" value={Math.max(Math.min(end,20,decoded.duration),Math.min(start+.25,20,decoded.duration))} onChange={e=>setEnd(Number(e.target.value))} style={{width:'100%'}}/>
-        <p className="field-help">Selected clip: {Math.max(0,end-start).toFixed(1)} seconds. Keep it short so the alert feels intentional.</p>
-        <button type="button" className="secondary-button" onClick={()=>{const audio=new Audio();audio.src=URL.createObjectURL(encodeWav(decoded));audio.play().catch(()=>{});}}>Preview full upload</button>
-        <button type="button" className="primary-button" style={{marginTop:8}} onClick={saveTrimmed} disabled={busy||end<=start}>Trim & save as {kind} ringtone</button>
-      </div>}
-    </div>
-    <div className="settings-divider"/>
-    <div>
-      <label className="field-label">2 · DESCRIBE A SOUND</label>
-      <textarea className="settings-input memory-textarea" rows={3} value={description} onChange={e=>setDescription(e.target.value)} placeholder="e.g. A low, elegant metallic pulse with a distant glass chime…"/>
-      <p className="field-help">Try words like dark, metallic, crystal, heartbeat, soft, romantic, ominous, piano-like, or cinematic. This creates a synthesized ringtone locally; it is not full AI audio generation, an AI voice, or a copy of game music. You can download your saved sound as WAV for use in Android's ringtone settings.</p>
-      <button type="button" className="primary-button" onClick={generate} disabled={busy||!description.trim()}>{busy?'Composing…':'Compose from description'}</button>
-    </div>
-    <div className="settings-divider"/>
-    <div>
-      <label className="field-label">3 · YOUR SAVED {kind.toUpperCase()} RINGTONE</label>
-      <p className="field-help">{saved[kind] ? saved[kind].name || 'Custom sound saved' : 'No custom sound assigned yet. The original built-in tone will play until you save one.'}</p>
-      <audio ref={audioRef} controls style={{width:'100%',margin:'8px 0'}}/>
-      {saved[kind] && <div className="settings-actions"><button type="button" className="secondary-button" onClick={downloadSaved}>Download WAV</button><button type="button" className="secondary-button danger-action" onClick={remove}>Remove custom ringtone</button></div>}
-    </div>
-    {status && <p className="field-help" role="status" style={{marginTop:12}}>{status}</p>}
-  </div>;
+const DB='sylus-ringtone-library', STORE='ringtones';
+function dbOpen(){return new Promise((ok,no)=>{if(!indexedDB)return no(Error('Local audio storage is unavailable.'));const r=indexedDB.open(DB,1);r.onupgradeneeded=()=>{if(!r.result.objectStoreNames.contains(STORE))r.result.createObjectStore(STORE)};r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)});}
+export async function getStoredRingtone(kind){let d;try{d=await dbOpen();return await new Promise((ok,no)=>{const r=d.transaction(STORE).objectStore(STORE).get(kind);r.onsuccess=()=>ok(r.result||null);r.onerror=()=>no(r.error)})}catch{return null}finally{d?.close()}}
+async function putSound(kind,blob,name){const d=await dbOpen();try{await new Promise((ok,no)=>{const t=d.transaction(STORE,'readwrite');t.objectStore(STORE).put({blob,name,updatedAt:Date.now()},kind);t.oncomplete=ok;t.onerror=()=>no(t.error);t.onabort=()=>no(t.error)})}finally{d.close()}}
+async function deleteSound(kind){const d=await dbOpen();try{await new Promise((ok,no)=>{const t=d.transaction(STORE,'readwrite');t.objectStore(STORE).delete(kind);t.oncomplete=ok;t.onerror=()=>no(t.error)})}finally{d.close()}}
+function wav(buffer){const channels=Math.min(2,buffer.numberOfChannels),frames=buffer.length,size=frames*channels*2,out=new ArrayBuffer(44+size),v=new DataView(out);const str=(o,s)=>[...s].forEach((c,i)=>v.setUint8(o+i,c.charCodeAt(0)));str(0,'RIFF');v.setUint32(4,36+size,true);str(8,'WAVE');str(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,channels,true);v.setUint32(24,buffer.sampleRate,true);v.setUint32(28,buffer.sampleRate*channels*2,true);v.setUint16(32,channels*2,true);v.setUint16(34,16,true);str(36,'data');v.setUint32(40,size,true);const data=Array.from({length:channels},(_,c)=>buffer.getChannelData(c));let p=44;for(let i=0;i<frames;i++)for(let c=0;c<channels;c++){const x=Math.max(-1,Math.min(1,data[c][i]));v.setInt16(p,x<0?x*32768:x*32767,true);p+=2}return new Blob([out],{type:'audio/wav'})}
+async function decode(file){const C=window.AudioContext||window.webkitAudioContext;if(!C)throw Error('Use Chrome or Firefox to edit audio.');const c=new C();try{if(c.state==='suspended')await c.resume();const b=await c.decodeAudioData((await file.arrayBuffer()).slice(0));if(!b.length||!b.duration)throw Error('This file contains no playable audio.');return b}catch(e){throw Error(e.message.includes('no playable')?e.message:'This audio format could not be decoded. Try MP3 or WAV.')}finally{await c.close().catch(()=>{})}}
+function crop(b,a,z){const sr=b.sampleRate,from=Math.floor(Math.max(0,a)*sr),to=Math.min(b.length,Math.floor(Math.min(z,b.duration,20)*sr)),n=Math.max(1,to-from),ch=Math.min(2,b.numberOfChannels),C=window.AudioContext||window.webkitAudioContext,c=new C();try{const o=c.createBuffer(ch,n,sr);for(let i=0;i<ch;i++)o.copyToChannel(b.getChannelData(i).slice(from,to),i);return o}finally{c.close().catch(()=>{})}}
+async function render(plan){const O=window.OfflineAudioContext||window.webkitOfflineAudioContext;if(!O)throw Error('This browser cannot render audio. Try Chrome.');const events=(plan.events||[]).slice(0,18);if(events.length<3)throw Error('The AI sound design was incomplete.');const dur=Math.min(6.5,Math.max(2,...events.map(e=>(+e.at||0)+(+e.duration||.2)+(+e.release||.15)+.1))),sr=44100,c=new O(2,Math.ceil(dur*sr),sr),master=c.createGain(),comp=c.createDynamicsCompressor(),tone=c.createBiquadFilter();master.gain.value=.78;comp.threshold.value=-18;comp.ratio.value=3;tone.type='lowpass';tone.frequency.value=9500;master.connect(tone);tone.connect(comp);comp.connect(c.destination);const nb=c.createBuffer(1,sr,sr),nd=nb.getChannelData(0);for(let i=0;i<sr;i++)nd[i]=(Math.random()*2-1)*.65;
+events.forEach((e,i)=>{const t=Math.max(0,Math.min(5.5,+e.at||0)),d=Math.max(.05,Math.min(1.2,+e.duration||.2)),a=Math.max(.005,Math.min(.25,+e.attack||.025)),r=Math.max(.03,Math.min(.8,+e.release||.18)),g=Math.max(.008,Math.min(.22,+e.gain||.1)),f=c.createBiquadFilter(),env=c.createGain();f.type=e.kind==='noise'?'bandpass':'lowpass';f.frequency.setValueAtTime(Math.max(180,Math.min(9000,+e.filter||3200)),t);f.Q.value=e.kind==='noise'?1.4:.65;env.gain.setValueAtTime(.0001,t);env.gain.exponentialRampToValueAtTime(g,t+Math.min(a,d*.6));env.gain.setValueAtTime(g*.7,t+Math.min(d*.55,a+.015));env.gain.exponentialRampToValueAtTime(.0001,Math.min(dur-.005,t+d+r));f.connect(env);env.connect(master);if(e.kind==='noise'){const s=c.createBufferSource();s.buffer=nb;s.loop=true;s.connect(f);s.start(t);s.stop(Math.min(dur,t+d+r+.02))}else{const hz=Math.max(45,Math.min(2400,+e.frequency||440)),s=c.createOscillator();s.type=['sine','triangle','sawtooth','square'].includes(e.wave)?e.wave:'sine';s.frequency.setValueAtTime(hz,t);s.detune.value=i%2?3:-3;s.connect(f);s.start(t);s.stop(Math.min(dur,t+d+r+.02));if(i%3===0&&hz<1100){const p=c.createOscillator(),g2=c.createGain();p.frequency.value=hz*2.01;g2.gain.value=g*.12;p.connect(g2);g2.connect(master);p.start(t);p.stop(Math.min(dur,t+d+.08))}}});return wav(await c.startRendering())}
+export default function RingtoneStudio({onSaved,apiUrl='',connected=false}){
+ const [kind,setKind]=useState('message'),[desc,setDesc]=useState('A dark, elegant N109 signal: a low metallic pulse, restrained heartbeat texture, then a clear crystal chime.'),[fileName,setFileName]=useState(''),[decoded,setDecoded]=useState(null),[start,setStart]=useState(0),[end,setEnd]=useState(0),[saved,setSaved]=useState({message:null,call:null}),[busy,setBusy]=useState(false),[status,setStatus]=useState(''),[url,setUrl]=useState(''),[previewName,setPreviewName]=useState(''),[volume,setVolume]=useState(.85);const input=useRef(null),base=(apiUrl||(import.meta.env.PROD?window.location.origin:'')).replace(/\/$/,'');
+ useEffect(()=>{let live=true;Promise.all([getStoredRingtone('message'),getStoredRingtone('call')]).then(([m,c])=>{if(live){setSaved({message:m,call:c});const x=kind==='message'?m:c;if(x?.blob){setUrl(URL.createObjectURL(x.blob));setPreviewName(x.name||'Saved sound')}}});return()=>{live=false}},[]);
+ useEffect(()=>{if(!url)return;return()=>URL.revokeObjectURL(url)},[url]);
+ function preview(blob,name){setUrl(URL.createObjectURL(blob));setPreviewName(name||'Audio preview')}
+ async function selectKind(k){setKind(k);setStatus('');const x=await getStoredRingtone(k);if(x?.blob)preview(x.blob,x.name);else{setUrl('');setPreviewName('')}}
+ async function loadFile(file){if(!file)return;if(file.size>25*1024*1024){setStatus('Choose a file smaller than 25 MB.');return}if(!file.type.startsWith('audio/')&&!/\.(mp3|wav|m4a|aac|ogg|opus|webm|flac)$/i.test(file.name)){setStatus('Choose an audio file such as MP3, WAV, M4A, AAC, OGG, or WebM.');return}setBusy(true);setStatus('Decoding your audio…');try{const b=await decode(file);setDecoded(b);setStart(0);setEnd(Math.min(12,b.duration,20));setFileName(file.name);preview(file,file.name);setStatus('Audio loaded · '+b.duration.toFixed(2)+' seconds. Select a clip and save it.')}catch(e){setDecoded(null);setStatus(e.message)}finally{setBusy(false)}}
+ async function saveTrim(){if(!decoded)return;const a=Math.max(0,Math.min(start,decoded.duration-.1)),z=Math.min(end,decoded.duration,20);if(z<=a){setStatus('Choose a valid clip.');return}setBusy(true);setStatus('Trimming and encoding WAV…');try{const b=wav(crop(decoded,a,z));if(b.size<1000)throw Error('The selected audio was empty.');await putSound(kind,b,fileName||'Custom audio');setSaved(v=>({...v,[kind]:{blob:b,name:fileName||'Custom audio'}}));preview(b,fileName||'Trimmed clip');setDecoded(null);setStatus('Trimmed audio saved as your '+kind+' sound.');onSaved?.(kind)}catch(e){setStatus(e.message||'Could not save the audio.')}finally{setBusy(false)}}
+ async function generate(){if(!desc.trim())return;if(!connected){setStatus('Sign in to the private server to use its AI sound designer.');return}setBusy(true);setStatus('AI is designing the sound…');try{const r=await fetch(base+'/v1/sounds/compose',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({description:desc.trim(),purpose:kind})}),data=await r.json().catch(()=>({}));if(!r.ok)throw Error(data.detail||'AI sound design failed ('+r.status+').');setStatus('Rendering your sound…');const b=await render(data),name=data.title||'AI-designed sound';if(b.size<1000)throw Error('The audio renderer returned an empty file.');await putSound(kind,b,name);setSaved(v=>({...v,[kind]:{blob:b,name}}));preview(b,name);setStatus('“'+name+'” is generated, saved, and ready to play.');onSaved?.(kind)}catch(e){setStatus(e.message||'Could not generate this sound.')}finally{setBusy(false)}}
+ async function play(){const a=document.getElementById('sylus-sound-preview');if(!a){setStatus('Load or generate audio first.');return}try{a.volume=volume;a.currentTime=0;await a.play();setStatus('Playing preview.')}catch(e){setStatus('Playback was blocked: '+(e.message||'tap Play on the player.'))}}
+ async function download(){const x=saved[kind]||await getStoredRingtone(kind);if(!x?.blob){setStatus('No saved sound to download.');return}const u=URL.createObjectURL(x.blob),a=document.createElement('a');a.href=u;a.download='sylus-'+kind+'-sound.wav';document.body.appendChild(a);a.click();a.remove();window.setTimeout(()=>URL.revokeObjectURL(u),1500)}
+ async function remove(){try{await deleteSound(kind);setSaved(v=>({...v,[kind]:null}));setUrl('');setPreviewName('');setStatus('Custom '+kind+' sound removed. The built-in tone is now the fallback.');onSaved?.(kind)}catch(e){setStatus(e.message)}}
+ const maxStart=Math.max(0,Math.min((decoded?.duration||0)-.1,19.9)),a=Math.min(start,maxStart),z=Math.max(a+.1,Math.min(end||decoded?.duration||0,decoded?.duration||0,20)),item=saved[kind];
+ return <section className="content-view sound-studio-view"><div className="eyebrow"><span className="eyebrow-line"/> PERSONAL AUDIO WORKSHOP · N109</div><h1>Sound Studio<span className="heading-period">.</span></h1><p className="subheading">Give every message and incoming call its own sound.</p>
+ <div className="sound-studio-card"><div className="sound-studio-heading"><div><span className="card-kicker">YOUR PRIVATE SOUND LIBRARY</span><h2>Choose what you are making</h2></div><span className="sound-studio-glyph">♫</span></div>
+ <div className="settings-actions sound-kind-switch"><button className={kind==='message'?'primary-button':'secondary-button'} onClick={()=>selectKind('message')}>Message alert</button><button className={kind==='call'?'primary-button':'secondary-button'} onClick={()=>selectKind('call')}>Incoming call</button></div>
+ <div className="sound-studio-grid"><div className="sound-tool-panel"><span className="card-kicker">01 · YOUR AUDIO</span><h3>Upload and trim</h3><p className="field-help">Upload a clip, select the exact section, and save it as a WAV sound.</p><input ref={input} className="settings-input sound-file-input" type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.opus,.webm,.flac" onChange={e=>{loadFile(e.target.files?.[0]);e.target.value=''}}/>{decoded&&<div className="sound-trim-controls"><div className="sound-range-label"><label className="field-label">START</label><strong>{a.toFixed(2)}s</strong></div><input aria-label="Clip start" type="range" min="0" max={maxStart} step=".01" value={a} onChange={e=>setStart(Math.min(+e.target.value,z-.1))}/><div className="sound-range-label"><label className="field-label">END</label><strong>{z.toFixed(2)}s</strong></div><input aria-label="Clip end" type="range" min={Math.min(a+.1,decoded.duration)} max={Math.min(20,decoded.duration)} step=".01" value={z} onChange={e=>setEnd(+e.target.value)}/><p className="field-help">Selected: {(z-a).toFixed(2)} seconds · max 20 seconds</p><button className="primary-button" onClick={saveTrim} disabled={busy}>Trim and save {kind} sound</button></div>}</div>
+ <div className="sound-tool-panel sound-ai-panel"><span className="card-kicker">02 · AI SOUND DESIGNER</span><h3>Describe a sound</h3><p className="field-help">The AI creates a structured sound arrangement from your brief. The browser renders it into audio with layered tones and textures.</p><textarea className="settings-input memory-textarea" rows={4} maxLength={600} value={desc} onChange={e=>setDesc(e.target.value)} placeholder="A low, restrained pulse under a delicate metallic chime…"/><div className="sound-prompt-examples"><button onClick={()=>setDesc('A quiet, expensive-sounding message signal: one soft low pulse, two delicate glass harmonics, then a warm fading shimmer.')}>Elegant</button><button onClick={()=>setDesc('A dark N109 incoming-call motif: deep cinematic resonance, a slow double heartbeat, subtle metallic texture, and a decisive final note.')}>N109</button><button onClick={()=>setDesc('A tender, intimate notification: a gentle warm bell, airy shimmer, and a soft descending three-note finish.')}>Tender</button></div><button className="primary-button" onClick={generate} disabled={busy||!desc.trim()}>{busy?'Designing…':'Generate with AI'}</button>{!connected&&<p className="field-help">Sign in to use AI composition. Audio upload and trimming work locally.</p>}</div></div>
+ <div className="sound-preview-panel"><div className="sound-preview-title"><div><span className="card-kicker">03 · LISTEN</span><h3>{previewName||'Your preview'}</h3></div><span className="sound-duration">{url?'AUDIO READY':'NO AUDIO LOADED'}</span></div>{url?<audio id="sylus-sound-preview" key={url} className="sound-native-player" controls preload="metadata" src={url} onError={()=>setStatus('The browser could not decode this preview. Try downloading the WAV.')} />:<div className="sound-player-empty"><span>♫</span><p>The player appears after you load or generate audio.</p></div>}{url&&<div className="sound-preview-actions"><button className="secondary-button" onClick={play}>Play from beginning</button><label className="sound-volume-control">PREVIEW VOLUME <input aria-label="Preview volume" type="range" min="0" max="1" step=".05" value={volume} onChange={e=>setVolume(+e.target.value)}/></label></div>}<div className="settings-divider"/><div className="sound-saved-row"><div><span className="card-kicker">ASSIGNED {kind.toUpperCase()} SOUND</span><strong>{item?.name||'Using built-in Sylus sound'}</strong><p className="field-help">{item?'Saved in this browser on this device.':'No custom sound saved yet.'}</p></div><div className="settings-actions">{item&&<><button className="secondary-button" onClick={download}>Download WAV</button><button className="secondary-button danger-action" onClick={remove}>Remove</button></>}</div></div></div>{status&&<p className="sound-status" role="status" aria-live="polite">{status}</p>}<p className="field-help sound-privacy-note">Audio stays in this browser and is not uploaded. AI composition sends only your written description to your private server. The AI designs the arrangement; the browser synthesizes the audio. Download the WAV to set it as an Android ringtone.</p></div></section>
 }
