@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sylus-shell-v5';
+const CACHE_NAME = 'sylus-shell-v6';
 const SHELL_FILES = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', event => {
@@ -26,6 +26,9 @@ self.addEventListener('push', event => {
     tag: incomingCall ? 'sylus-incoming-call' : 'sylus-proactive-message',
     renotify: incomingCall,
     requireInteraction: incomingCall,
+    silent: false,
+    vibrate: incomingCall ? [450, 180, 450, 180, 700] : [180, 100, 180],
+    actions: incomingCall ? [{ action: 'open-call', title: 'Open call' }] : [],
     data: { url: payload.url || '/' }
   };
   event.waitUntil(self.registration.showNotification(title, options));
