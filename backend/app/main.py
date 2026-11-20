@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from typing import Literal
 from uuid import UUID, uuid4
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, Response, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, Header, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -543,7 +543,7 @@ def finish_call_session(session_id: UUID, payload: CallFinishIn, _: None = Depen
     return {"id":str(row[0]),"started_at":row[1].isoformat(),"ended_at":row[2].isoformat(),"duration_seconds":row[3]}
 
 @app.post("/v1/calls/turn")
-def call_turn(payload: CallTurnIn, _: None = Depends(require_owner)):
+def call_turn(payload: CallTurnIn, background_tasks: BackgroundTasks, _: None = Depends(require_owner)):
     spoken = payload.text.strip()
     with connection() as conn:
         session=conn.execute("SELECT transcript,ended_at FROM call_sessions WHERE id=%s",(payload.session_id,)).fetchone()
@@ -582,7 +582,8 @@ def call_turn(payload: CallTurnIn, _: None = Depends(require_owner)):
     with connection() as conn:
         conn.execute("UPDATE call_sessions SET transcript=transcript || %s::jsonb, last_activity_at=now() WHERE id=%s",
                      (json.dumps(additions),payload.session_id))
-    refresh_bond()
+    # Bond recomputation is non-critical to the live conversation; run it after the response.
+    background_tasks.add_task(refresh_bond)
     return {"session_id":str(payload.session_id),"user_text":spoken,"assistant_messages":bubbles,"transcript_additions":additions}
 
 @app.post("/v1/calls/correct-transcript")
@@ -599,8 +600,13 @@ def correct_call_transcript(payload: CallTranscriptCorrectIn, _: None = Depends(
                 f"{item.get('role','')}: {str(item.get('text',''))[:500]}"
                 for item in (row[0] or [])[-14:]
             )
-    fallback=re.sub(r"\b(silas|sylas|sailas|sailus)\b","Sylus",original,flags=re.I)
-    fallback=re.sub(r"\b(hello|hey|hi) silence\b",lambda m:m.group(1)+" Sylus",fallback,flags=re.I)
+    fallback=re.sub(r"\b(silas|sylas|sailas|sailus|syliss)\b","Sylus",original,flags=re.I)
+    # "sinus" and "silence" are common recognition substitutions when Umi addresses him.
+    fallback=re.sub(r"\b(hello|hey|hi|oh|okay|ok|listen|goodnight|good morning|good evening)\s+(sinus|silence|silas)\b",
+                    lambda m:m.group(1)+" Sylus",fallback,flags=re.I)
+    if re.fullmatch(r"\s*(sinus|silence|silas|sylas|sailus)\s*[,.!?]*\s*",fallback,re.I):
+        punctuation=re.search(r"[,.!?]+\s*$",fallback)
+        fallback="Sylus"+(punctuation.group(0) if punctuation else "")
     providers=[]
     if settings.gemini_api_key:
         providers.append(("Gemini","https://generativelanguage.googleapis.com/v1beta/openai",settings.gemini_api_key,settings.gemini_model))
@@ -611,8 +617,8 @@ def correct_call_transcript(payload: CallTranscriptCorrectIn, _: None = Depends(
     if settings.cloudflare_account_id and settings.cloudflare_api_token:
         providers.append(("Cloudflare",f"https://api.cloudflare.com/client/v4/accounts/{settings.cloudflare_account_id}/ai/v1",settings.cloudflare_api_token,settings.cloudflare_chat_model))
     prompt=("You are a careful speech-recognition repair layer for a live, informal conversation. The input may include the recognizer's best transcript and several alternate hypotheses for the same audio. Compare them using recent conversation context; prefer a candidate that fits the sounds AND context, not merely the most grammatical sentence. "
-            "Known names and terms: Sylus (may be misheard as Silas, Sylas, Sailus, or Silence when he is being addressed), Umi, Mephisto, Mephi-chan, N109 Zone, Onychinus, Luke, Kieran, Protocore, Memoria, Within Reach. Preserve these exact spellings when context clearly indicates them. The speaker may use South Asian English pronunciation, Bengali, or casual Bengali-English code-switching. Preserve Bengali words and mixed-language phrasing as spoken; never translate Bengali into English or change it into a different language. Treat short fillers, contractions, names, and casual grammar as intentional unless there is strong evidence of a recognition error. "
-            "Correct only likely recognition mistakes, punctuation, and capitalization. Preserve the speaker's actual meaning, casual wording, language, and tone. Do not translate, paraphrase, formalize, complete unfinished thoughts, or invent words. Do not replace a plausible word just because another phrase sounds more natural. If alternatives remain ambiguous, keep the original best transcript. Return only the corrected transcript.")
+            "Known names and terms: Sylus (speech recognition may render this as Silas, Sylas, Sailas, Sailus, Syliss, Sinus, or Silence; when the speaker is addressing him, prefer Sylus), Umi, Mephisto, Mephi-chan, N109 Zone, Onychinus, Luke, Kieran, Protocore, Memoria, Within Reach. Preserve these exact spellings when context clearly indicates them. The speaker may use South Asian English pronunciation, Bengali, or casual Bengali-English code-switching. Preserve Bengali words and mixed-language phrasing as spoken; never translate Bengali into English or change it into a different language. Treat short fillers, contractions, names, and casual grammar as intentional unless there is strong evidence of a recognition error. "
+            "Correct likely recognition mistakes, punctuation, capitalization, and obvious speech-to-text grammar damage (such as a clearly misheard auxiliary or duplicated word). Preserve the speaker's actual meaning, casual wording, language, code-switching, and tone. Do not translate, paraphrase, formalize, complete unfinished thoughts, or invent words. Do not turn genuine Bengali-English mixing into formal English. Do not replace a plausible word just because another phrase sounds more natural. If alternatives remain ambiguous, keep the original best transcript. Return only the corrected transcript.")
     for _,base,key,model in providers[:2]:
         try:
             response=httpx.post(base.rstrip("/")+"/chat/completions",
