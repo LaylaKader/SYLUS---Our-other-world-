@@ -251,10 +251,13 @@ class OpenAICompatibleChatModel(ChatModel):
             call_gemini_key = settings.call_gemini_api_key or settings.gemini_api_key
             call_gemini_model = settings.call_gemini_model or settings.gemini_model
             add_provider("Gemini Call", "https://generativelanguage.googleapis.com/v1beta/openai", call_gemini_key, call_gemini_model)
+            add_provider("Gemini Call Flash-Lite", "https://generativelanguage.googleapis.com/v1beta/openai", call_gemini_key, settings.gemini_fallback_model)
             add_provider("Grok Call", "https://api.x.ai/v1", settings.grok_call_api_key, settings.grok_call_model)
             # Existing providers are temporary call fallbacks, not shared chat routing.
             add_provider("Groq Call Fallback", "https://api.groq.com/openai/v1", settings.groq_api_key, settings.groq_model)
-            add_provider("OpenRouter Call Fallback", "https://openrouter.ai/api/v1", settings.openrouter_api_key, settings.openrouter_model)
+            add_provider("OpenRouter-free", "https://openrouter.ai/api/v1", settings.openrouter_api_key, settings.openrouter_model)
+            add_provider("Aion Labs RP", "https://api.aionlabs.ai/v1", settings.aion_api_key, settings.aion_model)
+            add_provider("Cohere-trial", "https://api.cohere.com/compatibility/v1", settings.cohere_api_key, settings.cohere_model)
             if settings.cloudflare_account_id and settings.cloudflare_api_token:
                 add_provider("Cloudflare Workers AI", f"https://api.cloudflare.com/client/v4/accounts/{settings.cloudflare_account_id}/ai/v1", settings.cloudflare_api_token, settings.cloudflare_chat_model)
         elif is_mature:
