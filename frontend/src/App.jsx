@@ -1074,7 +1074,7 @@ function App() {
       audioContextRef.current = context;
     }
     if (context.state === 'suspended') await context.resume();
-    const response = await fetch(apiUrl.replace(/\/$/, '') + '/v1/voice/speech', {
+    const response = await fetch(apiUrl.replace(/\/$/, '') + '/v1/calls/speech', {
       method: 'POST', headers, credentials: 'include', body: JSON.stringify({ text, realtime: true })
     });
     if (!response.ok) {
