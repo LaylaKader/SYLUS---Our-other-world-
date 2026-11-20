@@ -375,7 +375,8 @@ def time_context(_: None = Depends(require_owner)):
         "chat_ready": chat_provider_configured(),
         "chat_model": ("Gemini-first free provider pool" if settings.gemini_api_key else "Configured free provider pool" if chat_provider_configured() else None),
         "image_generation_ready": bool(settings.cloudflare_account_id and settings.cloudflare_api_token),
-        "voice_ready": bool(settings.elevenlabs_api_key and settings.elevenlabs_voice_id),
+        "voice_ready": bool((settings.fish_api_key and settings.fish_reference_id) or (settings.elevenlabs_api_key and settings.elevenlabs_voice_id)),
+        "voice_provider": "Fish Audio" if (settings.fish_api_key and settings.fish_reference_id) else ("ElevenLabs" if (settings.elevenlabs_api_key and settings.elevenlabs_voice_id) else None),
         "vision_ready": bool(settings.gemini_api_key or (settings.cloudflare_account_id and settings.cloudflare_api_token and vision_row)),
         "last_user_message_utc": last_utc.isoformat() if last_utc else None,
         "last_user_message_local": last_local.isoformat() if last_local else None,
@@ -1340,42 +1341,66 @@ def scheduled_proactive_messages(authorization: str | None = Header(default=None
 
 @app.post("/v1/voice/speech")
 def create_speech(payload: SpeechIn, _: None = Depends(require_owner)):
-    if not (settings.elevenlabs_api_key and settings.elevenlabs_voice_id):
-        raise HTTPException(status_code=503, detail="Voice playback is not configured. Add an ElevenLabs API key and your designed voice ID in the private server settings.")
-    emotion = load_emotion_state()
-    # Let the persisted simulated affect gently colour the voice without caricature.
-    stability = 0.55
-    style = 0.22
-    if emotion.playfulness >= 0.30 or emotion.amusement >= 0.35 or emotion.surprise >= 0.35:
-        stability, style = 0.43, 0.38
-    if emotion.affection >= 0.38 or emotion.longing >= 0.30:
-        stability, style = 0.48, max(style, 0.30)
-    if emotion.concern >= 0.38:
-        stability, style = 0.58, 0.18
-    if emotion.anger >= 0.35 or emotion.irritation >= 0.45:
-        stability, style = 0.68, 0.12
-    try:
-        response = httpx.post(
-            f"https://api.elevenlabs.io/v1/text-to-speech/{settings.elevenlabs_voice_id}?output_format=mp3_44100_128",
-            headers={"xi-api-key": settings.elevenlabs_api_key, "Content-Type": "application/json", "Accept": "audio/mpeg"},
-            json={"text": payload.text, "model_id": "eleven_flash_v2_5" if payload.realtime else "eleven_multilingual_v2", "voice_settings": {"stability": stability, "similarity_boost": 0.72, "style": style, "use_speaker_boost": True}},
-            timeout=25.0 if payload.realtime else 60.0,
+    fish_ready = bool(settings.fish_api_key and settings.fish_reference_id)
+    elevenlabs_ready = bool(settings.elevenlabs_api_key and settings.elevenlabs_voice_id)
+    if not fish_ready and not elevenlabs_ready:
+        raise HTTPException(
+            status_code=503,
+            detail="Voice playback is not configured. Add FISH_API_KEY and FISH_REFERENCE_ID in the private server settings."
         )
+
+    # Fish Audio is preferred when configured. ElevenLabs remains a fallback
+    # so existing installations continue to work without changing their setup.
+    provider = "Fish Audio" if fish_ready else "ElevenLabs"
+    try:
+        if fish_ready:
+            response = httpx.post(
+                "https://api.fish.audio/v1/tts",
+                headers={
+                    "Authorization": f"Bearer {settings.fish_api_key}",
+                    "Content-Type": "application/json",
+                    "Accept": "audio/mpeg",
+                    "model": settings.fish_audio_model or "s2.1-pro-free",
+                },
+                json={
+                    "text": payload.text,
+                    "reference_id": settings.fish_reference_id,
+                    "format": "mp3",
+                },
+                timeout=60.0 if payload.realtime else 90.0,
+            )
+        else:
+            emotion = load_emotion_state()
+            # Preserve the existing expressive ElevenLabs fallback behaviour.
+            stability = 0.55
+            style = 0.22
+            if emotion.playfulness >= 0.30 or emotion.amusement >= 0.35 or emotion.surprise >= 0.35:
+                stability, style = 0.43, 0.38
+            if emotion.affection >= 0.38 or emotion.longing >= 0.30:
+                stability, style = 0.48, max(style, 0.30)
+            if emotion.concern >= 0.38:
+                stability, style = 0.58, 0.18
+            if emotion.anger >= 0.35 or emotion.irritation >= 0.45:
+                stability, style = 0.68, 0.12
+            response = httpx.post(
+                f"https://api.elevenlabs.io/v1/text-to-speech/{settings.elevenlabs_voice_id}?output_format=mp3_44100_128",
+                headers={"xi-api-key": settings.elevenlabs_api_key, "Content-Type": "application/json", "Accept": "audio/mpeg"},
+                json={"text": payload.text, "model_id": "eleven_flash_v2_5" if payload.realtime else "eleven_multilingual_v2", "voice_settings": {"stability": stability, "similarity_boost": 0.72, "style": style, "use_speaker_boost": True}},
+                timeout=25.0 if payload.realtime else 60.0,
+            )
         response.raise_for_status()
         audio_bytes = response.content
         content_type = response.headers.get("content-type", "").lower()
         is_mp3 = audio_bytes.startswith(b"ID3") or (
             len(audio_bytes) > 2 and audio_bytes[0] == 0xFF and (audio_bytes[1] & 0xE0) == 0xE0
         )
-        logging.info("Voice provider response: content_type=%s bytes=%s mp3_signature=%s", content_type, len(audio_bytes), is_mp3)
+        logging.info("%s voice response: content_type=%s bytes=%s mp3_signature=%s", provider, content_type, len(audio_bytes), is_mp3)
         if not audio_bytes or len(audio_bytes) < 256 or not (content_type.startswith("audio/") or is_mp3) or not is_mp3:
-            logging.error("Voice provider returned unusable audio: content_type=%s bytes=%s prefix=%s", content_type, len(audio_bytes), audio_bytes[:32].hex())
-            raise HTTPException(status_code=502, detail="The voice provider returned an empty or invalid audio stream. Check the voice ID, provider response, and usage allowance.")
-        # Call audio is returned directly: the realtime model already provides MP3.
-        # Skipping ffmpeg avoids an extra full-file decode/encode pass before playback.
+            logging.error("%s returned unusable audio: content_type=%s bytes=%s prefix=%s", provider, content_type, len(audio_bytes), audio_bytes[:32].hex())
+            raise HTTPException(status_code=502, detail=f"{provider} returned an empty or invalid audio stream. Check the voice ID and provider usage allowance.")
+
+        # Normalize non-realtime playback to a finalized MP3 for broad browser support.
         if not payload.realtime:
-            # Normalize to a finalized, broadly supported MP3 file. Use a seekable
-            # temporary file rather than stdout so the encoder can write complete headers.
             mp3_path = None
             try:
                 with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as mp3_file:
@@ -1393,9 +1418,9 @@ def create_speech(payload: SpeechIn, _: None = Depends(require_owner)):
                     len(audio_bytes) > 2 and audio_bytes[0] == 0xFF and (audio_bytes[1] & 0xE0) == 0xE0
                 )
                 if len(audio_bytes) < 256 or not is_normalized_mp3:
-                    logging.error("Voice audio normalization produced an invalid MP3 file: bytes=%s prefix=%s", len(audio_bytes), audio_bytes[:16].hex())
+                    logging.error("Voice audio normalization produced invalid MP3: bytes=%s", len(audio_bytes))
                     raise HTTPException(status_code=502, detail="The voice provider returned audio, but it could not be prepared for playback. Please try again.")
-                logging.info("Voice audio normalized to finalized MP3 file: bytes=%s prefix=%s", len(audio_bytes), audio_bytes[:8].hex())
+                logging.info("Voice audio normalized: bytes=%s", len(audio_bytes))
             finally:
                 if mp3_path:
                     try:
@@ -1405,10 +1430,24 @@ def create_speech(payload: SpeechIn, _: None = Depends(require_owner)):
     except subprocess.TimeoutExpired as exc:
         logging.error("Voice audio normalization timed out.")
         raise HTTPException(status_code=504, detail="The generated voice took too long to prepare. Please try again.") from exc
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code
+        detail = exc.response.text[:500]
+        logging.error("%s speech request failed (HTTP %s): %s", provider, status, detail)
+        if status == 401:
+            message = "Fish Audio rejected the API key. Check FISH_API_KEY in Render." if provider == "Fish Audio" else "ElevenLabs rejected its API key."
+        elif status == 400:
+            message = f"{provider} rejected the voice ID or request settings. Check the configured voice ID."
+        elif status == 402:
+            message = f"{provider} requires API credit for this model. Check that the model is s2.1-pro-free."
+        elif status == 429:
+            message = f"{provider} rate limit reached. Please wait and try again."
+        else:
+            message = f"{provider} could not generate speech (HTTP {status}). Please try again."
+        raise HTTPException(status_code=502, detail=message) from exc
     except httpx.HTTPError as exc:
-        status = getattr(getattr(exc, "response", None), "status_code", None)
-        logging.error("ElevenLabs speech request failed (HTTP %s): %s", status or "unknown", str(exc)[:300])
-        raise HTTPException(status_code=502, detail="The voice provider could not generate audio. Check the private voice configuration and usage allowance.") from exc
+        logging.error("%s speech request failed: %s", provider, str(exc)[:300])
+        raise HTTPException(status_code=502, detail=f"{provider} could not generate audio. Please try again.") from exc
     return Response(
         content=audio_bytes,
         media_type="audio/mpeg",
