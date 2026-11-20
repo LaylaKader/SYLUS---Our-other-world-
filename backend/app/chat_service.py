@@ -595,6 +595,29 @@ def retrieve_character_knowledge(query: str, limit: int = 12) -> str:
     return "\n".join(lines)
 
 
+def _proactive_time_reference_is_consistent(messages: list[str], time_context: str) -> bool:
+    """Reject proactive text that labels the owner's day incorrectly."""
+    match = re.search(r"Current owner-local time:\\s+[^\\n]*?\\b(\\d{2}):(\\d{2}):(\\d{2})", time_context)
+    if not match:
+        return True
+    hour = int(match.group(1))
+    combined = " ".join(messages).casefold()
+    # These patterns describe the owner's present moment, not a past or future plan.
+    evening_now = re.search(r"\\b(?:your|this|the) evening\\b|\\bgood evening\\b|\\bevening(?:'s| is) treating you\\b", combined)
+    night_now = re.search(r"\\b(?:your|this) night\\b|\\btonight(?:'s| is) treating you\\b", combined)
+    morning_now = re.search(r"\\b(?:your|this) morning\\b|\\bgood morning\\b|\\bmorning(?:'s| is) treating you\\b", combined)
+    afternoon_now = re.search(r"\\b(?:your|this) afternoon\\b|\\bgood afternoon\\b", combined)
+    if evening_now and not (17 <= hour < 23):
+        return False
+    if night_now and not (20 <= hour or hour < 5):
+        return False
+    if morning_now and not (4 <= hour < 12):
+        return False
+    if afternoon_now and not (11 <= hour < 18):
+        return False
+    return True
+
+
 def generate_proactive_bubbles(history: list[dict], time_context: str = "") -> list[str]:
     """Generate a low-pressure, context-aware message without requiring a new user turn."""
     recent_owner_text = " ".join(
@@ -724,7 +747,11 @@ def generate_proactive_bubbles(history: list[dict], time_context: str = "") -> l
         memories=memories,
         user_text=instruction,
     )
-    return split_reply_bubbles(raw)[:1]
+    messages = split_reply_bubbles(raw)[:1]
+    if messages and not _proactive_time_reference_is_consistent(messages, time_context):
+        logging.warning("Rejected proactive message with an owner-local daypart mismatch.")
+        return []
+    return messages
 
 
 def load_emotion_state() -> EmotionState:
