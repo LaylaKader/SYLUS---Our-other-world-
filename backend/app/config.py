@@ -9,6 +9,11 @@ class Settings(BaseSettings):
     model_name: str = "openai/gpt-oss-120b"
     # Optional no-cost provider credentials. Empty means provider is not used.
     gemini_api_key: str = ""
+    # Dedicated voice-call model credentials; empty values reuse the existing free providers.
+    call_gemini_api_key: str = ""
+    call_gemini_model: str = ""
+    grok_call_api_key: str = ""
+    grok_call_model: str = "grok-3-mini-fast"
     gemini_model: str = "gemini-3.6-flash"
     gemini_fallback_model: str = "gemini-3.5-flash-lite"
     gemini_vision_model: str = "gemini-3.8-flash"
@@ -30,6 +35,10 @@ class Settings(BaseSettings):
     elevenlabs_voice_id: str = ""
     fish_api_key: str = ""
     fish_reference_id: str = ""
+    # Optional independent clone for voice calls; defaults to the existing Read Aloud clone.
+    call_fish_api_key: str = ""
+    call_fish_reference_id: str = ""
+    call_fish_audio_model: str = ""
     fish_audio_model: str = "s2.1-pro-free"
     cors_allowed_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     sylus_owner_password: str = ""
