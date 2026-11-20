@@ -567,8 +567,10 @@ def call_turn(payload: CallTurnIn, _: None = Depends(require_owner)):
     call_context=("LIVE VOICE CALL: You are currently speaking with Umi through an active voice call, not exchanging text messages. "
                   "Answer as if you are speaking aloud in real time. Do not say you are texting, messaging, reading a text, or sending text bubbles. "
                   "If she asks whether you can hear her, respond as someone on the active call. Keep spoken replies natural and concise.")
+    reply_started = time()
     try:
         answer=generate_reply(spoken,str(anchor[0]),history,time_context=call_context)
+        logging.info("Voice-call reply generation completed in %.2fs (input_chars=%s, output_chars=%s).", time() - reply_started, len(spoken), len(answer or ""))
     except ProviderNotConfigured as exc:
         raise HTTPException(status_code=503,detail=str(exc)) from exc
     except ProviderRequestFailed as exc:
@@ -1383,6 +1385,7 @@ def scheduled_proactive_messages(authorization: str | None = Header(default=None
 
 @app.post("/v1/voice/speech")
 def create_speech(payload: SpeechIn, _: None = Depends(require_owner)):
+    speech_started = time()
     fish_ready = bool(settings.fish_api_key and settings.fish_reference_id)
     elevenlabs_ready = bool(settings.elevenlabs_api_key and settings.elevenlabs_voice_id)
     if not fish_ready and not elevenlabs_ready:
@@ -1431,6 +1434,7 @@ def create_speech(payload: SpeechIn, _: None = Depends(require_owner)):
                 timeout=25.0 if payload.realtime else 60.0,
             )
         response.raise_for_status()
+        logging.info("%s TTS provider response received in %.2fs (realtime=%s, chars=%s).", provider, time() - speech_started, payload.realtime, len(payload.text))
         audio_bytes = response.content
         content_type = response.headers.get("content-type", "").lower()
         is_mp3 = audio_bytes.startswith(b"ID3") or (
