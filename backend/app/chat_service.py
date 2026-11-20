@@ -237,7 +237,7 @@ class OpenAICompatibleChatModel(ChatModel):
             if name == "Cohere-trial" and model != "command-a-03-2025":
                 logging.warning("Skipping Cohere model outside the trial allowlist: %s", model)
                 return
-            if name == "OpenRouter-free" and model != "openrouter/free" and not model.endswith(":free"):
+            if name.startswith("OpenRouter") and model != "openrouter/free" and not model.endswith(":free"):
                 logging.warning("Skipping OpenRouter model that is not explicitly free: %s", model)
                 return
             if name == "OpenRouter-mature" and not model.endswith(":free"):
