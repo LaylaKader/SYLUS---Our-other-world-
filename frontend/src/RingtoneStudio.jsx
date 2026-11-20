@@ -165,7 +165,7 @@ export default function RingtoneStudio({ onSaved }) {
   async function saveTrimmed() {
     if (!decoded) return;
     const from = Math.max(0, Math.min(start, decoded.duration));
-    const to = Math.max(from + .25, Math.min(end, decoded.duration));
+    const to = Math.max(from + .25, Math.min(end, decoded.duration, 20));
     const length = Math.max(1, Math.floor((to - from) * decoded.sampleRate));
     const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
     if (!Offline) { setStatus('Audio trimming is not supported in this browser.'); return; }
@@ -200,6 +200,17 @@ export default function RingtoneStudio({ onSaved }) {
     finally { setBusy(false); }
   }
 
+  function downloadSaved() {
+    const item = saved[kind];
+    if (!item?.blob) return;
+    const url = URL.createObjectURL(item.blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `sylus-${kind}-ringtone.wav`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   async function remove() {
     await deleteStoredRingtone(kind);
     setSaved(current => ({ ...current, [kind]: null }));
@@ -222,9 +233,9 @@ export default function RingtoneStudio({ onSaved }) {
       {decoded && <div style={{marginTop:12}}>
         <p className="field-help">{fileName} · {decoded.duration.toFixed(1)} seconds</p>
         <label className="field-label">START · {start.toFixed(1)}s</label>
-        <input type="range" min="0" max={Math.max(.1,decoded.duration-.25)} step=".1" value={Math.min(start,decoded.duration-.25)} onChange={e=>setStart(Number(e.target.value))} style={{width:'100%'}}/>
+        <input type="range" min="0" max={Math.max(.1,Math.min(20,decoded.duration)-.25)} step=".1" value={Math.min(start,decoded.duration-.25)} onChange={e=>setStart(Number(e.target.value))} style={{width:'100%'}}/>
         <label className="field-label">END · {end.toFixed(1)}s (MAX 20 SECONDS)</label>
-        <input type="range" min={Math.min(start+.25,decoded.duration)} max={decoded.duration} step=".1" value={Math.max(Math.min(end,decoded.duration),Math.min(start+.25,decoded.duration))} onChange={e=>setEnd(Number(e.target.value))} style={{width:'100%'}}/>
+        <input type="range" min={Math.min(start+.25,decoded.duration)} max={Math.min(20,decoded.duration)} step=".1" value={Math.max(Math.min(end,20,decoded.duration),Math.min(start+.25,20,decoded.duration))} onChange={e=>setEnd(Number(e.target.value))} style={{width:'100%'}}/>
         <p className="field-help">Selected clip: {Math.max(0,end-start).toFixed(1)} seconds. Keep it short so the alert feels intentional.</p>
         <button type="button" className="secondary-button" onClick={()=>{const audio=new Audio();audio.src=URL.createObjectURL(encodeWav(decoded));audio.play().catch(()=>{});}}>Preview full upload</button>
         <button type="button" className="primary-button" style={{marginTop:8}} onClick={saveTrimmed} disabled={busy||end<=start}>Trim & save as {kind} ringtone</button>
@@ -234,7 +245,7 @@ export default function RingtoneStudio({ onSaved }) {
     <div>
       <label className="field-label">2 · DESCRIBE A SOUND</label>
       <textarea className="settings-input memory-textarea" rows={3} value={description} onChange={e=>setDescription(e.target.value)} placeholder="e.g. A low, elegant metallic pulse with a distant glass chime…"/>
-      <p className="field-help">Try words like dark, metallic, crystal, heartbeat, soft, romantic, ominous, piano-like, or cinematic. This creates a synthesized ringtone locally; it is not an AI voice or a copy of game music.</p>
+      <p className="field-help">Try words like dark, metallic, crystal, heartbeat, soft, romantic, ominous, piano-like, or cinematic. This creates a synthesized ringtone locally; it is not full AI audio generation, an AI voice, or a copy of game music. You can download your saved sound as WAV for use in Android's ringtone settings.</p>
       <button type="button" className="primary-button" onClick={generate} disabled={busy||!description.trim()}>{busy?'Composing…':'Compose from description'}</button>
     </div>
     <div className="settings-divider"/>
@@ -242,7 +253,7 @@ export default function RingtoneStudio({ onSaved }) {
       <label className="field-label">3 · YOUR SAVED {kind.toUpperCase()} RINGTONE</label>
       <p className="field-help">{saved[kind] ? saved[kind].name || 'Custom sound saved' : 'No custom sound assigned yet. The original built-in tone will play until you save one.'}</p>
       <audio ref={audioRef} controls style={{width:'100%',margin:'8px 0'}}/>
-      {saved[kind] && <button type="button" className="secondary-button danger-action" onClick={remove}>Remove custom ringtone</button>}
+      {saved[kind] && <div className="settings-actions"><button type="button" className="secondary-button" onClick={downloadSaved}>Download WAV</button><button type="button" className="secondary-button danger-action" onClick={remove}>Remove custom ringtone</button></div>}
     </div>
     {status && <p className="field-help" role="status" style={{marginTop:12}}>{status}</p>}
   </div>;
