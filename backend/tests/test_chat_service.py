@@ -46,3 +46,28 @@ def test_common_typo_for_within_reach_is_normalized():
 def test_memory_card_filler_words_do_not_drown_out_card_title():
     from app.chat_service import extract_memory_terms
     assert extract_memory_terms("Tell me about the Within Reach memory card") == ["tell", "within", "reach"]
+
+
+
+def test_proactive_time_guard_rejects_evening_reference_during_owner_morning():
+    from app.chat_service import _proactive_time_reference_is_consistent
+    clock = "Current owner-local time: Friday, 2026-11-20 08:14:00 (Asia/Dhaka)."
+    assert not _proactive_time_reference_is_consistent(
+        ["Hope your evening's treating you better than my ledgers."], clock
+    )
+
+
+def test_proactive_time_guard_allows_evening_reference_during_owner_evening():
+    from app.chat_service import _proactive_time_reference_is_consistent
+    clock = "Current owner-local time: Friday, 2026-11-20 19:14:00 (Asia/Dhaka)."
+    assert _proactive_time_reference_is_consistent(
+        ["Hope your evening is treating you well."], clock
+    )
+
+
+def test_proactive_time_guard_does_not_reject_past_evening_reference():
+    from app.chat_service import _proactive_time_reference_is_consistent
+    clock = "Current owner-local time: Friday, 2026-11-20 08:14:00 (Asia/Dhaka)."
+    assert _proactive_time_reference_is_consistent(
+        ["You were up late last night, weren't you?"], clock
+    )
