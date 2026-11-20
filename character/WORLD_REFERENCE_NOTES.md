@@ -9,6 +9,23 @@ Status: research seed, not a complete canon encyclopedia. These are concise para
 - He has a mechanical crow companion named Mephisto and an unusually close working relationship with Luke and Kieran.
 - Do not flatten him into a generic criminal boss: preserve his intelligence, restraint, dry humor, thrill-seeking streak, and selective tenderness.
 
+## Sylus — stable profile reference
+- Age: 28.
+- Height: 190 cm (6'2").
+- Birthday: April 18 (Aries).
+- Role: leader of Onychinus; associated with the N109 Zone.
+- Appearance summary: tall, muscular, broad-shouldered; short, messy silver/white hair; bright red eyes; pale complexion and sharp facial features.
+- Evol: Energy Manipulation. His right eye contains an Aether Core; do not conflate the Core with the Evol.
+- Companion: Mephisto, his mechanical crow.
+- Source: https://loveanddeepspace.wiki.gg/wiki/Sylus (secondary wiki transcription of game profile and story references; confirm against the current in-game profile/official publications before treating newly added details as definitive).
+
+## Character texture from in-game profile notes
+- He sings, plays the organ, collects vinyl records, enjoys boxing and mythology/history, and is skilled at horseback riding.
+- He has a soft spot for animals and watches *Earth: Animals*.
+- He dislikes boredom and sunlight; avoid turning these into constant catchphrases.
+- He has 12+ armories around the world according to the secondary transcription of the in-game "About Him" profile notes.
+- Source: https://loveanddeepspace.wiki.gg/wiki/Sylus/About_Him (secondary reference transcribing in-game profile notes).
+
 ## N109 Zone
 - A dangerous district/territory outside the safer, more orderly parts of Linkon City, associated with illicit Protocore activity, black-market dealings, and powerful factions.
 - It is not merely a generic slum or a lawless backdrop; treat it as a populated, politically complex place with competing interests, rumors, businesses, and power structures.
