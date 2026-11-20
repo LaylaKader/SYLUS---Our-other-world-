@@ -162,6 +162,17 @@ class OpenAICompatibleChatModel(ChatModel):
             "or supplied canon records, do not state it as fact. If uncertain, be brief and candid rather than filling gaps with a guess. "
             "Never manufacture a second bubble, a new subject, or a follow-up question just to keep the chat going."
         )
+        if "LIVE VOICE CALL:" in persona:
+            system_prompt += (
+                "\\n\\nHIGHEST-PRIORITY LIVE CALL MODE: This turn is happening in an active, two-way voice conversation. "
+                "You are speaking aloud to Umi right now. The latest user-role content is what she just SAID out loud, not a text message she typed. "
+                "Respond as a person speaking naturally in the moment: direct, warm or teasing as appropriate, concise, with spoken-language rhythm. "
+                "Never mention texting, typing, reading messages, sending bubbles, checking chat, or replying later. "
+                "Never describe this interaction as a text conversation. Do not narrate that you are generating speech. "
+                "Do not treat the call transcript as a written message or comment on its spelling unless Umi explicitly asks. "
+                "Use the established conversation history only to understand context; the active voice call takes precedence over ordinary texting style rules. "
+                "Return the required JSON reply format, but its content must be one natural spoken response."
+            )
         messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
         for item in ([] if "ADMIN OVERRIDE ACTIVE:" in persona else recent_history[-6:]):
             role = item.get("role")
@@ -269,16 +280,17 @@ class OpenAICompatibleChatModel(ChatModel):
                 continue
             endpoint = base_url + "/chat/completions"
             headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+            call_mode = "LIVE VOICE CALL:" in persona
             payload = {
                 "model": model_name,
                 "messages": messages,
                 "temperature": 0.78,
-                "max_tokens": 520,
+                "max_tokens": 300 if call_mode else 520,
             }
             try:
                 # Keep live conversation turns responsive. A slow free provider should
                 # fail over quickly instead of making the owner wait through a long timeout.
-                response = httpx.post(endpoint, headers=headers, json=payload, timeout=httpx.Timeout(12.0, connect=3.0))
+                response = httpx.post(endpoint, headers=headers, json=payload, timeout=httpx.Timeout(8.0 if call_mode else 12.0, connect=2.5 if call_mode else 3.0))
                 # Groq and some compatible providers report TPM overflow as HTTP 413.
                 # Retry once with a much smaller context before abandoning this provider.
                 if response.status_code == 413:
@@ -291,8 +303,8 @@ class OpenAICompatibleChatModel(ChatModel):
                         elif role in ("user", "assistant"):
                             compact_messages.append({"role": role, "content": content[-420:]})
                     compact_messages = [compact_messages[0]] + compact_messages[-5:] if compact_messages else compact_messages
-                    compact_payload = {**payload, "messages": compact_messages, "max_tokens": 550}
-                    response = httpx.post(endpoint, headers=headers, json=compact_payload, timeout=httpx.Timeout(16.0, connect=3.0))
+                    compact_payload = {**payload, "messages": compact_messages, "max_tokens": 300 if call_mode else 550}
+                    response = httpx.post(endpoint, headers=headers, json=compact_payload, timeout=httpx.Timeout(9.5 if call_mode else 16.0, connect=2.5 if call_mode else 3.0))
                 response.raise_for_status()
                 data: dict[str, Any] = response.json()
                 message_content = data["choices"][0]["message"].get("content")
