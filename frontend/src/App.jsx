@@ -121,6 +121,7 @@ function App() {
   const [alertSoundsEnabled, setAlertSoundsEnabled] = useState(() => { try { return window.localStorage.getItem('sylus-alert-sounds') !== 'false'; } catch { return true; } });
   const [alertVolume, setAlertVolume] = useState(() => { try { return Number(window.localStorage.getItem('sylus-alert-volume') ?? 0.55); } catch { return 0.55; } });
   const alertAudioContextRef = useRef(null);
+  const callRingtoneRef = useRef({ source: null, token: 0 });
   const [timeContext, setTimeContext] = useState(null);
   const [sending, setSending] = useState(false);
   const [composerNotice, setComposerNotice] = useState('');
@@ -168,7 +169,7 @@ function App() {
   const [callBusy, setCallBusy] = useState(false);
   const [callStatus, setCallStatus] = useState('A private voice channel with Sylus.');
   const [callTranscript, setCallTranscript] = useState('');
-  const [callCorrectionEnabled, setCallCorrectionEnabled] = useState(() => { try { return window.localStorage.getItem('sylus-call-correction') !== 'false'; } catch { return true; } });
+  const [callCorrectionEnabled, setCallCorrectionEnabled] = useState(() => { try { return window.localStorage.getItem('sylus-call-correction') === 'true'; } catch { return false; } });
   const [callRecognitionLanguage, setCallRecognitionLanguage] = useState(() => { try { return window.localStorage.getItem('sylus-call-language') || 'en-IN'; } catch { return 'en-IN'; } });
   const callSessionIdRef = useRef(null);
   const callStartedAtRef = useRef(null);
@@ -192,6 +193,33 @@ function App() {
   const callFinalTranscriptRef = useRef('');
   const callSilenceTimerRef = useRef(null);
   const callRestartTimerRef = useRef(null);
+
+  useEffect(() => {
+    const unlockAudio = () => {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) return;
+      try {
+        let context = alertAudioContextRef.current;
+        if (!context || context.state === 'closed') {
+          context = new AudioContextClass();
+          alertAudioContextRef.current = context;
+        }
+        if (context.state === 'suspended') context.resume().catch(() => {});
+      } catch (error) { console.warn('SYLUS audio unlock failed:', error); }
+    };
+    document.addEventListener('pointerdown', unlockAudio, true);
+    document.addEventListener('keydown', unlockAudio, true);
+    return () => {
+      document.removeEventListener('pointerdown', unlockAudio, true);
+      document.removeEventListener('keydown', unlockAudio, true);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (incomingCall && !callActive) startCallRingtone();
+    else stopCallRingtone();
+    return () => stopCallRingtone();
+  }, [incomingCall, callActive, alertSoundsEnabled, alertVolume]);
 
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get('incoming-call') === '1') {
@@ -376,7 +404,6 @@ function App() {
           if (callResponse.ok) {
             const callResult = await callResponse.json();
             if (!stopped && callResult.sent) {
-              playAlertTone('call');
               setIncomingCall(true);
               setNotice('Sylus is calling.');
             }
@@ -388,6 +415,64 @@ function App() {
     const interval = window.setInterval(poll, 60000);
     return () => { stopped = true; window.clearInterval(interval); };
   }, [connected, proactiveSettings?.messages_enabled, proactiveSettings?.calls_enabled, apiUrl, headers]);
+
+  function stopCallRingtone() {
+    const state = callRingtoneRef.current;
+    state.token += 1;
+    if (state.source) { try { state.source.stop(); } catch {} }
+    state.source = null;
+  }
+
+  async function startCallRingtone() {
+    stopCallRingtone();
+    if (!alertSoundsEnabled || alertVolume <= 0) return;
+    const token = callRingtoneRef.current.token;
+    try {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) return;
+      let context = alertAudioContextRef.current;
+      if (!context || context.state === 'closed') {
+        context = new AudioContextClass();
+        alertAudioContextRef.current = context;
+      }
+      if (context.state === 'suspended') await context.resume();
+      if (context.state !== 'running') return;
+      let buffer = null;
+      const custom = await getStoredRingtone('call');
+      if (custom?.blob) {
+        try { buffer = await context.decodeAudioData(await custom.blob.arrayBuffer()); }
+        catch (error) { console.warn('Selected call ringtone could not be decoded; using the Sylus fallback tone.', error); }
+      }
+      if (!buffer) {
+        const duration = 3.2;
+        buffer = context.createBuffer(1, Math.ceil(context.sampleRate * duration), context.sampleRate);
+        const samples = buffer.getChannelData(0);
+        const notes = [{ f: 196, start: 0, length: .28 }, { f: 261.63, start: .34, length: .28 }, { f: 329.63, start: .72, length: .42 }, { f: 261.63, start: 1.32, length: .28 }, { f: 196, start: 1.66, length: .28 }, { f: 261.63, start: 2.04, length: .42 }];
+        for (let i = 0; i < samples.length; i += 1) {
+          const t = i / context.sampleRate;
+          let sample = 0;
+          for (const note of notes) {
+            const local = t - note.start;
+            if (local >= 0 && local < note.length) {
+              const envelope = Math.min(1, local / .025, (note.length - local) / .045);
+              sample += Math.sin(2 * Math.PI * note.f * local) * Math.max(0, envelope) * .28;
+            }
+          }
+          samples[i] = sample;
+        }
+      }
+      if (token !== callRingtoneRef.current.token || !incomingCall || callActiveRef.current) return;
+      const source = context.createBufferSource();
+      const gain = context.createGain();
+      source.buffer = buffer;
+      source.loop = true;
+      gain.gain.value = Math.max(0, Math.min(1, alertVolume));
+      source.connect(gain);
+      gain.connect(context.destination);
+      callRingtoneRef.current.source = source;
+      source.start(0);
+    } catch (error) { console.warn('SYLUS incoming-call ringtone could not start:', error); }
+  }
 
   async function playAlertTone(kind) {
     if (!alertSoundsEnabled || alertVolume <= 0) return;
@@ -1036,16 +1121,23 @@ function App() {
       setCallStatus('Sylus is thinking…');
       const turn = await response.json();
       const replies = (turn.assistant_messages || []).map(cleanAssistantText).filter(Boolean);
-      const callsResponse = await fetch(apiUrl.replace(/\/$/, '') + '/v1/calls/settings', { headers, credentials: 'include' });
-      if (callsResponse.ok) setCallSettings(await callsResponse.json());
-      const bondResponse = await fetch(apiUrl.replace(/\/$/, '') + '/v1/bond', { headers, credentials: 'include' });
-      if (bondResponse.ok) setBond(await bondResponse.json());
+      const refreshCallMetadata = async () => {
+        const [callsResponse, bondResponse] = await Promise.all([
+          fetch(apiUrl.replace(/\/$/, '') + '/v1/calls/settings', { headers, credentials: 'include' }),
+          fetch(apiUrl.replace(/\/$/, '') + '/v1/bond', { headers, credentials: 'include' })
+        ]);
+        if (callsResponse.ok) setCallSettings(await callsResponse.json());
+        if (bondResponse.ok) setBond(await bondResponse.json());
+      };
       if (!callActiveRef.current) return;
       if (!replies.length) {
         setCallStatus('Sylus is quiet for a moment. I’m listening again.');
+        void refreshCallMetadata().catch(() => {});
       } else {
         setCallStatus('Sylus is speaking…');
-        await speakCallReply(replies.join(' '));
+        const speech = speakCallReply(replies.join(' '));
+        void refreshCallMetadata().catch(() => {});
+        await speech;
       }
     } catch (error) {
       setCallStatus(error.message || 'The voice conversation was interrupted.');
