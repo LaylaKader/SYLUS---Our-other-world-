@@ -108,3 +108,18 @@ def test_followup_maximum_is_measured_from_last_proactive_text():
     )
     assert forced["due"] is True
     assert forced["reason"] == "maximum_inactivity_reached"
+
+
+def test_admin_prefix_is_required_for_contact_restrictions():
+    from app.main import extract_admin_instruction
+    assert extract_admin_instruction("Don't talk to me, I'm angry with you.") == (False, "Don't talk to me, I'm angry with you.")
+    assert extract_admin_instruction("I'm joking; admin, don't call me") == (False, "I'm joking; admin, don't call me")
+    assert extract_admin_instruction("Admin: don't talk to me now") == (True, "don't talk to me now")
+    assert extract_admin_instruction("Admin, don't call me until 9 PM") == (True, "don't call me until 9 PM")
+    assert extract_admin_instruction("admin don't call me now") == (True, "don't call me now")
+
+
+def test_admin_prefix_is_case_insensitive_and_requires_instruction_text():
+    from app.main import extract_admin_instruction
+    assert extract_admin_instruction("ADMIN: resume messages") == (True, "resume messages")
+    assert extract_admin_instruction("Admin") == (False, "Admin")
