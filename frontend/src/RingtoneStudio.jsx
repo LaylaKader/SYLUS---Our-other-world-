@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 
 const DB='sylus-ringtone-library', STORE='ringtones';
-function dbOpen(){return new Promise((ok,no)=>{if(!window.indexedDB)return no(Error('Local audio storage is unavailable in this browser.'));const r=indexedDB.open(DB,1);r.onupgradeneeded=()=>{if(!r.result.objectStoreNames.contains(STORE))r.result.createObjectStore(STORE)};r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)}}
+function dbOpen(){return new Promise((ok,no)=>{if(!window.indexedDB)return no(Error('Local audio storage is unavailable in this browser.'));const r=indexedDB.open(DB,1);r.onupgradeneeded=()=>{if(!r.result.objectStoreNames.contains(STORE))r.result.createObjectStore(STORE)};r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)})}
 export async function getStoredRingtone(kind){let d;try{d=await dbOpen();return await new Promise((ok,no)=>{const r=d.transaction(STORE).objectStore(STORE).get(kind);r.onsuccess=()=>ok(r.result||null);r.onerror=()=>no(r.error)})}catch{return null}finally{d?.close()}}
 async function putSound(kind,blob,name,type){const d=await dbOpen();try{await new Promise((ok,no)=>{const t=d.transaction(STORE,'readwrite');t.objectStore(STORE).put({blob,name,type:type||blob.type||'audio/mpeg',updatedAt:Date.now()},kind);t.oncomplete=ok;t.onerror=()=>no(t.error);t.onabort=()=>no(t.error)})}finally{d.close()}}
 async function deleteSound(kind){const d=await dbOpen();try{await new Promise((ok,no)=>{const t=d.transaction(STORE,'readwrite');t.objectStore(STORE).delete(kind);t.oncomplete=ok;t.onerror=()=>no(t.error)})}finally{d.close()}}
