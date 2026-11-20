@@ -364,7 +364,8 @@ function App() {
                 const known = new Set(current.map(message => message.id));
                 return [...current, ...result.messages.filter(message => !known.has(message.id))];
               });
-              playAlertTone('message');\n              setNotice('Sylus sent you a message.');
+              playAlertTone('message');
+              setNotice('Sylus sent you a message.');
             }
           }
         }
@@ -373,7 +374,8 @@ function App() {
           if (callResponse.ok) {
             const callResult = await callResponse.json();
             if (!stopped && callResult.sent) {
-              playAlertTone('call');\n              setIncomingCall(true);
+              playAlertTone('call');
+              setIncomingCall(true);
               setNotice('Sylus is calling.');
             }
           }
