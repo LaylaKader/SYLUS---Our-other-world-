@@ -659,7 +659,7 @@ def erase_all_private_data(_: None = Depends(require_owner)):
         conn.execute(
             "UPDATE proactive_contact_settings SET messages_enabled=TRUE, calls_enabled=TRUE, "
             "quiet_start='00:00', quiet_end='00:00', min_idle_minutes=60, min_interval_minutes=15, "
-            "last_proactive_at=NULL, last_call_invite_at=NULL, no_call_until=NULL, no_call_reason=NULL, "
+            "last_proactive_at=NULL, last_call_invite_at=NULL, no_call_until=NULL, no_call_reason=NULL, no_message_until=NULL, no_message_reason=NULL, "
             "proactive_cycle_count=0, proactive_pause_until=NULL, updated_at=now() WHERE id=1"
         )
         message_count = conn.execute("DELETE FROM messages RETURNING id").fetchall()
@@ -937,7 +937,7 @@ def get_proactive_settings(_: None = Depends(require_owner)):
     with connection() as conn:
         row = conn.execute(
             "SELECT messages_enabled, calls_enabled, quiet_start, quiet_end, min_idle_minutes, "
-            "min_interval_minutes, timezone, chance_percent, max_idle_minutes "
+            "min_interval_minutes, timezone, chance_percent, max_idle_minutes, no_message_until, no_message_reason "
             "FROM proactive_contact_settings WHERE id = 1"
         ).fetchone()
     return {
@@ -945,6 +945,8 @@ def get_proactive_settings(_: None = Depends(require_owner)):
         "quiet_start": row[2].strftime("%H:%M"), "quiet_end": row[3].strftime("%H:%M"),
         "min_idle_minutes": row[4], "min_interval_minutes": row[5], "timezone": row[6],
         "chance_percent": row[7], "max_idle_minutes": row[8],
+        "no_message_until": row[9].astimezone(timezone.utc).isoformat() if row[9] else None,
+        "no_message_reason": row[10],
     }
 
 
@@ -994,75 +996,108 @@ def update_call_settings(payload: CallSettingsUpdate, _: None = Depends(require_
     return get_call_settings(None)
 
 
-def apply_spoken_call_boundary(text: str, timezone_name: str) -> None:
-    """Persist natural-language call pauses or an explicit permission to resume calls."""
-    value = (text or "").strip().lower()
-    if not value:
-        return
-    resume = any(phrase in value for phrase in (
-        "you can call again", "call me again", "call me now", "you can call now", "you may call me", "calls are okay again",
-        "it's okay to call", "it is okay to call", "i'm okay with calls", "im okay with calls",
-        "allow calls again", "resume calls",
-    ))
-    if resume:
-        with connection() as conn:
-            conn.execute(
-                "UPDATE proactive_contact_settings SET no_call_until = NULL, no_call_reason = NULL, updated_at = now() WHERE id = 1"
-            )
-        return
-    deny = any(phrase in value for phrase in (
-        "don't call", "dont call", "do not call", "no calls", "stop calling",
-        "don't phone", "dont phone", "do not phone", "no phone calls", "no voice calls", "don't ring", "do not ring", "not call me",
-    ))
-    if not deny:
-        return
+def extract_admin_instruction(text: str) -> tuple[bool, str]:
+    """Recognise an explicit, message-leading address to the app administrator."""
+    match = re.match(r"^\\s*admin(?:\\s*[:,—-]\\s*|\\s+)([\\s\\S]+)$", text or "", flags=re.I)
+    return (True, match.group(1).strip()) if match else (False, (text or "").strip())
+
+
+def _admin_restriction_expiry(value: str, timezone_name: str) -> tuple[datetime | None, str]:
     try:
         zone = ZoneInfo(timezone_name or DEFAULT_TIMEZONE)
     except Exception:
         zone = ZoneInfo(DEFAULT_TIMEZONE)
     now_local = datetime.now(timezone.utc).astimezone(zone)
-    until = None
-    reason = "Umi asked Sylus not to call until she explicitly allows it again."
     if "tomorrow" in value:
-        from datetime import time as clock_time, timedelta
-        tomorrow = now_local.date() + timedelta(days=1)
-        until = datetime.combine(tomorrow, clock_time(23, 59, 59), tzinfo=zone)
-        reason = "Umi asked for no calls tomorrow."
-    elif any(word in value for word in ("today", "tonight", "for now", "right now", "now")):
-        from datetime import time as clock_time, timedelta
-        if "for now" in value or "right now" in value or value.endswith(" now"):
-            until = now_local + timedelta(hours=2)
-            reason = "Umi asked for a temporary pause on calls."
-        else:
-            until = datetime.combine(now_local.date(), clock_time(23, 59, 59), tzinfo=zone)
-            reason = "Umi asked for no calls today."
-    else:
-        import re
-        from datetime import timedelta
-        duration = re.search(r"for\s+(\d+)\s*(hours?|hrs?|minutes?|mins?|days?)", value)
-        if duration:
-            amount = int(duration.group(1))
-            unit = duration.group(2)
-            seconds = amount * (86400 if unit.startswith("day") else 3600 if unit.startswith(("hour", "hr")) else 60)
-            until = now_local + timedelta(seconds=seconds)
-            reason = f"Umi asked for no calls for {amount} {unit}."
-        else:
-            clock = re.search(r"until\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", value)
-            if clock:
-                from datetime import time as clock_time, timedelta
-                hour, minute = int(clock.group(1)), int(clock.group(2) or 0)
-                suffix = clock.group(3)
-                if suffix == "pm" and hour < 12: hour += 12
-                if suffix == "am" and hour == 12: hour = 0
-                if 0 <= hour <= 23 and 0 <= minute <= 59:
-                    candidate = datetime.combine(now_local.date(), clock_time(hour, minute), tzinfo=zone)
-                    until = candidate if candidate > now_local else candidate + timedelta(days=1)
-                    reason = f"Umi asked for no calls until {hour:02d}:{minute:02d}."
-    with connection() as conn:
-        conn.execute(
-            "UPDATE proactive_contact_settings SET no_call_until = %s, no_call_reason = %s, updated_at = now() WHERE id = 1",
-            (until, reason),
-        )
+        from datetime import time as clock_time
+        until = datetime.combine(now_local.date() + timedelta(days=1), clock_time(23, 59, 59), tzinfo=zone)
+        return until, "tomorrow"
+    if any(word in value for word in ("for now", "right now", "now")):
+        return now_local + timedelta(hours=2), "for about two hours"
+    if any(word in value for word in ("today", "tonight")):
+        from datetime import time as clock_time
+        return datetime.combine(now_local.date(), clock_time(23, 59, 59), tzinfo=zone), "until the end of today"
+    duration = re.search(r"for\\s+(\\d+)\\s*(hours?|hrs?|minutes?|mins?|days?)", value)
+    if duration:
+        amount, unit = int(duration.group(1)), duration.group(2)
+        seconds = amount * (86400 if unit.startswith("day") else 3600 if unit.startswith(("hour", "hr")) else 60)
+        return now_local + timedelta(seconds=seconds), f"for {amount} {unit}"
+    clock = re.search(r"until\\s+(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm)?", value)
+    if clock:
+        from datetime import time as clock_time
+        hour, minute, suffix = int(clock.group(1)), int(clock.group(2) or 0), clock.group(3)
+        if suffix == "pm" and hour < 12: hour += 12
+        if suffix == "am" and hour == 12: hour = 0
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            candidate = datetime.combine(now_local.date(), clock_time(hour, minute), tzinfo=zone)
+            if candidate <= now_local:
+                candidate += timedelta(days=1)
+            return candidate, f"until {hour:02d}:{minute:02d}"
+    return None, "until Admin explicitly allows it again"
+
+
+def apply_spoken_call_boundary(text: str, timezone_name: str) -> None:
+    """Apply contact restrictions only to explicit Admin-prefixed instructions.
+
+    Ordinary Sylus roleplay (including jokes, anger, sarcasm, and 'don't talk/call'
+    lines) must never change app permissions.
+    """
+    is_admin, instruction = extract_admin_instruction(text)
+    if not is_admin:
+        return
+    value = instruction.casefold().strip()
+    if not value:
+        return
+
+    message_resume = any(phrase in value for phrase in (
+        "you can talk to me again", "talk to me again", "you can message me again",
+        "message me again", "resume messages", "resume messaging", "allow messages again",
+        "you can text me again", "text me again",
+    ))
+    message_deny = any(phrase in value for phrase in (
+        "don't talk", "dont talk", "do not talk", "stop messaging", "don't message",
+        "dont message", "do not message", "no messages", "don't text", "dont text",
+        "do not text", "don't speak to me", "do not speak to me",
+    ))
+    call_resume = any(phrase in value for phrase in (
+        "you can call again", "call me again", "call me now", "you can call now",
+        "you may call me", "calls are okay again", "it's okay to call",
+        "it is okay to call", "i'm okay with calls", "im okay with calls",
+        "allow calls again", "resume calls",
+    ))
+    call_deny = any(phrase in value for phrase in (
+        "don't call", "dont call", "do not call", "no calls", "stop calling",
+        "don't phone", "dont phone", "do not phone", "no phone calls",
+        "no voice calls", "don't ring", "do not ring", "not call me",
+    ))
+
+    if message_resume:
+        with connection() as conn:
+            conn.execute(
+                "UPDATE proactive_contact_settings SET no_message_until=NULL, no_message_reason=NULL, updated_at=now() WHERE id=1"
+            )
+    elif message_deny:
+        until, duration = _admin_restriction_expiry(value, timezone_name)
+        reason = f"Admin requested no proactive messages {duration}."
+        with connection() as conn:
+            conn.execute(
+                "UPDATE proactive_contact_settings SET no_message_until=%s, no_message_reason=%s, updated_at=now() WHERE id=1",
+                (until, reason),
+            )
+
+    if call_resume:
+        with connection() as conn:
+            conn.execute(
+                "UPDATE proactive_contact_settings SET no_call_until=NULL, no_call_reason=NULL, updated_at=now() WHERE id=1"
+            )
+    elif call_deny:
+        until, duration = _admin_restriction_expiry(value, timezone_name)
+        reason = f"Admin requested no calls {duration}."
+        with connection() as conn:
+            conn.execute(
+                "UPDATE proactive_contact_settings SET no_call_until=%s, no_call_reason=%s, updated_at=now() WHERE id=1",
+                (until, reason),
+            )
 
 
 def proactive_contact_decision(
@@ -1123,11 +1158,18 @@ def poll_proactive_messages(_: None = Depends(require_owner)):
     with connection() as conn:
         row = conn.execute(
             "SELECT messages_enabled, min_idle_minutes, min_interval_minutes, timezone, "
-            "last_proactive_at, proactive_cycle_count, proactive_pause_until, max_idle_minutes, chance_percent "
-            "FROM proactive_contact_settings WHERE id = 1 FOR UPDATE"
+            "last_proactive_at, proactive_cycle_count, proactive_pause_until, max_idle_minutes, chance_percent, "
+            "no_message_until, no_message_reason FROM proactive_contact_settings WHERE id = 1 FOR UPDATE"
         ).fetchone()
         if not row or not row[0]:
             return {"sent": False, "reason": "disabled", "messages": []}
+        if row[9] and row[9] > now_utc:
+            return {"sent": False, "reason": "owner_requested_no_messages",
+                    "until": row[9].isoformat(), "detail": row[10], "messages": []}
+        if row[9] and row[9] <= now_utc:
+            conn.execute(
+                "UPDATE proactive_contact_settings SET no_message_until=NULL, no_message_reason=NULL WHERE id=1"
+            )
         conn.execute(
             "UPDATE call_sessions SET ended_at=last_activity_at, "
             "duration_seconds=GREATEST(duration_seconds,EXTRACT(EPOCH FROM (last_activity_at-started_at))::int) "
@@ -2008,14 +2050,13 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
     texts = payload.normalized_texts()
     stored_text = "\n".join(texts)
     text = stored_text
-    admin_match = re.match(r"^\s*admin\s*:\s*([\s\S]+)$", text, flags=re.I)
-    admin_override = bool(admin_match)
-    if admin_match:
-        text = admin_match.group(1).strip()
+    admin_override, admin_instruction = extract_admin_instruction(text)
+    if admin_override:
+        text = admin_instruction
         if len(text) >= 2 and text.startswith("(") and text.endswith(")"):
             text = text[1:-1].strip()
         if not text:
-            raise HTTPException(status_code=400, detail="Write an instruction after admin:.")
+            raise HTTPException(status_code=400, detail="Write an instruction after Admin:.")
     client_ip = request.client.host if request.client else "unknown"
     attempts = _chat_attempts[client_ip]
     now = time()
@@ -2047,7 +2088,7 @@ def chat(payload: MessageIn, request: Request, _: None = Depends(require_owner))
             ([row[0] for row in user_rows],)
         ).fetchall()
     tz_name = tz_row[0] if tz_row else DEFAULT_TIMEZONE
-    apply_spoken_call_boundary(text, tz_name)
+    apply_spoken_call_boundary(stored_text, tz_name)
     try:
         local_zone = ZoneInfo(tz_name)
     except Exception:
