@@ -169,7 +169,7 @@ function App() {
   const [callBusy, setCallBusy] = useState(false);
   const [callStatus, setCallStatus] = useState('A private voice channel with Sylus.');
   const [callTranscript, setCallTranscript] = useState('');
-  const [callCorrectionEnabled, setCallCorrectionEnabled] = useState(() => { try { return window.localStorage.getItem('sylus-call-correction') === 'true'; } catch { return false; } });
+  const [callCorrectionEnabled, setCallCorrectionEnabled] = useState(() => { try { return window.localStorage.getItem('sylus-call-correction') !== 'false'; } catch { return true; } });
   const [callRecognitionLanguage, setCallRecognitionLanguage] = useState(() => { try { return window.localStorage.getItem('sylus-call-language') || 'en-IN'; } catch { return 'en-IN'; } });
   const callSessionIdRef = useRef(null);
   const callStartedAtRef = useRef(null);
@@ -988,7 +988,7 @@ function App() {
     let corrected=phrase;
     if(callCorrectionEnabled){
       setCallStatus('Cleaning up the transcription…');
-      try{const controller=new AbortController();const timeoutId=window.setTimeout(()=>controller.abort(),3500);const r=await fetch(apiUrl.replace(/\/$/, '')+'/v1/calls/correct-transcript',{method:'POST',headers,credentials:'include',signal:controller.signal,body:JSON.stringify({text:phrase,alternatives,session_id:callSessionIdRef.current})});window.clearTimeout(timeoutId);if(r.ok){const v=await r.json();if(v.text?.trim())corrected=v.text.trim();}}catch{}
+      try{const controller=new AbortController();const timeoutId=window.setTimeout(()=>controller.abort(),1800);const r=await fetch(apiUrl.replace(/\/$/, '')+'/v1/calls/correct-transcript',{method:'POST',headers,credentials:'include',signal:controller.signal,body:JSON.stringify({text:phrase,alternatives,session_id:callSessionIdRef.current})});window.clearTimeout(timeoutId);if(r.ok){const v=await r.json();if(v.text?.trim())corrected=v.text.trim();}}catch{}
     }
     setCallTranscript(corrected);sendCallUtterance(corrected);
   }
@@ -1032,7 +1032,7 @@ function App() {
         // Interim results mean the recognizer is still hearing/decoding speech.
         // Reset the quiet timer on every result, but submit only after a final segment.
         if (callSilenceTimerRef.current) window.clearTimeout(callSilenceTimerRef.current);
-        if (callFinalTranscriptRef.current) callSilenceTimerRef.current = window.setTimeout(() => commitCallTranscript(), 1700);
+        if (callFinalTranscriptRef.current) callSilenceTimerRef.current = window.setTimeout(() => commitCallTranscript(), 1250);
       };
       recognition.onerror = event => {
         if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
@@ -1053,7 +1053,7 @@ function App() {
         setCallListening(false);
         if (callFinalTranscriptRef.current.trim() && !callProcessingRef.current && !callMicPausedRef.current) {
           if (callSilenceTimerRef.current) window.clearTimeout(callSilenceTimerRef.current);
-          callSilenceTimerRef.current = window.setTimeout(() => commitCallTranscript(), 900);
+          callSilenceTimerRef.current = window.setTimeout(() => commitCallTranscript(), 650);
         } else if (callActiveRef.current && !callProcessingRef.current && !callMicPausedRef.current) {
           callRestartTimerRef.current = window.setTimeout(() => startCallRecognition(), 500);
         }
