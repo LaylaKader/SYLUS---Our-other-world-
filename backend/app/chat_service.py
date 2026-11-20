@@ -273,12 +273,12 @@ class OpenAICompatibleChatModel(ChatModel):
                 "model": model_name,
                 "messages": messages,
                 "temperature": 0.78,
-                "max_tokens": 800,
+                "max_tokens": 520,
             }
             try:
-                # Avoid provider-specific JSON-mode validation. The prompt requests a
-                # JSON envelope, while split_reply_bubbles also accepts plain text.
-                response = httpx.post(endpoint, headers=headers, json=payload, timeout=httpx.Timeout(22.0, connect=5.0))
+                # Keep live conversation turns responsive. A slow free provider should
+                # fail over quickly instead of making the owner wait through a long timeout.
+                response = httpx.post(endpoint, headers=headers, json=payload, timeout=httpx.Timeout(12.0, connect=3.0))
                 # Groq and some compatible providers report TPM overflow as HTTP 413.
                 # Retry once with a much smaller context before abandoning this provider.
                 if response.status_code == 413:
@@ -292,7 +292,7 @@ class OpenAICompatibleChatModel(ChatModel):
                             compact_messages.append({"role": role, "content": content[-420:]})
                     compact_messages = [compact_messages[0]] + compact_messages[-5:] if compact_messages else compact_messages
                     compact_payload = {**payload, "messages": compact_messages, "max_tokens": 550}
-                    response = httpx.post(endpoint, headers=headers, json=compact_payload, timeout=45.0)
+                    response = httpx.post(endpoint, headers=headers, json=compact_payload, timeout=httpx.Timeout(16.0, connect=3.0))
                 response.raise_for_status()
                 data: dict[str, Any] = response.json()
                 message_content = data["choices"][0]["message"].get("content")
