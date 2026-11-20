@@ -1800,6 +1800,116 @@ def create_private_sticker(file: UploadFile = File(...), label: str = Form(defau
         ).fetchone()
     return {"id": str(row[0]), "label": row[1], "filename": row[2], "is_favorite": row[3], "created_at": row[4], "src": f"/v1/stickers/{row[0]}"}
 
+
+class SoundComposeIn(BaseModel):
+    description: str = Field(min_length=4, max_length=600)
+    purpose: str = Field(default="message", max_length=20)
+
+
+@app.post("/v1/sounds/compose")
+def compose_sound_design(payload: SoundComposeIn, _: None = Depends(require_owner)):
+    """Use the configured free chat provider to design a short, structured sound composition."""
+    prompt = (
+        "Design an original short notification sound. Return ONLY valid JSON with keys title and events. "
+        "events must be an array of 5 to 18 objects. Each object has: kind ('tone' or 'noise'), "
+        "at (seconds, 0 to 5.5), duration (0.05 to 1.2), frequency (45 to 2400 Hz), "
+        "wave ('sine','triangle','sawtooth','square'), gain (0.01 to 0.22), "
+        "filter (180 to 9000 Hz), attack (0.005 to 0.25), release (0.03 to 0.8). "
+        "Use layered partials, subtle noise textures and carefully spaced envelopes to create a polished, "
+        "recognisable 2–5 second sting, not a generic sequence of beeps. Make the first transient audible, "
+        "keep the peak gentle, leave a little space, and finish cleanly. A message alert should be concise; "
+        "an incoming-call motif may be slightly longer. Do not include copyrighted melodies, lyrics, or voice imitation. "
+        "User's sound brief: " + payload.description.strip() +
+        ". Purpose: " + payload.purpose.strip() +
+        ". Keep every event within 5.8 seconds. Do not output markdown or explanations."
+    )
+    raw = ""
+    failures = []
+    if settings.gemini_api_key:
+        try:
+            response = httpx.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{settings.gemini_vision_model}:generateContent",
+                params={"key": settings.gemini_api_key},
+                json={"contents": [{"parts": [{"text": prompt}]}],
+                      "generationConfig": {"temperature": 0.85, "maxOutputTokens": 900, "responseMimeType": "application/json"}},
+                timeout=30.0,
+            )
+            response.raise_for_status()
+            raw = response.json()["candidates"][0]["content"]["parts"][0]["text"]
+        except httpx.HTTPStatusError as exc:
+            failures.append(f"Gemini HTTP {exc.response.status_code}")
+        except (httpx.HTTPError, KeyError, IndexError, ValueError, TypeError) as exc:
+            failures.append("Gemini " + type(exc).__name__)
+    groq_key = settings.groq_api_key or (settings.model_api_key if "groq.com" in settings.model_api_base_url else "")
+    if not raw and groq_key:
+        try:
+            response = httpx.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
+                json={"model": settings.groq_model, "messages": [{"role": "user", "content": prompt}],
+                      "temperature": 0.85, "max_tokens": 900, "response_format": {"type": "json_object"}},
+                timeout=30.0,
+            )
+            response.raise_for_status()
+            raw = response.json()["choices"][0]["message"]["content"]
+        except httpx.HTTPStatusError as exc:
+            failures.append(f"Groq HTTP {exc.response.status_code}")
+        except (httpx.HTTPError, KeyError, IndexError, ValueError, TypeError) as exc:
+            failures.append("Groq " + type(exc).__name__)
+    if not raw and settings.openrouter_api_key:
+        try:
+            response = httpx.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={"Authorization": f"Bearer {settings.openrouter_api_key}", "Content-Type": "application/json"},
+                json={"model": settings.openrouter_model, "messages": [{"role": "user", "content": prompt}],
+                      "temperature": 0.85, "max_tokens": 900, "response_format": {"type": "json_object"}},
+                timeout=30.0,
+            )
+            response.raise_for_status()
+            raw = response.json()["choices"][0]["message"]["content"]
+        except httpx.HTTPStatusError as exc:
+            failures.append(f"OpenRouter HTTP {exc.response.status_code}")
+        except (httpx.HTTPError, KeyError, IndexError, ValueError, TypeError) as exc:
+            failures.append("OpenRouter " + type(exc).__name__)
+    if not raw:
+        detail = "No configured AI provider could design this sound."
+        if failures:
+            detail += " Provider attempts: " + ", ".join(failures)
+        raise HTTPException(status_code=503, detail=detail)
+    try:
+        cleaned = raw.strip()
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        plan = json.loads(cleaned[start:end + 1]) if start >= 0 and end > start else json.loads(cleaned)
+        events = []
+        for item in plan.get("events", [])[:18]:
+            if not isinstance(item, dict):
+                continue
+            kind = "noise" if item.get("kind") == "noise" else "tone"
+            wave = item.get("wave") if item.get("wave") in ("sine", "triangle", "sawtooth", "square") else "sine"
+            def bounded(key, default, low, high):
+                try:
+                    return max(low, min(high, float(item.get(key, default))))
+                except (TypeError, ValueError):
+                    return default
+            events.append({
+                "kind": kind, "at": bounded("at", 0, 0, 5.5),
+                "duration": bounded("duration", .25, .05, 1.2),
+                "frequency": bounded("frequency", 440, 45, 2400),
+                "wave": wave, "gain": bounded("gain", .12, .01, .22),
+                "filter": bounded("filter", 3200, 180, 9000),
+                "attack": bounded("attack", .025, .005, .25),
+                "release": bounded("release", .18, .03, .8),
+            })
+        if len(events) < 3:
+            raise ValueError("The sound plan did not contain enough events.")
+        title = re.sub(r"\s+", " ", str(plan.get("title") or "AI-designed sound")).strip()[:70]
+        return {"title": title, "events": events, "engine": "AI sound design + local synthesis"}
+    except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+        logging.warning("Sound composition plan was invalid: %s", type(exc).__name__)
+        raise HTTPException(status_code=502, detail="The AI returned an invalid sound design. Please try a different description.")
+
+
 @app.post("/v1/stickers/suggest-label")
 def suggest_sticker_label(file: UploadFile = File(...), _: None = Depends(require_owner)):
     """Analyse sticker pixels and return a short name plus visual description."""
