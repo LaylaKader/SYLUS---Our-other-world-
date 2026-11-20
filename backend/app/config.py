@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     cloudflare_image_limit_24h: int = 10
     elevenlabs_api_key: str = ""
     elevenlabs_voice_id: str = ""
+    fish_api_key: str = ""
+    fish_reference_id: str = ""
+    fish_audio_model: str = "s2.1-pro-free"
     cors_allowed_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     sylus_owner_password: str = ""
     session_secret: str = ""
