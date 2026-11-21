@@ -131,7 +131,7 @@ class EmotionState:
         }
         directive = directives[mood]
         if 0.45 <= self.stress < 0.72:
-            directive += " A moderate workload is also weighing on him: keep his attention a little divided and his humour more restrained, without making every reply sound troubled."
+            directive += " Moderate pressure from his own responsibilities is weighing on him: keep his attention a little divided and his humour more restrained, without making every reply sound troubled."
         return directive
 
     def to_dict(self) -> dict[str, float]:
