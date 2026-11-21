@@ -41,7 +41,7 @@ function cleanAssistantText(value) {
     const direct = JSON.parse(candidate);
     if (Array.isArray(direct)) {
       const parts = direct.filter(item => typeof item === 'string' && item.trim()).map(item => item.trim());
-      if (parts.length) return parts.join('\\n\\n').replace(/([.!?])(?=[A-Z][a-z])/g, '$1 ');
+      if (parts.length) return parts.join('\n\n').replace(/([.!?])(?=[A-Z][a-z])/g, '$1 ');
     }
     if (typeof direct === 'string' && direct.trim()) candidate = direct.trim();
   } catch {}
@@ -359,7 +359,7 @@ function App() {
     const parts = safeText.split(/(〔sticker:[a-z0-9-]+〕|\{sticker:[a-z0-9-]+\})/g);
     const legacy = { teacup: 'sleepy', rosebud: 'heart-hug', tarot: 'thinking', wink: 'mischief', raven: 'waiting', feather: 'wave', rose: 'heart-hug', laugh: 'laugh', smirk: 'sneaky' };
     const renderInline = (text, keyPrefix) => {
-      const tokens = String(text).split(/(\\*\\*[^*\\n]+\\*\\*|\\*[^*\\n]+\\*)/g);
+      const tokens = String(text).split(/(\*\*[^*\n]+\*\*|\*[^*\n]+\*)/g);
       return tokens.map((token, index) => {
         if (token.startsWith('**') && token.endsWith('**') && token.length > 4) {
           return <strong key={keyPrefix + index}>{token.slice(2, -2)}</strong>;
@@ -371,9 +371,9 @@ function App() {
       });
     };
     const linkify = (text, keyPrefix) => {
-      const chunks = String(text).split(/(\\[[^\\]]+\\]\\(https:\\/\\/[^)\\s]+\\)|https:\\/\\/[^\\s<]+)/g);
+      const chunks = String(text).split(/(\[[^\]]+\]\(https:\/\/[^)\s]+\)|https:\/\/[^\s<]+)/g);
       return chunks.map((chunk, index) => {
-        const markdown = chunk.match(/^\\[([^\\]]+)\\]\\((https:\\/\\/[^)\\s]+)\\)$/);
+        const markdown = chunk.match(/^\[([^\]]+)\]\((https:\/\/[^)\s]+)\)$/);
         if (markdown) return <a key={keyPrefix + index} className="chat-inline-link" href={markdown[2]} target="_blank" rel="noopener noreferrer">{markdown[1]}</a>;
         if (chunk.startsWith('https://')) {
           const url = chunk.replace(/[),.!?]+$/, '');
