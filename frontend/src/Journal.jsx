@@ -2,13 +2,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { BookHeart, Feather, RefreshCw, Sparkles } from 'lucide-react';
 
 const DAILY_GOALS = [
-  'Study or make progress on work',
-  'Move my body',
-  'Read or learn something',
-  'Take care of myself',
-  'Drink enough water',
-  'Create something',
-  'Rest when I need it'
+  { label:'Made progress', icon:'✦', hint:'Study or work' },
+  { label:'Moved a little', icon:'♡', hint:'Walk, stretch, exercise' },
+  { label:'Learned something', icon:'⌘', hint:'Read or explore' },
+  { label:'Looked after myself', icon:'❀', hint:'Self-care' },
+  { label:'Stayed hydrated', icon:'☼', hint:'Drank enough water' },
+  { label:'Made something', icon:'✎', hint:'Create or draw' },
+  { label:'Let myself rest', icon:'☾', hint:'Take a proper break' }
 ];
 function cleanThoughts(value) {
   if (typeof value !== 'string') return '';
@@ -81,56 +81,72 @@ export default function Journal({ connected, apiUrl, headers }) {
 
   return <section className="content-view journal-view">
     <style>{`
-      .journal-view{max-width:1040px;margin:0 auto;width:100%}
-      .journal-layout{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(230px,.7fr);gap:18px;margin-top:24px}
-      .journal-panel,.journal-archive{border:1px solid rgba(196,157,128,.22);border-radius:20px;background:radial-gradient(ellipse at 90% 0%,rgba(153,91,121,.12),transparent 45%),linear-gradient(145deg,rgba(35,25,37,.96),rgba(17,15,20,.97));padding:clamp(15px,3vw,24px);min-width:0;box-shadow:0 16px 45px rgba(0,0,0,.14)}
+      .journal-view{max-width:1080px;margin:0 auto;width:100%;padding-bottom:30px}
+      .journal-view .journal-intro{max-width:650px;color:#bbaab8;line-height:1.75}
+      .journal-layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(240px,.75fr);gap:20px;margin-top:28px;align-items:start}
+      .journal-panel,.journal-archive{min-width:0;border:1px solid rgba(221,179,157,.2);border-radius:23px;background:linear-gradient(155deg,rgba(41,29,42,.98),rgba(20,17,25,.98));padding:clamp(17px,3vw,27px);box-shadow:0 18px 50px rgba(0,0,0,.2)}
       .journal-panel{position:relative;overflow:hidden}
-      .journal-panel:after{content:'✦';position:absolute;right:22px;top:18px;color:rgba(201,168,117,.22);font-size:26px;pointer-events:none}
-      .journal-goal{transition:border-color .18s,background .18s}
-      .journal-goal:has(input:checked){border-color:rgba(201,168,117,.48);background:rgba(201,168,117,.075)}
-      .journal-panel textarea:focus,.journal-date-row input:focus{outline:1px solid rgba(201,168,117,.65);border-color:rgba(201,168,117,.55)}
-      .journal-reflection{position:relative;margin-top:22px;padding:20px 20px 18px;border:1px solid rgba(201,168,117,.28);border-radius:16px;background:linear-gradient(135deg,rgba(114,67,92,.15),rgba(201,168,117,.055))}
-      .journal-reflection:before{content:'“';position:absolute;right:15px;top:-9px;font:64px Georgia,serif;color:rgba(201,168,117,.16)}
-      .journal-reflection p{white-space:pre-wrap;line-height:1.9;color:#eee1e9;font-size:14px;position:relative}
-      .journal-reflection .reflection-date{font-size:10px;letter-spacing:.13em;color:#c9a875;margin-top:14px}
-      .journal-archive{background:linear-gradient(160deg,rgba(27,24,31,.96),rgba(17,15,20,.97))}
-      .journal-date-button{transition:all .18s}
-      .journal-date-button:hover{border-color:rgba(201,168,117,.42);transform:translateY(-1px)}
-      .journal-panel h2,.journal-archive h2{font-family:'Playfair Display',serif;font-weight:500;color:#eadde5;margin:6px 0 16px}
-      .journal-date-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:20px}
-      .journal-date-row input{background:#17131c;color:#eadde7;border:1px solid rgba(201,168,117,.28);border-radius:9px;padding:10px;font:inherit}
-      .journal-goals{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin:12px 0 20px}
-      .journal-goal{display:flex;align-items:flex-start;gap:9px;padding:10px;border:1px solid rgba(196,157,128,.16);border-radius:10px;background:rgba(255,255,255,.018);color:#d8cbd5;font-size:12px;line-height:1.5;cursor:pointer}
-      .journal-goal input{accent-color:#bd829d;margin-top:2px}
-      .journal-panel textarea{width:100%;min-height:115px;resize:vertical;background:rgba(7,7,10,.3);border:1px solid rgba(196,157,128,.2);border-radius:11px;padding:12px;color:#f0e7ed;font:inherit;line-height:1.6}
-      .journal-archive-list{display:grid;gap:8px;max-height:540px;overflow:auto}
-      .journal-date-button{display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:left;width:100%;padding:11px 12px;border-radius:10px;border:1px solid rgba(196,157,128,.14);background:rgba(255,255,255,.018);color:#d9cbd6;cursor:pointer}
-      .journal-date-button.active{border-color:rgba(201,168,117,.55);background:rgba(201,168,117,.08)}
-      .journal-date-button small{color:#ad9baa;font-size:10px}
-      .journal-reflection{margin-top:20px;padding:18px;border:1px solid rgba(201,168,117,.22);border-radius:13px;background:rgba(201,168,117,.045)}
-      .journal-reflection p{white-space:pre-wrap;line-height:1.8;color:#e7dce5;font-size:13px}
-      .journal-audio{display:block;width:100%;margin-top:14px;filter:sepia(.12) saturate(.82)}
+      .journal-panel:before{content:'✧';position:absolute;right:24px;top:18px;color:rgba(225,184,151,.28);font-size:36px;pointer-events:none}
+      .journal-panel h2,.journal-archive h2{font-family:'Playfair Display',serif;font-weight:500;color:#f0dfe7;margin:7px 0 15px}
+      .journal-date-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:24px}
+      .journal-date-row input{background:#211925;color:#f4e8ef;border:1px solid rgba(221,179,157,.35);border-radius:12px;padding:10px 12px;font:inherit}
+      .journal-section-kicker{display:flex;align-items:center;gap:9px;color:#d8ad9c;font-size:10px;font-weight:700;letter-spacing:.16em}
+      .journal-section-kicker:after{content:'';height:1px;flex:1;background:linear-gradient(90deg,rgba(216,173,156,.4),transparent)}
+      .journal-goals{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:14px 0 26px}
+      .journal-goal{position:relative;display:flex;align-items:center;gap:11px;min-height:66px;padding:11px 12px;border:1px solid rgba(226,191,178,.17);border-radius:15px;background:rgba(255,255,255,.025);color:#e7d9e2;cursor:pointer;transition:transform .18s,border-color .18s,background .18s}
+      .journal-goal:hover{transform:translateY(-2px);border-color:rgba(222,174,150,.48)}
+      .journal-goal input{position:absolute;opacity:0;pointer-events:none}
+      .journal-goal .goal-icon{display:grid;place-items:center;width:35px;height:35px;flex:0 0 35px;border-radius:12px;background:rgba(198,139,157,.13);color:#e7b9c8;font-size:19px;transition:all .18s}
+      .journal-goal .goal-copy{display:flex;flex-direction:column;gap:3px;font-size:12px;font-weight:600}
+      .journal-goal .goal-copy small{font-size:10px;font-weight:400;color:#a995a7}
+      .journal-goal .goal-check{margin-left:auto;display:grid;place-items:center;width:19px;height:19px;border:1px solid rgba(225,190,174,.42);border-radius:7px;color:transparent;font-size:12px}
+      .journal-goal:has(input:checked){border-color:rgba(218,170,149,.66);background:linear-gradient(120deg,rgba(176,105,132,.18),rgba(218,170,149,.07))}
+      .journal-goal:has(input:checked) .goal-icon{background:rgba(218,170,149,.23);color:#f5cdb7}
+      .journal-goal:has(input:checked) .goal-check{background:#d7a38f;border-color:#d7a38f;color:#261923}
+      .journal-writing-head{margin:4px 0 12px}
+      .journal-writing-head p{font-size:12px;color:#bbaab8;line-height:1.6;margin:7px 0 0}
+      .journal-prompt-chips{display:flex;gap:7px;flex-wrap:wrap;margin:12px 0}
+      .journal-prompt-chip{border:1px solid rgba(218,170,149,.25);background:rgba(218,170,149,.07);color:#e4c4c5;border-radius:999px;padding:7px 11px;font-size:10px;cursor:pointer}
+      .journal-prompt-chip:hover{background:rgba(218,170,149,.16);border-color:rgba(218,170,149,.5)}
+      .journal-panel textarea{display:block;width:100%;min-height:235px;resize:vertical;background:linear-gradient(145deg,rgba(14,12,18,.62),rgba(30,22,32,.8));border:1px solid rgba(218,170,149,.23);border-radius:16px;padding:17px;color:#f5eaf0;font:inherit;font-size:14px;line-height:1.85;letter-spacing:.01em}
+      .journal-panel textarea::placeholder{color:#89798a;line-height:1.9}
+      .journal-panel textarea:focus,.journal-date-row input:focus{outline:1px solid rgba(218,170,149,.7);border-color:rgba(218,170,149,.6)}
+      .journal-panel .field-help{color:#9f8d9e;font-size:10px}
+      .journal-panel .primary-button{margin-top:8px}
+      .journal-reflection{position:relative;margin-top:23px;padding:21px;border:1px solid rgba(218,170,149,.3);border-radius:18px;background:linear-gradient(135deg,rgba(112,65,91,.22),rgba(218,170,149,.07))}
+      .journal-reflection:before{content:'“';position:absolute;right:16px;top:-10px;font:72px Georgia,serif;color:rgba(218,170,149,.18)}
+      .journal-reflection p{white-space:pre-wrap;line-height:1.95;color:#f0e2ea;font-size:14px;position:relative}
+      .journal-reflection .reflection-date{font-size:9px;letter-spacing:.15em;color:#d8ad9c;margin-top:15px}
+      .journal-audio{display:block;width:100%;margin-top:15px;filter:sepia(.15) saturate(.85)}
+      .journal-archive{background:linear-gradient(160deg,rgba(32,26,37,.98),rgba(18,16,23,.98))}
+      .journal-archive-list{display:grid;gap:9px;max-height:590px;overflow:auto}
+      .journal-date-button{display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:left;width:100%;padding:13px;border-radius:14px;border:1px solid rgba(218,170,149,.15);background:rgba(255,255,255,.025);color:#e8dce5;cursor:pointer;transition:all .18s}
+      .journal-date-button:hover{border-color:rgba(218,170,149,.42);transform:translateY(-1px)}
+      .journal-date-button.active{border-color:rgba(218,170,149,.6);background:linear-gradient(110deg,rgba(176,105,132,.18),rgba(218,170,149,.06))}
+      .journal-date-button small{color:#a995a7;font-size:10px}
       .journal-notice{font-size:12px;color:#d8b7c8;margin:12px 0}
       .journal-error{font-size:12px;color:#e8a0aa;margin:12px 0}
-      @media(max-width:720px){.journal-layout{grid-template-columns:1fr}.journal-archive-list{max-height:240px}.journal-goals{grid-template-columns:1fr}}
+      .journal-archive-empty{padding:18px;border:1px dashed rgba(218,170,149,.22);border-radius:15px;color:#a995a7;font-size:12px;line-height:1.7}
+      @media(max-width:760px){.journal-layout{grid-template-columns:1fr}.journal-goals{grid-template-columns:repeat(2,minmax(0,1fr))}.journal-archive-list{max-height:270px}}
+      @media(max-width:430px){.journal-goals{grid-template-columns:1fr}.journal-panel textarea{min-height:210px}}
     `}</style>
     <div className="eyebrow"><span className="eyebrow-line"/> A QUIET RECORD OF OUR DAYS</div>
     <h1>Journal<span className="heading-period">.</span></h1>
-    <p className="subheading">Keep the small victories, unfinished plans, and moments worth remembering. Sylus will leave you a private reflection for each saved day.</p>
+    <p className="subheading journal-intro">A little scrapbook of your days. Save the messy details, the tiny wins, the things you almost forgot to tell someone. Sylus will leave a note beside yours.</p>
     {!connected ? <div className="feature-card"><BookHeart size={22}/><div><h2>Your private journal</h2><p>Sign in to write and revisit your daily entries.</p></div></div> : <div className="journal-layout">
       <form className="journal-panel" onSubmit={save}>
         <div className="journal-date-row"><div><span className="card-kicker">TODAY, OR ANY DAY YOU CHOOSE</span><h2>{entryDate===today()?'A little page for today':'A page from '+new Date(entryDate+'T12:00:00').toLocaleDateString(undefined,{month:'long',day:'numeric',year:'numeric'})}</h2></div><input type="date" value={entryDate} onChange={e=>openDate(e.target.value)}/></div>
-        <label className="field-label">A FEW DAILY CHECK-INS</label>
-        <div className="journal-goals">{DAILY_GOALS.map(goal=><label className="journal-goal" key={goal}><input type="checkbox" checked={goals.includes(goal)} onChange={()=>toggleGoal(goal)}/><span>{goal}</span></label>)}</div>
-        <label className="field-label" htmlFor="journal-highlights">THE HIGHLIGHT OF MY DAY</label>
-        <textarea id="journal-highlights" maxLength={4000} value={highlights} onChange={e=>{setHighlights(e.target.value);setSelected(null);}} placeholder="Something that happened, something you felt, a tiny win, a difficult moment, or just a thought you want to keep…"/>
-        <p className="field-help">{highlights.length}/4000 characters · Your entry stays private.</p>
+        <div className="journal-section-kicker">THE LITTLE THINGS YOU DID</div>
+        <div className="journal-goals">{DAILY_GOALS.map(item=><label className="journal-goal" key={item.label}><input type="checkbox" checked={goals.includes(item.label)} onChange={()=>toggleGoal(item.label)}/><span className="goal-icon">{item.icon}</span><span className="goal-copy">{item.label}<small>{item.hint}</small></span><span className="goal-check">✓</span></label>)}</div>
+        <div className="journal-writing-head"><div className="journal-section-kicker">LET IT ALL OUT</div><p>Start anywhere. A small moment, a long story, something that made you laugh, or something you’re still figuring out. This page is yours.</p></div>
+        <div className="journal-prompt-chips">{['Today, the moment I keep replaying…','Something that made me feel…','The part I wish had gone differently…','One thing I want to remember…'].map(prompt=><button type="button" className="journal-prompt-chip" key={prompt} onClick={()=>{setHighlights(value=>(value?value+"\\n\\n":"")+prompt+" ");setSelected(null);}}>{prompt}</button>)}</div><textarea id="journal-highlights" maxLength={4000} value={highlights} onChange={e=>{setHighlights(e.target.value);setSelected(null);}} placeholder="Dear diary…\n\nWhat happened today? Who did you see? What was going through your mind? You can write as much or as little as you like…"/>
+        <p className="field-help">{highlights.length}/4000 · No perfect wording needed. Just write it how you remember it.</p>
         <button className="primary-button" type="submit" disabled={saving||(!goals.length&&!highlights.trim())}>{saving?'Saving your day…':selected?'Save changes & hear Sylus again':'Save journal & hear Sylus’s thoughts'}</button>
         {notice&&<p className="journal-notice" role="status">{notice}</p>}{error&&<p className="journal-error" role="alert">{error}</p>}
         {selected&&<div className="journal-reflection"><span className="card-kicker"><Sparkles size={13} style={{display:'inline',verticalAlign:'middle'}}/> A NOTE FROM SYLUS</span><p>{selected.sylus_thoughts}</p><div className="reflection-date">{new Date(selected.entry_date+'T12:00:00').toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric',year:'numeric'})} · KEPT BETWEEN US</div>{audioUrl?<audio className="journal-audio" controls preload="none" src={audioUrl}/> : <p className="field-help">The written reflection is saved. A voice note is not available for this entry.</p>}</div>}
       </form>
       <aside className="journal-archive"><div className="journal-date-row"><div><span className="card-kicker">YOUR PRIVATE ARCHIVE</span><h2>Saved days</h2></div><button className="secondary-button" type="button" onClick={refresh} disabled={loading}><RefreshCw size={14}/></button></div>
-        {loading?<p className="field-help">Opening your journal…</p>:sortedEntries.length?<div className="journal-archive-list">{sortedEntries.map(entry=><button type="button" key={entry.entry_date} className={'journal-date-button'+(entry.entry_date===entryDate?' active':'')} onClick={()=>openDate(entry.entry_date)}><span><strong>{new Date(entry.entry_date+'T12:00:00').toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})}</strong><br/><small>{entry.goals?.length||0} little wins · {entry.highlights?'your note saved':'no note'}</small></span><span>{entry.has_audio?'♫':'✧'}</span></button>)}</div>:<p className="field-help">Your saved days will appear here, newest first.</p>}
+        {loading?<p className="field-help">Opening your journal…</p>:sortedEntries.length?<div className="journal-archive-list">{sortedEntries.map(entry=><button type="button" key={entry.entry_date} className={'journal-date-button'+(entry.entry_date===entryDate?' active':'')} onClick={()=>openDate(entry.entry_date)}><span><strong>{new Date(entry.entry_date+'T12:00:00').toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})}</strong><br/><small>{entry.goals?.length||0} little wins · {entry.highlights?'your note saved':'no note'}</small></span><span>{entry.has_audio?'♫':'✧'}</span></button>)}</div>:<div className="journal-archive-empty">Your little collection starts here. Save a page and it will be waiting for you here, whenever you want to revisit it.</div>}
       </aside>
     </div>}
     <div className="small-note"><Feather size={15}/> No streaks, scores, or pressure. Just a place to keep your days.</div>
