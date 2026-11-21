@@ -44,7 +44,7 @@ class SylusAgent:
         """Apply a classified/explicit event before the next response."""
         self.emotion.apply(event, intensity)
 
-    def reply(self, *, user_text: str, recent_history: list[dict], source_message_id: str) -> str:
+    def reply(self, *, user_text: str, recent_history: list[dict], source_message_id: str, write_memory: bool = True) -> str:
         continuity = " ".join(
             str(item.get("body") or item.get("text") or "")[:500]
             for item in recent_history[-8:]
@@ -72,10 +72,11 @@ class SylusAgent:
             memories=memories,
             user_text=user_text,
         )
-        self.writer.extract_and_store(
-            user_text=user_text,
-            assistant_text=answer,
-            source_message_id=source_message_id,
-        )
+        if write_memory:
+            self.writer.extract_and_store(
+                user_text=user_text,
+                assistant_text=answer,
+                source_message_id=source_message_id,
+            )
         self.emotion.decay()
         return answer
