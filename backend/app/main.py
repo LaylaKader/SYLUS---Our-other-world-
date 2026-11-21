@@ -1983,7 +1983,7 @@ def get_journal_entry(entry_date: date, _: None = Depends(require_owner)):
         raise HTTPException(status_code=404, detail="No journal entry exists for this date.")
     return {
         "entry_date": row[0].isoformat(), "goals": row[1] or [], "highlights": row[2],
-        "sylus_thoughts": row[3], "has_audio": bool(row[4]),
+        "sylus_thoughts": _clean_journal_reflection(row[3]), "has_audio": bool(row[4]),
         "created_at": row[5].isoformat(), "updated_at": row[6].isoformat()
     }
 
