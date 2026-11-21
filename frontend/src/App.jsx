@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import StickerStudio from './StickerStudio.jsx';
+import Journal from './Journal.jsx';
 import RingtoneStudio, { getStoredRingtone } from './RingtoneStudio.jsx';
-import {ArrowLeft, Bell, Bird, BookHeart, Camera, ChevronDown, CircleHelp, Clock3, Crown, Heart, Image, LockKeyhole, Menu, MessageCircle, MoreHorizontal, Send, Settings, ShieldCheck, Sparkles, Star, X, RefreshCw, Phone, PhoneOff, Mic, MicOff, History, Volume2, Trash2, Headphones, Music2} from 'lucide-react';
+import {ArrowLeft, Bell, Bird, BookHeart, Camera, ChevronDown, CircleHelp, Clock3, Crown, Heart, Image, LockKeyhole, Menu, MessageCircle, MoreHorizontal, Send, Settings, ShieldCheck, Sparkles, Star, X, RefreshCw, Phone, PhoneOff, Mic, MicOff, History, Volume2, Trash2, Headphones, Music2, NotebookPen} from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? window.location.origin : '');
 const fallbackStickerOptions = [
@@ -26,6 +27,7 @@ const tabs = [
   { id: 'calls', label: 'Call history', icon: Headphones },
   { id: 'bond', label: 'Bond', icon: Heart },
   { id: 'memories', label: 'Memories', icon: BookHeart },
+  { id: 'journal', label: 'Journal', icon: NotebookPen },
   { id: 'gallery', label: 'Gallery', icon: Image },
   { id: 'stickers', label: 'Sticker Studio', icon: Sparkles },
   { id: 'sounds', label: 'Sound Studio', icon: Music2 },
@@ -1494,6 +1496,7 @@ function App() {
       </section>}
 
 
+      {active === 'journal' && <Journal connected={connected} apiUrl={apiUrl} headers={headers}/>}
       {active === 'stickers' && <StickerStudio connected={connected} apiUrl={apiUrl} onSaved={refreshPrivateStickers} setNotice={setNotice}/>}
       {active === 'calls' && <section className="content-view call-history-view">
         <button className="call-history-back" onClick={()=>setActive("chat")}><ArrowLeft size={16}/> Back to chat</button><div className="eyebrow"><span className="eyebrow-line"/> PRIVATE VOICE RECORDS</div><h1>Call history<span className="heading-period">.</span></h1><p className="subheading">Your voice conversations, separate from the text chat.</p>
