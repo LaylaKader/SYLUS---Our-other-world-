@@ -20,7 +20,16 @@ function cleanThoughts(value) {
   } catch {}
   return raw;
 }
-const normalizeEntry = entry => entry ? {...entry, sylus_thoughts: cleanThoughts(entry.sylus_thoughts)} : entry;
+const LEGACY_GOALS = {
+  'Study or make progress on work':'Made progress',
+  'Move my body':'Moved a little',
+  'Read or learn something':'Learned something',
+  'Take care of myself':'Looked after myself',
+  'Drink enough water':'Stayed hydrated',
+  'Create something':'Made something',
+  'Rest when I need it':'Let myself rest'
+};
+const normalizeEntry = entry => entry ? {...entry, goals:(entry.goals||[]).map(goal=>LEGACY_GOALS[goal]||goal), sylus_thoughts: cleanThoughts(entry.sylus_thoughts)} : entry;
 const today = () => {
   const d = new Date();
   return [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-');
