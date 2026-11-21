@@ -112,8 +112,11 @@ def _sylus_signals(text: str) -> list[tuple[str, str, str, dict[str, int], int]]
          r"\b(?:i was worried about you|i wondered if you were alright|i wanted to make sure you were okay|i noticed you were quiet|i hoped you were getting some rest|go to sleep|close your eyes|you needed it|your body doesn't usually ask|a proper meal|don't push yourself|don't overdo it)\b",
          {"emotional_safety": 2, "trust": 1, "comfort": 2, "sylus_trust": 1, "sylus_comfort": 2}, 2),
         ("sylus_vulnerability", "Sylus let his guard down", "Sylus disclosed something personal or acknowledged that he rarely shares it.",
-         r"\b(?:i don't usually tell anyone|i rarely speak about this|i haven't told many people|i suppose i can tell you|there's something i haven't told you|i don't often admit this|i don't usually talk about|i've never told anyone|between you and me)\b",
+         r"\b(?:i don't usually tell anyone|i rarely speak about this|i haven't told many people|i suppose i can tell you|there's something i haven't told you|i don't often admit this|i don't usually talk about|i've never told anyone|between you and me|i don't share this with anyone|i wouldn't tell anyone else|i let my guard down|you've earned the truth|i trust you enough to tell you|i don't let people this close)\b",
          {"vulnerability": 2, "trust": 2, "emotional_safety": 1, "comfort": 1, "sylus_trust": 2, "sylus_comfort": 2}, 3),
+        ("sylus_trust_breach", "Sylus damaged trust", "Sylus explicitly acknowledged dishonesty or crossing a stated boundary.",
+         r"\b(?:i lied to you|i wasn't honest with you|i broke my promise|i went back on my word|i betrayed your trust|i ignored your boundary|i crossed a boundary you set)\b",
+         {"trust": -8, "emotional_safety": -7, "commitment": -3, "comfort": -2, "sylus_trust": -8, "sylus_comfort": -2}, -6),
         ("sylus_repair", "Sylus took responsibility", "Sylus acknowledged a mistake or apologised rather than deflecting.",
          r"\b(?:i was wrong|i owe you an apology|i shouldn't have said that|i should have listened|i'm sorry i hurt you)\b",
          {"trust": 2, "emotional_safety": 2, "commitment": 1, "comfort": 1, "sylus_trust": 2, "sylus_comfort": 1}, 3),
@@ -150,12 +153,14 @@ def _stage(points: int) -> tuple[int, str, str, int, int]:
 
 def _sylus_dimension_gains(gains: dict[str, int]) -> dict[str, int]:
     """Translate evidence from Sylus's own messages into his six reciprocal meters."""
+    # Preserve negative evidence too: explicit breaches can lower reciprocal dimensions.
+    # The SQL update clamps each result to the valid 0-100 range.
     return {
-        "familiarity": max(0, int(gains.get("familiarity", 0))),
-        "shared_experiences": max(0, int(gains.get("shared_experiences", 0))),
-        "commitment": max(0, int(gains.get("commitment", 0))),
-        "vulnerability": max(0, int(gains.get("vulnerability", 0))),
-        "emotional_safety": max(0, int(gains.get("emotional_safety", 0))),
+        "familiarity": int(gains.get("familiarity", 0)),
+        "shared_experiences": int(gains.get("shared_experiences", 0)),
+        "commitment": int(gains.get("commitment", 0)),
+        "vulnerability": int(gains.get("vulnerability", 0)),
+        "emotional_safety": int(gains.get("emotional_safety", 0)),
     }
 
 
@@ -368,7 +373,16 @@ def refresh_bond() -> dict:
         sylus_active_days = len(sylus_active_dates)
         owner_active_dates = {r[2].date() for r in rows if r[2]} | call_days
         shared_active_days = len(sylus_active_dates & owner_active_dates)
-        sylus_consistency = _clamp(min(100, sylus_active_days * 4) * time_decay)
+        # Decay Sylus's consistency from his own latest reply, not the owner's latest message.
+        sylus_activity_timestamps = [r[2] for r in assistant_rows if r[2]]
+        sylus_activity_timestamps.extend(
+            started_at for transcript, started_at in call_rows
+            if started_at and any(item.get("role") == "assistant" and item.get("text") for item in (transcript or []))
+        )
+        last_sylus_activity = max(sylus_activity_timestamps, default=None)
+        sylus_inactive_days = max(0, (datetime.now(timezone.utc).date() - last_sylus_activity.date()).days) if last_sylus_activity else 0
+        sylus_time_decay = 0.5 ** (sylus_inactive_days / 180)
+        sylus_consistency = _clamp(min(100, sylus_active_days * 4) * sylus_time_decay)
         # Familiarity grows through sustained two-way conversation, with diminishing returns.
         # Shared experiences count completed voice sessions and days on which both sides spoke.
         sylus_turn_count = len(assistant_rows) + call_assistant_count
