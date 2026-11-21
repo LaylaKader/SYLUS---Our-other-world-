@@ -556,3 +556,21 @@ body{
 .sound-status{padding:11px 13px;border-left:2px solid #bd829d;background:rgba(189,130,157,.07);color:#e4d1dd;font-size:12px;line-height:1.6}
 .sound-privacy-note{margin-top:16px;line-height:1.7}
 @media(max-width:700px){.sound-studio-grid{grid-template-columns:1fr}.sound-studio-card{padding:14px}.sound-tool-panel,.sound-preview-panel{padding:14px}.sound-preview-actions{align-items:flex-start}.sound-saved-row .settings-actions{width:100%}}
+
+/* Personal memory library */
+.memory-purpose-card{display:flex;gap:15px;align-items:flex-start;margin:24px 0 4px;padding:19px;border:1px solid rgba(201,168,117,.2);border-radius:14px;background:linear-gradient(120deg,rgba(126,49,75,.13),rgba(95,75,128,.09))}
+.memory-purpose-mark{width:36px;height:36px;display:grid;place-items:center;flex:0 0 36px;border-radius:11px;background:rgba(201,168,117,.1);color:var(--gold);font-size:20px}
+.memory-purpose-card strong{display:block;color:#e7dce6;font:500 15px 'Playfair Display',serif}
+.memory-purpose-card p{margin:6px 0 0;color:#a99baa;font-size:11px;line-height:1.75}
+.memory-library-tools{margin-top:27px}
+.memory-search{max-width:100%;padding:13px 15px}
+.memory-shelf-tabs{display:flex;gap:7px;overflow-x:auto;padding:12px 0 5px;scrollbar-width:thin}
+.memory-shelf-tabs button{flex:0 0 auto;border:1px solid rgba(189,154,171,.17);border-radius:20px;background:rgba(255,255,255,.025);color:#a99baa;padding:8px 12px;font-size:9px;white-space:nowrap}
+.memory-shelf-tabs button.active{border-color:rgba(201,168,117,.48);background:rgba(201,168,117,.11);color:#e5c99e}
+.memory-results-note{margin:16px 0 -14px;color:#847989;font-size:9px;letter-spacing:.8px;text-transform:uppercase}
+.memory-card{background:linear-gradient(120deg,rgba(32,26,37,.88),rgba(23,20,29,.84))}
+.memory-card .card-kicker{color:#c4a17f}
+.memory-card p{font-size:13px;line-height:1.8;color:#e1d4e0}
+.memory-editor .field-label{margin-top:13px}
+.memory-editor select.settings-input,.memory-main select.settings-input{color:#e7dce6}
+@media(max-width:620px){.memory-shelf-tabs{margin-right:-4px;padding-bottom:9px}.memory-purpose-card{padding:15px}.memory-purpose-card strong{font-size:14px}}
