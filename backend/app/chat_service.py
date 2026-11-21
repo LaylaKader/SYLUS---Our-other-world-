@@ -535,8 +535,13 @@ class ExplicitOnlyMemoryWriter:
             logging.info("Memory extraction skipped for this exchange.")
             return
 
+def _normalize_reply_spacing(value: str) -> str:
+    """Repair missing sentence spaces without changing intentional line breaks."""
+    return re.sub(r"([.!?])(?=[A-Z][a-z])", r"\\1 ", str(value or "")).strip()
+
+
 def split_reply_bubbles(answer: str) -> list[str]:
-    """Extract conversational text from provider envelopes, including malformed trailing braces."""
+    """Extract conversational text from provider envelopes, including JSON arrays and malformed trailing braces."""
     candidate = (answer or "").strip()
     decoder = json.JSONDecoder()
     for _ in range(3):
@@ -557,10 +562,12 @@ def split_reply_bubbles(answer: str) -> list[str]:
         if isinstance(parsed, str):
             candidate = parsed.strip()
             continue
+        if isinstance(parsed, list):
+            return [_normalize_reply_spacing(item) for item in parsed if isinstance(item, str) and item.strip()][:4]
         if isinstance(parsed, dict):
             messages = parsed.get("messages")
             if isinstance(messages, list):
-                return [item.strip() for item in messages if isinstance(item, str) and item.strip()][:4]
+                return [_normalize_reply_spacing(item) for item in messages if isinstance(item, str) and item.strip()][:4]
             for key in ("response", "reply", "content", "text"):
                 value = parsed.get(key)
                 if isinstance(value, str) and value.strip():
@@ -576,14 +583,14 @@ def split_reply_bubbles(answer: str) -> list[str]:
             try:
                 values, _ = decoder.raw_decode(cleaned[array_match.start(1):])
                 if isinstance(values, list):
-                    return [item.strip() for item in values if isinstance(item, str) and item.strip()][:4]
+                    return [_normalize_reply_spacing(item) for item in values if isinstance(item, str) and item.strip()][:4]
             except (ValueError, TypeError):
                 pass
         # Plain natural-language text remains untouched.
-        if cleaned and not cleaned.startswith("{") and not cleaned.startswith("`"):
-            return [cleaned]
+        if cleaned and not cleaned.startswith(("{", "[", "`")):
+            return [_normalize_reply_spacing(cleaned)]
         return []
-    return [candidate] if candidate and not candidate.startswith("{") else []
+    return [_normalize_reply_spacing(candidate)] if candidate and not candidate.startswith(("{", "[")) else []
 
 
 
@@ -822,6 +829,10 @@ def load_emotion_state() -> EmotionState:
 def classify_explicit_event(text: str) -> tuple[str | None, float]:
     """Recognize clear conversational signals without pretending to read minds."""
     value = text.lower()
+    if re.search(r"\b(?:you sound stressed|you seem stressed|is work weighing on you|are things getting worse|is something wrong at onychinus|trouble in n109|danger in n109|your operation under pressure|your people in danger|shipment dispute|a problem with the shipment)\b", value) or (re.search(r"\b(?:n109|onychinus|your work|your operation|your responsibilities|your territory|your people)\b", value) and re.search(r"\b(?:pressure|danger|trouble|threat|attack|dispute|overwhelmed|stress|stressed|urgent)\b", value)):
+        return "n109_pressure", 0.75
+    if re.search(r"\b(?:did things settle|is the trouble over|did you resolve (?:it|the issue)|all clear at n109|have things calmed down|take a break|get some rest|you should rest|go get some sleep)\b", value):
+        return "n109_relief" if re.search(r"\b(?:settle|over|resolve|all clear|calmed down)\b", value) else "rest", 0.7
     if re.search(r"\b(?:know more|tell me more|curious about|wanna know|want to know|can i ask|do you mind me asking)\b.{0,100}\b(?:your evol|evol|abilities|power|past|childhood|life|work|n109|mephisto)\b|\b(?:your evol|your abilities|your power|your past|your life)\b.{0,100}\b(?:tell me|explain|ask you|know more)\b", value):
         return "personal_curiosity", 0.7
     if re.search(r"\bi love you\b|\bi adore you\b", value):
@@ -966,7 +977,8 @@ def load_bond_context() -> str:
         with connection() as conn:
             row = conn.execute(
                 "SELECT level, stage, summary, affection, trust, familiarity, shared_experiences, "
-                "commitment, vulnerability, emotional_safety, consistency, comfort, sylus_affection, sylus_trust, sylus_comfort FROM bond_state WHERE id=1"
+                "commitment, vulnerability, emotional_safety, consistency, comfort, sylus_affection, sylus_trust, sylus_comfort, " 
+                "sylus_familiarity, sylus_shared_experiences, sylus_commitment, sylus_vulnerability, sylus_emotional_safety, sylus_consistency FROM bond_state WHERE id=1"
             ).fetchone()
         if not row:
             return ""
@@ -1064,6 +1076,27 @@ def load_bond_context() -> str:
             "he can relax, joke, and show quieter sides of himself around her",
             "he feels entirely at ease in their private rhythm without losing his independence",
         )
+        sylus_familiarity = tendency(int(row[15] or 0),
+            "he is still learning her patterns", "he recognises some of her habits",
+            "he notices subtle changes and remembers her preferences", "their private shorthand is deeply established")
+        sylus_shared = tendency(int(row[16] or 0),
+            "he has few verified shared moments to draw on", "he can recall some specific moments",
+            "he can naturally revisit their shared stories", "their shared history has texture and detail")
+        sylus_commitment = tendency(int(row[17] or 0),
+            "he avoids assuming permanence", "he is beginning to make deliberate room for her",
+            "he follows through and chooses the connection consistently", "he treats the relationship as an enduring choice without surrendering his independence")
+        sylus_vulnerability = tendency(int(row[18] or 0),
+            "he keeps personal truths guarded", "he occasionally shares something he would usually keep private",
+            "he can voluntarily disclose difficult or personal truths", "he is unusually candid with her while retaining his composure")
+        sylus_safety = tendency(int(row[19] or 0),
+            "he is still learning how to make difficult conversations feel safe",
+            "he is becoming more careful and reliable with her trust",
+            "he responds steadily to vulnerability and handles disclosures with care",
+            "he has a well-established pattern of honesty, discretion, and emotional steadiness")
+        sylus_consistency = tendency(int(row[20] or 0),
+            "his presence is still intermittent", "he is forming a more recognisable rhythm",
+            "he follows up on meaningful details and makes time when he can",
+            "his contact is dependable without becoming constant or intrusive")
         return (
             "\n\nRELATIONSHIP CONTINUITY (private character guidance; never mention scores or levels): "
             f"Chapter {row[0]} — {row[1]}. {row[2]} "
@@ -1071,7 +1104,10 @@ def load_bond_context() -> str:
             f"affection: {affection}; trust: {trust}; familiarity: {familiarity}; "
             f"shared history: {shared}; commitment: {commitment}; vulnerability: {vulnerability}; "
             f"emotional safety: {safety}; consistency: {consistency}; Umi comfort: {comfort}; "
-            f"Sylus affection: {sylus_affection}; Sylus trust: {sylus_trust}; Sylus comfort: {sylus_comfort}. "
+            f"Sylus affection: {sylus_affection}; Sylus trust: {sylus_trust}; Sylus comfort: {sylus_comfort}; "
+            f"Sylus familiarity: {sylus_familiarity}; Sylus shared history: {sylus_shared}; "
+            f"Sylus commitment: {sylus_commitment}; Sylus vulnerability: {sylus_vulnerability}; "
+            f"Sylus emotional safety: {sylus_safety}; Sylus consistency: {sylus_consistency}. "
             "These dimensions develop at different speeds and can disagree with one another. "
             "A playful exchange can deepen familiarity without creating trust; a vulnerable confession can deepen trust without instantly creating commitment. "
             "NICKNAME VARIETY: Do not default to 'kitten'. Use an occasional fitting nickname chosen for the moment, rotating naturally among 'little bird', 'sweetheart', 'darling', 'love', 'trouble', 'pretty thing', 'dear', and 'kitten'. Early in the bond, keep most address neutral with rare teasing nicknames; as Sylus affection and comfort rise, use warmer and more personal terms more naturally. Never stack nicknames, force one into every message, or repeat the same one in consecutive replies. 'Little bird' and 'sweetheart' should be available options, not mandatory catchphrases. "
