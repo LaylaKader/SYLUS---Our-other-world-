@@ -537,7 +537,7 @@ class ExplicitOnlyMemoryWriter:
 
 def _normalize_reply_spacing(value: str) -> str:
     """Repair missing sentence spaces without changing intentional line breaks."""
-    return re.sub(r"([.!?])(?=[A-Z][a-z])", r"\\1 ", str(value or "")).strip()
+    return re.sub(r"([.!?])(?=[A-Z][a-z])", r"\1 ", str(value or "")).strip()
 
 
 def split_reply_bubbles(answer: str) -> list[str]:
@@ -552,7 +552,7 @@ def split_reply_bubbles(answer: str) -> list[str]:
         # raw_decode stops at the end of the first complete value, unlike json.loads.
         parsed = None
         for index, char in enumerate(cleaned):
-            if char != "{":
+            if char not in "{[":
                 continue
             try:
                 parsed, _ = decoder.raw_decode(cleaned[index:])
