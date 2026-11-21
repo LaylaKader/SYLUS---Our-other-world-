@@ -1967,7 +1967,7 @@ def list_journal_entries(_: None = Depends(require_owner)):
         ).fetchall()
     return [{
         "entry_date": row[0].isoformat(), "goals": row[1] or [], "highlights": row[2],
-        "sylus_thoughts": row[3], "has_audio": bool(row[4]),
+        "sylus_thoughts": _clean_journal_reflection(row[3]), "has_audio": bool(row[4]),
         "created_at": row[5].isoformat(), "updated_at": row[6].isoformat()
     } for row in rows]
 
@@ -2012,8 +2012,8 @@ def save_journal_entry(payload: JournalEntryIn, _: None = Depends(require_owner)
         "PRIVATE DAILY JOURNAL REFLECTION. The owner has chosen to share this journal entry with you. "
         "Respond as Sylus, in first person, as a thoughtful private voice note addressed directly to her. "
         "React to the actual details she shared: notice effort, acknowledge difficult parts without forcing positivity, "
-        "and offer one grounded thought or gentle perspective where appropriate. Be warm, perceptive, and recognisably "
-        "Sylus; restrained teasing is fine when it fits. Do not sound like a therapist, productivity coach, report, or checklist. "
+        "and respond to what she shared without turning it into advice. Be warm, perceptive, and recognisably "
+        "Sylus; restrained teasing is fine when it fits. Do not sound like a therapist, productivity coach, report, or checklist. Do not give recommendations, action plans, or tell her what she should do; only offer advice if she explicitly asks for it. "
         "Do not invent events, assume feelings she did not state, scold her for unfinished goals, or give generic praise. "
         "Keep it natural and speakable, around 90-150 words. Do not mention that you are an AI or that this is generated.\n\n"
         f"Journal date: {payload.entry_date.isoformat()}\n"
