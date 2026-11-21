@@ -485,7 +485,7 @@ class ExplicitOnlyMemoryWriter:
             "Sylus facts may include concrete details about his own established work, responsibilities, people, preferences, plans, and experiences in N109 that he actually disclosed in his reply. Do not invent or infer facts about his life. "
             "NEVER save conversational debris: current weather/time, being hungry/thirsty/tired/sleepy, a one-off meal or errand, getting ready, waiting, an immediate task, a temporary mood, a passing joke/tease/roleplay line, a request for an image/song/call, or generic statements like needing a hug. "
             "Do not convert every sentence into a memory. Do not save a goal unless it is a continuing ambition or project, not a task for tonight. "
-            "Family mentions should preserve the actual relationship and meaningful context, not transient statements that she is currently talking to someone. "
+            "Family mentions should preserve the actual relationship and meaningful context, not transient statements that she is currently talking to someone. Do not save repeated declarations such as 'Umi loves Sylus' or generic affection statements; the relationship/bond system already tracks those. "
             "Keep memories concise, self-contained, respectful, and in natural language. Never store a guess, assistant advice, or a fact inferred from the assistant's reply about Umi. "
             "Do not store sensitive personal data, health, religion, politics, finances, sexuality, passwords, or intimate details. "
             "Allowed categories are exactly: About Umi, People & family, Preferences, Work & ambitions, Our shared history, Sylus & N109, Promises & plans. "
