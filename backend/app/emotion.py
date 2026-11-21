@@ -36,6 +36,7 @@ class EmotionState:
     jealousy: float = 0.00
     respect: float = 0.30
     vulnerability: float = 0.05
+    stress: float = 0.18
 
     def normalize(self) -> "EmotionState":
         for key, value in asdict(self).items():
@@ -50,7 +51,7 @@ class EmotionState:
             "happiness": .18, "disappointment": 0.0, "confidence": .85,
             "energy": .45, "playfulness": .18, "longing": .05, "surprise": .05,
             "tenderness": .16, "protectiveness": .12, "attachment": .18,
-            "jealousy": 0.0, "respect": .30, "vulnerability": .05,
+            "jealousy": 0.0, "respect": .30, "vulnerability": .05, "stress": .18,
         }
         for key, base in baselines.items():
             current = getattr(self, key)
@@ -85,6 +86,9 @@ class EmotionState:
             "quiet_companionship": {"warmth": .10, "affection": .06, "happiness": .06, "attachment": .04, "energy": -.03},
             "disappointment": {"warmth": -.06, "irritation": .12, "disappointment": .32, "energy": -.06},
             "surprise": {"surprise": .34, "curiosity": .12, "energy": .06},
+            "n109_pressure": {"stress": .34, "energy": -.10, "irritation": .05, "concern": .05},
+            "n109_relief": {"stress": -.26, "energy": .08, "happiness": .06, "irritation": -.04},
+            "rest": {"stress": -.18, "energy": .14, "irritation": -.04},
         }
         for key, delta in changes.get(event, {}).items():
             setattr(self, key, getattr(self, key) + delta * x)
@@ -101,6 +105,8 @@ class EmotionState:
             "surprised": self.surprise,
         }
         mood, score = max(scores.items(), key=lambda item: item[1])
+        if self.stress >= .72:
+            return "strained"
         return mood if score >= (.30 if mood == "disappointed" else .34) else "composed"
 
     def style_directive(self) -> str:
@@ -120,6 +126,7 @@ class EmotionState:
             "playful": "Mischievous and openly amused; teasing is not a substitute for emotional presence.",
             "longing": "A little more intimate and wistful; acknowledge distance without melodrama or pressure.",
             "surprised": "A brief, genuine note of surprise and curiosity.",
+            "strained": "He is carrying substantial pressure from his own responsibilities: more economical with words, quieter, focused, and less inclined to joke. Do not make him cruel, helpless, or melodramatic; he may choose to disclose what is weighing on him when trust and the moment justify it.",
             "composed": "Calm, confident, observant, and unhurried.",
         }
         return directives[mood]
