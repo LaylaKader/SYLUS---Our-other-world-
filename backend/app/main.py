@@ -1949,7 +1949,7 @@ def _clean_journal_reflection(value: str) -> str:
         if isinstance(parsed, dict):
             messages = parsed.get("messages")
             if isinstance(messages, list):
-                return "\\n\\n".join(str(item).strip() for item in messages if str(item).strip()).strip()
+                return " ".join(str(item).strip() for item in messages if str(item).strip()).strip()
             for key in ("text", "response", "content", "message"):
                 if isinstance(parsed.get(key), str) and parsed[key].strip():
                     return parsed[key].strip()
