@@ -2004,7 +2004,8 @@ def save_journal_entry(payload: JournalEntryIn, _: None = Depends(require_owner)
     )
     try:
         thoughts = generate_reply(
-            journal_prompt, str(uuid4()), [], time_context=f"Journal date: {payload.entry_date.isoformat()}."
+            journal_prompt, str(uuid4()), [], time_context=f"Journal date: {payload.entry_date.isoformat()}.",
+            persist_state=False, write_memory=False
         ).strip()
     except (ProviderNotConfigured, ProviderRequestFailed) as exc:
         raise HTTPException(status_code=503, detail="Sylus could not prepare his journal reflection. Check the configured chat provider.") from exc
