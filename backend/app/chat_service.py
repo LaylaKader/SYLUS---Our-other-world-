@@ -587,7 +587,7 @@ def split_reply_bubbles(answer: str) -> list[str]:
             except (ValueError, TypeError):
                 pass
         # Plain natural-language text remains untouched.
-        looks_like_broken_json_array = bool(re.match(r'^\\[\\s*["{]', cleaned))
+        looks_like_broken_json_array = bool(re.match(r'^\[\s*["{]', cleaned))
         if cleaned and not cleaned.startswith(("{", chr(96))) and not looks_like_broken_json_array:
             return [_normalize_reply_spacing(cleaned)]
         return []
