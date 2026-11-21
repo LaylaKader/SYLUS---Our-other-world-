@@ -1415,117 +1415,164 @@ def _create_speech_response(payload: SpeechIn, *, call_mode: bool):
     fish_ready = bool(fish_api_key and fish_reference_id)
     elevenlabs_ready = bool(elevenlabs_api_key and elevenlabs_voice_id)
     if not fish_ready and not elevenlabs_ready:
-        raise HTTPException(
-            status_code=503,
-            detail="Voice playback is not configured. Add FISH_API_KEY and FISH_REFERENCE_ID in the private server settings."
-        )
+        raise HTTPException(status_code=503, detail="Voice playback is not configured. Add Fish Audio or ElevenLabs credentials in the private server settings.")
 
-    # Fish Audio is preferred when configured. ElevenLabs remains a fallback
-    # so existing installations continue to work without changing their setup.
+    emotion = load_emotion_state()
+    mood = emotion.dominant_mood()
+    fish_cues = {
+        "strained": "quiet, focused, under pressure, controlled delivery",
+        "angry": "controlled anger, colder and sharper, never shouting",
+        "irritated": "dry impatience, restrained edge",
+        "jealous": "subtle competitive edge, dry teasing",
+        "concerned": "concerned, attentive, quietly reassuring",
+        "protective": "calm, protective, steady",
+        "proud": "quietly pleased, restrained pride",
+        "amused": "slightly amused, dry and playful",
+        "curious": "attentive, interested, measured",
+        "affectionate": "warm, affectionate, understated",
+        "content": "calm, relaxed, quietly satisfied",
+        "disappointed": "restrained disappointment, thoughtful",
+        "playful": "mischievous, lightly teasing",
+        "longing": "soft, intimate, slightly wistful",
+        "surprised": "briefly surprised, naturally curious",
+        "composed": "calm, confident, low and controlled",
+    }
+    cue = fish_cues.get(mood, "calm, confident, low and controlled")
+    if 0.45 <= emotion.stress < 0.72 and mood != "strained":
+        cue += ", slightly preoccupied and more restrained"
+    fish_text = f"[{cue}] {payload.text}"
+
+    audio_bytes = None
+    media_type = "audio/mpeg"
     provider = "Fish Audio" if fish_ready else "ElevenLabs"
-    try:
-        if fish_ready:
+    if fish_ready:
+        fish_format = "wav" if payload.realtime else "mp3"
+        try:
             response = httpx.post(
                 "https://api.fish.audio/v1/tts",
                 headers={
                     "Authorization": f"Bearer {fish_api_key}",
                     "Content-Type": "application/json",
-                    "Accept": "audio/mpeg",
+                    "Accept": "audio/wav" if fish_format == "wav" else "audio/mpeg",
                     "model": fish_model or "s2.1-pro-free",
                 },
                 json={
-                    "text": payload.text,
+                    "text": fish_text,
                     "reference_id": fish_reference_id,
-                    "format": "mp3",
+                    "format": fish_format,
+                    "temperature": 0.65,
+                    "top_p": 0.75,
+                    "chunk_length": 160 if payload.realtime else 240,
+                    "min_chunk_length": 40,
+                    "normalize": True,
+                    "prosody": {"speed": 0.97 if emotion.stress >= 0.72 else 1.0, "normalize_loudness": True},
                 },
                 timeout=60.0 if payload.realtime else 90.0,
             )
-        else:
-            emotion = load_emotion_state()
-            # Preserve the existing expressive ElevenLabs fallback behaviour.
-            stability = 0.55
-            style = 0.22
-            if emotion.playfulness >= 0.30 or emotion.amusement >= 0.35 or emotion.surprise >= 0.35:
-                stability, style = 0.43, 0.38
-            if emotion.affection >= 0.38 or emotion.longing >= 0.30:
-                stability, style = 0.48, max(style, 0.30)
-            if emotion.concern >= 0.38:
-                stability, style = 0.58, 0.18
-            if emotion.anger >= 0.35 or emotion.irritation >= 0.45:
-                stability, style = 0.68, 0.12
+            response.raise_for_status()
+            candidate = response.content
+            content_type = response.headers.get("content-type", "").lower()
+            is_wav = candidate.startswith(b"RIFF") and len(candidate) > 12 and candidate[8:12] == b"WAVE"
+            is_mp3 = candidate.startswith(b"ID3") or (
+                len(candidate) > 2 and candidate[0] == 0xFF and (candidate[1] & 0xE0) == 0xE0
+            )
+            expected_valid = is_wav if fish_format == "wav" else is_mp3
+            if len(candidate) < 256 or not expected_valid or not content_type.startswith("audio/"):
+                raise ValueError(f"Fish Audio returned an invalid {fish_format} stream (type={content_type}, bytes={len(candidate)}).")
+            audio_bytes = candidate
+            media_type = "audio/wav" if is_wav else "audio/mpeg"
+            logging.info("Fish Audio returned valid %s audio in %.2fs (realtime=%s, chars=%s).", fish_format, time() - speech_started, payload.realtime, len(payload.text))
+        except (httpx.HTTPError, ValueError) as exc:
+            logging.warning("Fish Audio generation failed; attempting ElevenLabs fallback: %s", str(exc)[:300])
+            if not elevenlabs_ready:
+                raise HTTPException(status_code=502, detail="Fish Audio could not produce a valid voice response. Please retry or configure ElevenLabs as a fallback.") from exc
+            provider = "ElevenLabs"
+
+    if audio_bytes is None:
+        stability, style = 0.55, 0.22
+        if emotion.playfulness >= 0.30 or emotion.amusement >= 0.35 or emotion.surprise >= 0.35:
+            stability, style = 0.43, 0.38
+        if emotion.affection >= 0.38 or emotion.longing >= 0.30:
+            stability, style = 0.48, max(style, 0.30)
+        if emotion.concern >= 0.38:
+            stability, style = 0.58, 0.18
+        if emotion.anger >= 0.35 or emotion.irritation >= 0.45:
+            stability, style = 0.68, 0.12
+        if emotion.stress >= 0.45:
+            stability, style = (0.66, 0.12) if emotion.stress >= 0.72 else (0.60, 0.16)
+        try:
             response = httpx.post(
                 f"https://api.elevenlabs.io/v1/text-to-speech/{elevenlabs_voice_id}?output_format=mp3_44100_128",
                 headers={"xi-api-key": elevenlabs_api_key, "Content-Type": "application/json", "Accept": "audio/mpeg"},
-                json={"text": payload.text, "model_id": "eleven_flash_v2_5" if payload.realtime else "eleven_multilingual_v2", "voice_settings": {"stability": stability, "similarity_boost": 0.72, "style": style, "use_speaker_boost": True}},
+                json={"text": payload.text, "model_id": "eleven_flash_v2_5" if payload.realtime else "eleven_multilingual_v2",
+                      "voice_settings": {"stability": stability, "similarity_boost": 0.78, "style": style, "use_speaker_boost": True}},
                 timeout=25.0 if payload.realtime else 60.0,
             )
-        response.raise_for_status()
-        logging.info("%s TTS provider response received in %.2fs (realtime=%s, chars=%s).", provider, time() - speech_started, payload.realtime, len(payload.text))
-        audio_bytes = response.content
-        content_type = response.headers.get("content-type", "").lower()
-        is_mp3 = audio_bytes.startswith(b"ID3") or (
-            len(audio_bytes) > 2 and audio_bytes[0] == 0xFF and (audio_bytes[1] & 0xE0) == 0xE0
-        )
-        logging.info("%s voice response: content_type=%s bytes=%s mp3_signature=%s", provider, content_type, len(audio_bytes), is_mp3)
-        if not audio_bytes or len(audio_bytes) < 256 or not (content_type.startswith("audio/") or is_mp3) or not is_mp3:
-            logging.error("%s returned unusable audio: content_type=%s bytes=%s prefix=%s", provider, content_type, len(audio_bytes), audio_bytes[:32].hex())
-            raise HTTPException(status_code=502, detail=f"{provider} returned an empty or invalid audio stream. Check the voice ID and provider usage allowance.")
+            response.raise_for_status()
+            audio_bytes = response.content
+            is_mp3 = audio_bytes.startswith(b"ID3") or (
+                len(audio_bytes) > 2 and audio_bytes[0] == 0xFF and (audio_bytes[1] & 0xE0) == 0xE0
+            )
+            if len(audio_bytes) < 256 or not is_mp3:
+                raise HTTPException(status_code=502, detail="ElevenLabs returned an empty or invalid audio stream.")
+            media_type = "audio/mpeg"
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            logging.error("ElevenLabs speech request failed (HTTP %s): %s", status, exc.response.text[:400])
+            if status == 401:
+                message = "ElevenLabs rejected its API key."
+            elif status == 429:
+                message = "ElevenLabs rate limit reached. Please wait and try again."
+            else:
+                message = f"ElevenLabs could not generate speech (HTTP {status}). Please try again."
+            raise HTTPException(status_code=502, detail=message) from exc
+        except httpx.HTTPError as exc:
+            logging.error("ElevenLabs speech request failed: %s", str(exc)[:300])
+            raise HTTPException(status_code=502, detail="ElevenLabs could not generate audio. Please try again.") from exc
 
-        # Normalize non-realtime playback to a finalized MP3 for broad browser support.
-        if not payload.realtime:
-            mp3_path = None
-            try:
-                with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as mp3_file:
-                    mp3_path = mp3_file.name
-                normalized = subprocess.run(
-                    ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "mp3", "-i", "pipe:0",
-                     "-vn", "-c:a", "libmp3lame", "-b:a", "128k", "-ar", "44100", "-ac", "1", "-f", "mp3", mp3_path],
-                    input=audio_bytes, capture_output=True, timeout=25, check=False,
+    # Fish returns WAV for live calls to avoid MP3 decoder artefacts on mobile.
+    # Normal read-aloud uses a finalized, browser-friendly 44.1 kHz mono MP3.
+    if media_type == "audio/mpeg" and not payload.realtime:
+        mp3_path = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as mp3_file:
+                mp3_path = mp3_file.name
+            normalized = subprocess.run(
+                ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "mp3", "-i", "pipe:0",
+                 "-vn", "-c:a", "libmp3lame", "-b:a", "128k", "-ar", "44100", "-ac", "1", "-f", "mp3", mp3_path],
+                input=audio_bytes, capture_output=True, timeout=25, check=False,
+            )
+            if normalized.returncode == 0:
+                candidate = Path(mp3_path).read_bytes()
+                is_normalized_mp3 = candidate.startswith(b"ID3") or (
+                    len(candidate) > 2 and candidate[0] == 0xFF and (candidate[1] & 0xE0) == 0xE0
                 )
-                if normalized.returncode != 0:
-                    logging.error("Voice audio normalization failed: exit=%s stderr=%s", normalized.returncode, normalized.stderr[:300].decode("utf-8", "replace"))
-                    raise HTTPException(status_code=502, detail="The voice provider returned audio, but it could not be prepared for playback. Please try again.")
-                audio_bytes = Path(mp3_path).read_bytes()
-                is_normalized_mp3 = audio_bytes.startswith(b"ID3") or (
-                    len(audio_bytes) > 2 and audio_bytes[0] == 0xFF and (audio_bytes[1] & 0xE0) == 0xE0
-                )
-                if len(audio_bytes) < 256 or not is_normalized_mp3:
-                    logging.error("Voice audio normalization produced invalid MP3: bytes=%s", len(audio_bytes))
-                    raise HTTPException(status_code=502, detail="The voice provider returned audio, but it could not be prepared for playback. Please try again.")
-                logging.info("Voice audio normalized: bytes=%s", len(audio_bytes))
-            finally:
-                if mp3_path:
-                    try:
-                        os.unlink(mp3_path)
-                    except FileNotFoundError:
-                        pass
-    except subprocess.TimeoutExpired as exc:
-        logging.error("Voice audio normalization timed out.")
-        raise HTTPException(status_code=504, detail="The generated voice took too long to prepare. Please try again.") from exc
-    except httpx.HTTPStatusError as exc:
-        status = exc.response.status_code
-        detail = exc.response.text[:500]
-        logging.error("%s speech request failed (HTTP %s): %s", provider, status, detail)
-        if status == 401:
-            message = "Fish Audio rejected the API key. Check FISH_API_KEY in Render." if provider == "Fish Audio" else "ElevenLabs rejected its API key."
-        elif status == 400:
-            message = f"{provider} rejected the voice ID or request settings. Check the configured voice ID."
-        elif status == 402:
-            message = f"{provider} requires API credit for this model. Check that the model is s2.1-pro-free."
-        elif status == 429:
-            message = f"{provider} rate limit reached. Please wait and try again."
-        else:
-            message = f"{provider} could not generate speech (HTTP {status}). Please try again."
-        raise HTTPException(status_code=502, detail=message) from exc
-    except httpx.HTTPError as exc:
-        logging.error("%s speech request failed: %s", provider, str(exc)[:300])
-        raise HTTPException(status_code=502, detail=f"{provider} could not generate audio. Please try again.") from exc
+                if len(candidate) >= 256 and is_normalized_mp3:
+                    audio_bytes = candidate
+                    logging.info("Voice audio normalized: provider=%s bytes=%s", provider, len(audio_bytes))
+                else:
+                    logging.warning("FFmpeg produced an invalid normalized stream; retaining provider audio.")
+            else:
+                logging.warning("FFmpeg normalization failed; retaining provider audio: %s", normalized.stderr[:240].decode("utf-8", "replace"))
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            logging.warning("FFmpeg normalization unavailable; retaining provider audio: %s", type(exc).__name__)
+        finally:
+            if mp3_path:
+                try:
+                    os.unlink(mp3_path)
+                except FileNotFoundError:
+                    pass
+
+    if not audio_bytes or len(audio_bytes) < 256:
+        raise HTTPException(status_code=502, detail=f"{provider} returned an empty audio stream.")
+    extension = "wav" if media_type == "audio/wav" else "mp3"
+    logging.info("%s TTS completed in %.2fs (realtime=%s, bytes=%s).", provider, time() - speech_started, payload.realtime, len(audio_bytes))
     return Response(
         content=audio_bytes,
-        media_type="audio/mpeg",
+        media_type=media_type,
         headers={
             "Cache-Control": "no-store, private",
-            "Content-Disposition": 'inline; filename="sylus-message.mp3"',
+            "Content-Disposition": f'inline; filename="sylus-message.{extension}"',
             "Content-Length": str(len(audio_bytes)),
             "Accept-Ranges": "bytes",
         },
