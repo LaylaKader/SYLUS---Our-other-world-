@@ -10,6 +10,17 @@ const DAILY_GOALS = [
   'Create something',
   'Rest when I need it'
 ];
+function cleanThoughts(value) {
+  if (typeof value !== 'string') return '';
+  const raw = value.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed?.messages)) return parsed.messages.filter(Boolean).join('\n\n');
+    for (const key of ['text','response','content','message']) if (typeof parsed?.[key] === 'string') return parsed[key];
+  } catch {}
+  return raw;
+}
+const normalizeEntry = entry => entry ? {...entry, sylus_thoughts: cleanThoughts(entry.sylus_thoughts)} : entry;
 const today = () => {
   const d = new Date();
   return [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-');
@@ -34,7 +45,7 @@ export default function Journal({ connected, apiUrl, headers }) {
     try {
       const response=await fetch(base+'/v1/journal',{headers,credentials:'include'});
       if(!response.ok) throw new Error('Could not load your journal archive.');
-      setEntries(await response.json());
+      setEntries((await response.json()).map(normalizeEntry));
     } catch(e) { setError(e.message||'Journal could not be loaded.'); }
     finally { setLoading(false); }
   }
@@ -44,7 +55,7 @@ export default function Journal({ connected, apiUrl, headers }) {
       const response=await fetch(entryUrl(date),{headers,credentials:'include'});
       if(response.status===404){setSelected(null);setGoals([]);setHighlights('');return;}
       if(!response.ok) throw new Error('Could not open this journal page.');
-      const entry=await response.json();setSelected(entry);setGoals(entry.goals||[]);setHighlights(entry.highlights||'');
+      const entry=normalizeEntry(await response.json());setSelected(entry);setGoals(entry.goals||[]);setHighlights(entry.highlights||'');
     } catch(e){setError(e.message||'Could not open this date.');}
     finally{setLoading(false);}
   }
@@ -60,7 +71,7 @@ export default function Journal({ connected, apiUrl, headers }) {
       const response=await fetch(base+'/v1/journal',{method:'POST',headers,credentials:'include',body:JSON.stringify({entry_date:entryDate,goals,highlights})});
       const data=await response.json().catch(()=>({}));
       if(!response.ok)throw new Error(data.detail||'Could not save this journal entry.');
-      setSelected(data);setNotice(data.audio_error||'Your journal and Sylus’s reflection have been saved.');
+      setSelected(normalizeEntry(data));setNotice(data.audio_error||'Your page, his reflection, and any voice note have been saved.');
       await refresh();
     }catch(e){setError(e.message||'Could not save this journal entry.');setNotice('');}
     finally{setSaving(false);}
@@ -72,7 +83,19 @@ export default function Journal({ connected, apiUrl, headers }) {
     <style>{`
       .journal-view{max-width:1040px;margin:0 auto;width:100%}
       .journal-layout{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(230px,.7fr);gap:18px;margin-top:24px}
-      .journal-panel,.journal-archive{border:1px solid rgba(196,157,128,.2);border-radius:17px;background:linear-gradient(145deg,rgba(29,23,32,.92),rgba(17,15,20,.94));padding:clamp(15px,3vw,24px);min-width:0}
+      .journal-panel,.journal-archive{border:1px solid rgba(196,157,128,.22);border-radius:20px;background:radial-gradient(ellipse at 90% 0%,rgba(153,91,121,.12),transparent 45%),linear-gradient(145deg,rgba(35,25,37,.96),rgba(17,15,20,.97));padding:clamp(15px,3vw,24px);min-width:0;box-shadow:0 16px 45px rgba(0,0,0,.14)}
+      .journal-panel{position:relative;overflow:hidden}
+      .journal-panel:after{content:'✦';position:absolute;right:22px;top:18px;color:rgba(201,168,117,.22);font-size:26px;pointer-events:none}
+      .journal-goal{transition:border-color .18s,background .18s}
+      .journal-goal:has(input:checked){border-color:rgba(201,168,117,.48);background:rgba(201,168,117,.075)}
+      .journal-panel textarea:focus,.journal-date-row input:focus{outline:1px solid rgba(201,168,117,.65);border-color:rgba(201,168,117,.55)}
+      .journal-reflection{position:relative;margin-top:22px;padding:20px 20px 18px;border:1px solid rgba(201,168,117,.28);border-radius:16px;background:linear-gradient(135deg,rgba(114,67,92,.15),rgba(201,168,117,.055))}
+      .journal-reflection:before{content:'“';position:absolute;right:15px;top:-9px;font:64px Georgia,serif;color:rgba(201,168,117,.16)}
+      .journal-reflection p{white-space:pre-wrap;line-height:1.9;color:#eee1e9;font-size:14px;position:relative}
+      .journal-reflection .reflection-date{font-size:10px;letter-spacing:.13em;color:#c9a875;margin-top:14px}
+      .journal-archive{background:linear-gradient(160deg,rgba(27,24,31,.96),rgba(17,15,20,.97))}
+      .journal-date-button{transition:all .18s}
+      .journal-date-button:hover{border-color:rgba(201,168,117,.42);transform:translateY(-1px)}
       .journal-panel h2,.journal-archive h2{font-family:'Playfair Display',serif;font-weight:500;color:#eadde5;margin:6px 0 16px}
       .journal-date-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:20px}
       .journal-date-row input{background:#17131c;color:#eadde7;border:1px solid rgba(201,168,117,.28);border-radius:9px;padding:10px;font:inherit}
@@ -104,10 +127,10 @@ export default function Journal({ connected, apiUrl, headers }) {
         <p className="field-help">{highlights.length}/4000 characters · Your entry stays private.</p>
         <button className="primary-button" type="submit" disabled={saving||(!goals.length&&!highlights.trim())}>{saving?'Saving your day…':selected?'Save changes & hear Sylus again':'Save journal & hear Sylus’s thoughts'}</button>
         {notice&&<p className="journal-notice" role="status">{notice}</p>}{error&&<p className="journal-error" role="alert">{error}</p>}
-        {selected&&<div className="journal-reflection"><span className="card-kicker"><Sparkles size={13} style={{display:'inline',verticalAlign:'middle'}}/> SYLUS’S THOUGHTS · {selected.entry_date}</span><p>{selected.sylus_thoughts}</p>{audioUrl?<audio className="journal-audio" controls preload="none" src={audioUrl}/> : <p className="field-help">The written reflection is saved. A voice note is not available for this entry.</p>}</div>}
+        {selected&&<div className="journal-reflection"><span className="card-kicker"><Sparkles size={13} style={{display:'inline',verticalAlign:'middle'}}/> A NOTE FROM SYLUS</span><p>{selected.sylus_thoughts}</p><div className="reflection-date">{new Date(selected.entry_date+'T12:00:00').toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric',year:'numeric'})} · KEPT BETWEEN US</div>{audioUrl?<audio className="journal-audio" controls preload="none" src={audioUrl}/> : <p className="field-help">The written reflection is saved. A voice note is not available for this entry.</p>}</div>}
       </form>
       <aside className="journal-archive"><div className="journal-date-row"><div><span className="card-kicker">YOUR PRIVATE ARCHIVE</span><h2>Saved days</h2></div><button className="secondary-button" type="button" onClick={refresh} disabled={loading}><RefreshCw size={14}/></button></div>
-        {loading?<p className="field-help">Opening your journal…</p>:sortedEntries.length?<div className="journal-archive-list">{sortedEntries.map(entry=><button type="button" key={entry.entry_date} className={'journal-date-button'+(entry.entry_date===entryDate?' active':'')} onClick={()=>openDate(entry.entry_date)}><span><strong>{new Date(entry.entry_date+'T12:00:00').toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})}</strong><br/><small>{entry.goals?.length||0} check-ins · {entry.highlights?'has a note':'no written highlight'}</small></span><span>{entry.has_audio?'♫':'✧'}</span></button>)}</div>:<p className="field-help">Your saved days will appear here, newest first.</p>}
+        {loading?<p className="field-help">Opening your journal…</p>:sortedEntries.length?<div className="journal-archive-list">{sortedEntries.map(entry=><button type="button" key={entry.entry_date} className={'journal-date-button'+(entry.entry_date===entryDate?' active':'')} onClick={()=>openDate(entry.entry_date)}><span><strong>{new Date(entry.entry_date+'T12:00:00').toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})}</strong><br/><small>{entry.goals?.length||0} little wins · {entry.highlights?'your note saved':'no note'}</small></span><span>{entry.has_audio?'♫':'✧'}</span></button>)}</div>:<p className="field-help">Your saved days will appear here, newest first.</p>}
       </aside>
     </div>}
     <div className="small-note"><Feather size={15}/> No streaks, scores, or pressure. Just a place to keep your days.</div>
