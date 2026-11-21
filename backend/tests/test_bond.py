@@ -38,13 +38,14 @@ class ReciprocalBondTests(unittest.TestCase):
             for _key, _title, _description, gains, _points in _sylus_signals(sample):
                 for key, value in gains.items():
                     combined[key] = combined.get(key, 0) + value
-        dimensions = [
-            "sylus_affection", "sylus_trust", "sylus_familiarity",
-            "sylus_shared_experiences", "sylus_commitment", "sylus_vulnerability",
-            "sylus_emotional_safety", "sylus_comfort", "sylus_consistency",
-        ]
-        for dimension in dimensions:
+        # The first three are legacy reciprocal meters; the other five are
+        # mapped into Sylus's additional side by _record_sylus_dimensions.
+        mapped = _sylus_dimension_gains(combined)
+        for dimension in ("sylus_affection", "sylus_trust", "sylus_comfort"):
             self.assertGreater(combined.get(dimension, 0), 0, dimension)
+        for dimension in ("familiarity", "shared_experiences", "commitment", "vulnerability", "emotional_safety"):
+            self.assertGreater(mapped.get(dimension, 0), 0, dimension)
+        # Sylus consistency is activity-derived in refresh_bond, not inferred from wording.
 
     def test_sylus_dimension_mapping_uses_his_actual_signal_evidence(self):
         mapped = _sylus_dimension_gains({
