@@ -2115,17 +2115,18 @@ def suggest_sticker_label(file: UploadFile = File(...), _: None = Depends(requir
     raw = ""
     failures = []
     configured = []
-    if settings.gemini_api_key:
+    vision_api_key = settings.call_gemini_api_key or settings.gemini_api_key
+    if vision_api_key:
         configured.append("Gemini")
     if settings.groq_api_key or (settings.model_api_key and "groq.com" in settings.model_api_base_url):
         configured.append("Groq")
     if settings.cloudflare_account_id and settings.cloudflare_api_token:
         configured.append("Cloudflare")
-    if settings.gemini_api_key:
+    if vision_api_key:
         try:
             response = httpx.post(
                 f"https://generativelanguage.googleapis.com/v1beta/models/{settings.gemini_vision_model}:generateContent",
-                params={"key": settings.gemini_api_key},
+                params={"key": vision_api_key},
                 json={"contents": [{"parts": [{"text": prompt}, {"inline_data": {"mime_type": mime_type, "data": encoded}}]}],
                       "generationConfig": {"temperature": 0.1, "maxOutputTokens": 180, "responseMimeType": "application/json"}},
                 timeout=35.0,
