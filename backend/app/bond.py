@@ -392,8 +392,14 @@ def refresh_bond() -> dict:
         level, stage, summary, floor_points, next_points = _stage(points)
         points_progress = 100 if level == 12 else _clamp((points-floor_points) / max(1, next_points-floor_points) * 100)
         progress = points_progress
+        # Dimension-only idempotency markers are internal bookkeeping, not user-facing moments.
+        # Keep them out of the timeline and contribution totals while retaining their uniqueness
+        # guarantees for historical backfills.
         milestones = conn.execute(
-            "SELECT event_key, title, description, created_at FROM bond_events ORDER BY created_at DESC"
+            "SELECT event_key, title, description, created_at FROM bond_events "
+            "WHERE event_key NOT LIKE 'sylus-dim-v2:%' "
+            "AND event_key NOT LIKE 'sylus-call-dim-v2:%' "
+            "ORDER BY created_at DESC"
         ).fetchall()
         sylus_contribution_count = sum(1 for r in milestones if str(r[0]).startswith(("sylus:", "sylus-call:")))
         owner_contribution_count = sum(1 for r in milestones if str(r[0]).startswith(("message:", "call:")))
