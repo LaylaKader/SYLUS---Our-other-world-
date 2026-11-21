@@ -78,5 +78,5 @@ class SylusAgent:
                 assistant_text=answer,
                 source_message_id=source_message_id,
             )
-        self.emotion.decay()
+        self.emotion.decay(factor=0.96)
         return answer
