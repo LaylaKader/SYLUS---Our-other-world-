@@ -2081,7 +2081,7 @@ def segment_sticker_sheet(file: UploadFile = File(...), _: None = Depends(requir
             height = max(0, min(1000 - y, int(float(item.get("height", 0)))))
             if width >= 28 and height >= 28:
                 regions.append({"x": x, "y": y, "width": width, "height": height,
-                                "label": re.sub(r"\\s+", " ", str(item.get("label", ""))).strip()[:60]})
+                                "label": re.sub(r"\s+", " ", str(item.get("label", ""))).strip()[:60]})
         if not regions:
             raise ValueError("No valid sticker regions were detected.")
         regions.sort(key=lambda item: (item["y"], item["x"]))
