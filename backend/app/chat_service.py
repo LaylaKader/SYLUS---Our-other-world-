@@ -490,7 +490,7 @@ class ExplicitOnlyMemoryWriter:
             "Do not store sensitive personal data, health, religion, politics, finances, sexuality, passwords, or intimate details. "
             "Allowed categories are exactly: About Umi, People & family, Preferences, Work & ambitions, Our shared history, Sylus & N109, Promises & plans. "
             "Use speaker='Umi' for facts explicitly stated by her; speaker='Sylus' only for facts Sylus explicitly states about himself. "
-            "Return strict JSON only: {\\"memories\\":[{\\"speaker\\":\\"Umi|Sylus\\",\\"category\\":\\"one allowed category\\",\\"content\\":\\"one durable fact\\",\\"confidence\\":0.0}]}. "
+            'Return strict JSON only: {"memories":[{"speaker":"Umi|Sylus","category":"one allowed category","content":"one durable fact","confidence":0.0}]}. '
             "Confidence must be 0.88-1.0. If unsure, omit it."
         )
         exchange = "UMI'S MESSAGE:\\n" + user_text[:3000] + "\\n\\nSYLUS'S REPLY:\\n" + assistant_text[:2200]
