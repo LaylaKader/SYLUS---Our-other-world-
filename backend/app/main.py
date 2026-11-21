@@ -2063,6 +2063,8 @@ def segment_sticker_sheet(file: UploadFile = File(...), _: None = Depends(requir
     groq_key = settings.groq_api_key or (settings.model_api_key if "groq.com" in settings.model_api_base_url else "")
     if groq_key:
         providers.append(("Groq", "groq"))
+    if settings.cloudflare_account_id and settings.cloudflare_api_token:
+        providers.append(("Cloudflare", "cloudflare"))
     if settings.openrouter_api_key:
         providers.append(("OpenRouter", "openrouter"))
     if not providers:
@@ -2087,6 +2089,18 @@ def segment_sticker_sheet(file: UploadFile = File(...), _: None = Depends(requir
                 )
                 response.raise_for_status()
                 raw = response.json()["candidates"][0]["content"]["parts"][0]["text"]
+            elif provider == "cloudflare":
+                response = httpx.post(
+                    f"https://api.cloudflare.com/client/v4/accounts/{settings.cloudflare_account_id}/ai/run/@cf/meta/llama-3.2-11b-vision-instruct",
+                    headers={"Authorization": f"Bearer {settings.cloudflare_api_token}", "Content-Type": "application/json"},
+                    json={"messages": [{"role": "user", "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{encoded}"}}
+                    ]}], "max_tokens": 2200, "temperature": 0.1},
+                    timeout=55.0
+                )
+                response.raise_for_status()
+                raw = (response.json().get("result") or {}).get("response", "")
             else:
                 api_key = groq_key if provider == "groq" else settings.openrouter_api_key
                 endpoint = "https://api.groq.com/openai/v1/chat/completions" if provider == "groq" else "https://openrouter.ai/api/v1/chat/completions"
