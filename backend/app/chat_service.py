@@ -455,53 +455,65 @@ class PostgresMemoryRetriever:
 
 
 class ExplicitOnlyMemoryWriter:
-    """Extract only durable, explicitly stated, non-sensitive owner facts."""
+    """Keep a small, useful record of enduring personal and shared-life details."""
 
     def extract_and_store(self, *, user_text: str, assistant_text: str, source_message_id: str) -> None:
-        if len(user_text.strip()) < 8 or not any((settings.gemini_api_key, settings.groq_api_key, settings.openrouter_api_key, settings.aion_api_key, settings.cohere_api_key, settings.model_api_key)):
+        if len(user_text.strip()) < 18 or not any((settings.gemini_api_key, settings.groq_api_key, settings.openrouter_api_key, settings.aion_api_key, settings.cohere_api_key, settings.model_api_key)):
             return
-        lowered = user_text.lower()
+        lowered = user_text.casefold()
         if not any(marker in lowered for marker in (
             "i ", "i'm", "i am", "i have", "i like", "i love", "i prefer",
-            "i want", "i need", "my ", "mine", "our ",
+            "i want", "i need", "my ", "mine", "our ", "my brother", "my sister",
+            "my mother", "my mom", "my father", "my dad", "my family",
         )):
             return
         sensitive_markers = (
             "diagnosed", "medication", "medicine", "medical", "my health", "my illness",
             "my religion", "i am muslim", "i am christian", "my salary", "my bank",
-            "my password", "my political", "political party", "sexual", "pregnant", "pregnancy",
+            "my password", "my political", "political party", "sexuality", "pregnant", "pregnancy",
             "depression", "anxiety", "adhd", "autism", "disorder", "diagnosis", "therapy",
             "therapist", "doctor", "symptom", "illness", "disease", "blood test", "period",
             "menstrual", "my weight", "my income", "my salary", "my bank", "loan", "debt",
-            "credit card", "account number", "criminal record", "arrested", "sexuality",
+            "credit card", "account number", "criminal record", "arrested",
         )
-        if any(marker in lowered for marker in sensitive_markers) or re.search(r"\b(sex|sexual|erotic|nsfw|adult|explicit|nude|intimate|sensual|orgasm|foreplay|serious|important|urgent)\b", lowered) or re.search(r"(?<!\w)18\s*\+(?!\w)", lowered):
+        if any(marker in lowered for marker in sensitive_markers) or re.search(r"(?<!\\w)(sex|sexual|erotic|nsfw|adult|explicit|nude|intimate|sensual|orgasm|foreplay)(?!\\w)", lowered):
             return
         prompt = (
-            'Extract up to 3 durable facts explicitly stated by Umi in this message. '
-            'Do not infer, embellish, or use Sylus’s reply as evidence. In saved memory text, refer to her as Umi or she/her; never write “the user”, “user”, or “owner” as her name. '
-            'In this app, the character is named Sylus: never refer to him as the assistant, AI, chatbot, or system in a saved memory. Store preferences, ongoing projects, '
-            'important relationships, stable goals, and explicit promises/decisions. '
-            'Do not store transient questions, one-off requests, sensitive personal data, health, religion, politics, '
-            'finances, sexuality, passwords, or guesses. If nothing qualifies, return {"memories":[]}. '
-            'Return strict JSON: {"memories":[{"category":"Relationship|Preference|Goal|Project|Important detail|Promise",'
-            '"content":"short standalone fact","confidence":0.0}]}. '
-            'Confidence must be 0.75-1.0 and reflect explicitness.'
+            "You are maintaining a deliberately SMALL, high-quality private memory journal for a long-running fictional companion relationship. "
+            "Read BOTH sides of this exchange, but distinguish who each fact belongs to. Extract at most TWO facts total, and return an empty list unless a fact will genuinely help them know each other better months from now. "
+            "Umi facts may include stable identity/background she explicitly shares, meaningful family/friend relationships, lasting preferences, ongoing studies/projects/ambitions, explicit commitments, and personally significant events or shared moments she clearly treats as meaningful. "
+            "Sylus facts may include concrete details about his own established work, responsibilities, people, preferences, plans, and experiences in N109 that he actually disclosed in his reply. Do not invent or infer facts about his life. "
+            "NEVER save conversational debris: current weather/time, being hungry/thirsty/tired/sleepy, a one-off meal or errand, getting ready, waiting, an immediate task, a temporary mood, a passing joke/tease/roleplay line, a request for an image/song/call, or generic statements like needing a hug. "
+            "Do not convert every sentence into a memory. Do not save a goal unless it is a continuing ambition or project, not a task for tonight. "
+            "Family mentions should preserve the actual relationship and meaningful context, not transient statements that she is currently talking to someone. "
+            "Keep memories concise, self-contained, respectful, and in natural language. Never store a guess, assistant advice, or a fact inferred from the assistant's reply about Umi. "
+            "Do not store sensitive personal data, health, religion, politics, finances, sexuality, passwords, or intimate details. "
+            "Allowed categories are exactly: About Umi, People & family, Preferences, Work & ambitions, Our shared history, Sylus & N109, Promises & plans. "
+            "Use speaker='Umi' for facts explicitly stated by her; speaker='Sylus' only for facts Sylus explicitly states about himself. "
+            "Return strict JSON only: {\\"memories\\":[{\\"speaker\\":\\"Umi|Sylus\\",\\"category\\":\\"one allowed category\\",\\"content\\":\\"one durable fact\\",\\"confidence\\":0.0}]}. "
+            "Confidence must be 0.88-1.0. If unsure, omit it."
         )
+        exchange = "UMI'S MESSAGE:\\n" + user_text[:3000] + "\\n\\nSYLUS'S REPLY:\\n" + assistant_text[:2200]
         try:
-            raw = MultiProviderMemoryCall().complete(prompt, user_text[:4000])
+            raw = MultiProviderMemoryCall().complete(prompt, exchange)
             data = json.loads(raw[raw.find("{"):raw.rfind("}") + 1])
             candidates = data.get("memories", []) if isinstance(data, dict) else []
             with connection() as conn:
-                for item in candidates[:3]:
+                for item in candidates[:2]:
                     if not isinstance(item, dict):
                         continue
-                    category = str(item.get("category", "Important detail"))[:80]
+                    speaker = str(item.get("speaker", "Umi")).strip()
+                    category = str(item.get("category", "")).strip()[:80]
                     content = str(item.get("content", "")).strip()[:1000]
                     confidence = float(item.get("confidence", 0))
-                    if not content or not 0.75 <= confidence <= 1.0:
+                    allowed = {"About Umi", "People & family", "Preferences", "Work & ambitions", "Our shared history", "Sylus & N109", "Promises & plans"}
+                    if speaker not in {"Umi", "Sylus"} or category not in allowed or not content or not 0.88 <= confidence <= 1.0:
                         continue
-                    if any(marker in content.lower() for marker in sensitive_markers):
+                    if speaker == "Sylus" and category != "Sylus & N109":
+                        continue
+                    if speaker == "Umi" and category == "Sylus & N109":
+                        continue
+                    if any(marker in content.casefold() for marker in sensitive_markers):
                         continue
                     duplicate = conn.execute(
                         "SELECT id FROM memories WHERE archived_at IS NULL AND lower(content) = lower(%s) LIMIT 1",
@@ -520,9 +532,8 @@ class ExplicitOnlyMemoryWriter:
                             (category, content, min(confidence, 1.0), source_message_id),
                         )
         except (httpx.HTTPError, KeyError, IndexError, ValueError, TypeError, json.JSONDecodeError, ProviderRequestFailed):
-            # Memory extraction must never break an otherwise successful conversation.
+            logging.info("Memory extraction skipped for this exchange.")
             return
-
 
 def split_reply_bubbles(answer: str) -> list[str]:
     """Extract conversational text from provider envelopes, including malformed trailing braces."""
