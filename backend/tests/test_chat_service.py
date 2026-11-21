@@ -3,7 +3,8 @@ import os
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@127.0.0.1:5432/test")
 os.environ.setdefault("SYLUS_OWNER_TOKEN", "ci-test-owner-token")
 
-from app.chat_service import classify_explicit_event
+from app.chat_service import classify_explicit_event, split_reply_bubbles
+from app.emotion import EmotionState
 
 
 def test_only_clear_first_person_distress_is_classified():
@@ -71,3 +72,38 @@ def test_proactive_time_guard_does_not_reject_past_evening_reference():
     assert _proactive_time_reference_is_consistent(
         ["You were up late last night, weren't you?"], clock
     )
+
+
+
+def test_n109_pressure_and_recovery_have_separate_stress_signals():
+    assert classify_explicit_event("You sound stressed. Is something wrong at Onychinus?") == ("n109_pressure", 0.75)
+    assert classify_explicit_event("Did things settle at N109?") == ("n109_relief", 0.7)
+    assert classify_explicit_event("Take a break and get some rest.") == ("rest", 0.7)
+
+
+def test_stress_changes_sylus_delivery_and_decays_toward_baseline():
+    state = EmotionState()
+    state.apply("n109_pressure", 0.9)
+    assert state.stress > 0.45
+    assert "pressure" in state.style_directive().lower() or state.stress >= 0.72
+    stressed = state.stress
+    state.decay(factor=0.96)
+    assert state.stress < stressed
+    assert state.stress > 0.45
+
+
+def test_json_array_reply_is_unwrapped_into_clean_bubbles():
+    raw = '["Boring? Never. Though that convention sounds exhausting.", "I would rather hear about it from you."]'
+    assert split_reply_bubbles(raw) == [
+        "Boring? Never. Though that convention sounds exhausting.",
+        "I would rather hear about it from you.",
+    ]
+
+
+def test_reply_spacing_is_repaired_without_removing_markdown_emphasis():
+    assert split_reply_bubbles("*Mephisto* has sharp eyes. Rainy day.") == [
+        "*Mephisto* has sharp eyes. Rainy day."
+    ]
+    assert split_reply_bubbles("A sharp observation.Rainy day.") == [
+        "A sharp observation. Rainy day."
+    ]
