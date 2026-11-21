@@ -2050,7 +2050,7 @@ def segment_sticker_sheet(file: UploadFile = File(...), _: None = Depends(requir
         "all belong to ONE sticker when they visually form one design. Never return individual details as separate stickers. "
         "Separate neighbouring stickers only when there is clear visual spacing or a clear design boundary. Do not split a character, "
         "face, speech bubble, decorative marks, or caption that belongs to the same design. Ignore tiny dust/noise. "
-        "Return JSON only: {\\"stickers\\":[{\\"label\\":\\"short visual name\\",\\"x\\":0,\\"y\\":0,\\"width\\":0,\\"height\\":0}]}. "
+        "Return JSON only: {\"stickers\":[{\"label\":\"short visual name\",\"x\":0,\"y\":0,\"width\":0,\"height\":0}]}. "
         "Coordinates are normalized integers from 0 to 1000 relative to the full image: x and y are the top-left; width and height "
         "cover the entire sticker including all disconnected details. Use tight but safe boxes, do not cut off outlines, and do not "
         "let one box include a neighbouring sticker. Order boxes top-to-bottom, then left-to-right. If uncertain whether tiny details "
@@ -2146,7 +2146,7 @@ def segment_sticker_sheet(file: UploadFile = File(...), _: None = Depends(requir
         height = max(0, min(1000 - y, int(float(item.get("height", 0)))))
         if width >= 28 and height >= 28:
             regions.append({"x": x, "y": y, "width": width, "height": height,
-                            "label": re.sub(r"\\s+", " ", str(item.get("label", ""))).strip()[:60]})
+                            "label": re.sub(r"\s+", " ", str(item.get("label", ""))).strip()[:60]})
     if not regions:
         raise HTTPException(status_code=502, detail="The image model did not identify clear sticker boundaries. Try a clearer sheet.")
     regions.sort(key=lambda item: (item["y"], item["x"]))
