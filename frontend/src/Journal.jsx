@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { BookHeart, CalendarDays, Feather, Headphones, RefreshCw, Sparkles } from 'lucide-react';
+import { BookHeart, Feather, RefreshCw, Sparkles } from 'lucide-react';
 
 const DAILY_GOALS = [
   'Study or make progress on work',
