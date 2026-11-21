@@ -129,7 +129,10 @@ class EmotionState:
             "strained": "He is carrying substantial pressure from his own responsibilities: more economical with words, quieter, focused, and less inclined to joke. Do not make him cruel, helpless, or melodramatic; he may choose to disclose what is weighing on him when trust and the moment justify it.",
             "composed": "Calm, confident, observant, and unhurried.",
         }
-        return directives[mood]
+        directive = directives[mood]
+        if 0.45 <= self.stress < 0.72:
+            directive += " A moderate workload is also weighing on him: keep his attention a little divided and his humour more restrained, without making every reply sound troubled."
+        return directive
 
     def to_dict(self) -> dict[str, float]:
         return asdict(self)
