@@ -13,7 +13,7 @@ import math
 import random
 from collections import defaultdict, deque
 from time import time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from typing import Literal
 from uuid import UUID, uuid4
@@ -275,6 +275,12 @@ class MemoryCreate(BaseModel):
     content: str = Field(min_length=1, max_length=4000)
     confidence: float = Field(default=0.9, ge=0, le=1)
     sensitivity: Literal["normal", "sensitive"] = "normal"
+
+
+class JournalEntryIn(BaseModel):
+    entry_date: date
+    goals: list[str] = Field(default_factory=list, max_length=20)
+    highlights: str = Field(default="", max_length=4000)
 
 
 class StickerUpdate(BaseModel):
@@ -1932,6 +1938,160 @@ def compose_sound_design(payload: SoundComposeIn, _: None = Depends(require_owne
     except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
         logging.warning("Sound composition plan was invalid: %s", type(exc).__name__)
         raise HTTPException(status_code=502, detail="The AI returned an invalid sound design. Please try a different description.")
+
+
+@app.get("/v1/journal")
+def list_journal_entries(_: None = Depends(require_owner)):
+    with connection() as conn:
+        rows = conn.execute(
+            "SELECT entry_date, goals, highlights, sylus_thoughts, audio_mp3 IS NOT NULL, created_at, updated_at "
+            "FROM journal_entries ORDER BY entry_date DESC"
+        ).fetchall()
+    return [{
+        "entry_date": row[0].isoformat(), "goals": row[1] or [], "highlights": row[2],
+        "sylus_thoughts": row[3], "has_audio": bool(row[4]),
+        "created_at": row[5].isoformat(), "updated_at": row[6].isoformat()
+    } for row in rows]
+
+
+@app.get("/v1/journal/{entry_date}")
+def get_journal_entry(entry_date: date, _: None = Depends(require_owner)):
+    with connection() as conn:
+        row = conn.execute(
+            "SELECT entry_date, goals, highlights, sylus_thoughts, audio_mp3 IS NOT NULL, created_at, updated_at "
+            "FROM journal_entries WHERE entry_date = %s", (entry_date,)
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="No journal entry exists for this date.")
+    return {
+        "entry_date": row[0].isoformat(), "goals": row[1] or [], "highlights": row[2],
+        "sylus_thoughts": row[3], "has_audio": bool(row[4]),
+        "created_at": row[5].isoformat(), "updated_at": row[6].isoformat()
+    }
+
+
+@app.get("/v1/journal/{entry_date}/audio")
+def get_journal_audio(entry_date: date, _: None = Depends(require_owner)):
+    with connection() as conn:
+        row = conn.execute(
+            "SELECT audio_mp3 FROM journal_entries WHERE entry_date = %s", (entry_date,)
+        ).fetchone()
+    if not row or not row[0]:
+        raise HTTPException(status_code=404, detail="No voice note is saved for this journal entry.")
+    return Response(
+        content=bytes(row[0]), media_type="audio/mpeg",
+        headers={"Cache-Control": "no-store, private", "Content-Disposition": 'inline; filename="sylus-journal.mp3"'}
+    )
+
+
+@app.post("/v1/journal")
+def save_journal_entry(payload: JournalEntryIn, _: None = Depends(require_owner)):
+    goals = [str(value).strip()[:100] for value in payload.goals if str(value).strip()][:20]
+    highlights = payload.highlights.strip()
+    if not goals and not highlights:
+        raise HTTPException(status_code=400, detail="Add a goal or a short highlight before saving.")
+    journal_prompt = (
+        "PRIVATE DAILY JOURNAL REFLECTION. The owner has chosen to share this journal entry with you. "
+        "Respond as Sylus, in first person, as a thoughtful private voice note addressed directly to her. "
+        "React to the actual details she shared: notice effort, acknowledge difficult parts without forcing positivity, "
+        "and offer one grounded thought or gentle perspective where appropriate. Be warm, perceptive, and recognisably "
+        "Sylus; restrained teasing is fine when it fits. Do not sound like a therapist, productivity coach, report, or checklist. "
+        "Do not invent events, assume feelings she did not state, scold her for unfinished goals, or give generic praise. "
+        "Keep it natural and speakable, around 90-150 words. Do not mention that you are an AI or that this is generated.\n\n"
+        f"Journal date: {payload.entry_date.isoformat()}\n"
+        f"Daily goals and check-ins: {json.dumps(goals, ensure_ascii=False)}\n"
+        f"Her highlight / note: {highlights or '(No written highlight today.)'}"
+    )
+    try:
+        thoughts = generate_reply(
+            journal_prompt, str(uuid4()), [], time_context=f"Journal date: {payload.entry_date.isoformat()}."
+        ).strip()
+    except (ProviderNotConfigured, ProviderRequestFailed) as exc:
+        raise HTTPException(status_code=503, detail="Sylus could not prepare his journal reflection. Check the configured chat provider.") from exc
+    audio_bytes = None
+    audio_error = None
+    try:
+        speech = _create_speech_response(SpeechIn(text=thoughts), call_mode=False)
+        audio_bytes = speech.body
+    except Exception as exc:
+        audio_error = "The written reflection was saved, but its voice note could not be generated."
+        logging.warning("Journal TTS failed (%s).", type(exc).__name__)
+    with connection() as conn:
+        row = conn.execute(
+            "INSERT INTO journal_entries (entry_date, goals, highlights, sylus_thoughts, audio_mp3) "
+            "VALUES (%s, %s::jsonb, %s, %s, %s) "
+            "ON CONFLICT (entry_date) DO UPDATE SET goals=EXCLUDED.goals, highlights=EXCLUDED.highlights, "
+            "sylus_thoughts=EXCLUDED.sylus_thoughts, audio_mp3=EXCLUDED.audio_mp3, updated_at=now() "
+            "RETURNING entry_date, goals, highlights, sylus_thoughts, audio_mp3 IS NOT NULL, created_at, updated_at",
+            (payload.entry_date, json.dumps(goals, ensure_ascii=False), highlights, thoughts, audio_bytes)
+        ).fetchone()
+    return {
+        "entry_date": row[0].isoformat(), "goals": row[1] or [], "highlights": row[2],
+        "sylus_thoughts": row[3], "has_audio": bool(row[4]),
+        "created_at": row[5].isoformat(), "updated_at": row[6].isoformat(),
+        "audio_error": audio_error
+    }
+
+
+@app.post("/v1/stickers/segment")
+def segment_sticker_sheet(file: UploadFile = File(...), _: None = Depends(require_owner)):
+    """Ask Gemini to locate complete sticker designs, not individual connected pixel fragments."""
+    if file.content_type not in ("image/png", "image/jpeg", "image/webp"):
+        raise HTTPException(status_code=415, detail="Upload a PNG, JPG, or WebP sticker sheet.")
+    data = file.file.read(15 * 1024 * 1024 + 1)
+    if len(data) > 15 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Sticker sheet must be 15 MB or smaller.")
+    api_key = settings.call_gemini_api_key or settings.gemini_api_key
+    if not api_key:
+        raise HTTPException(status_code=503, detail="Add CALL_GEMINI_API_KEY or GEMINI_API_KEY to enable AI sticker separation.")
+    mime_type = file.content_type
+    prompt = (
+        "Inspect this complete sticker sheet as a human sticker-sheet editor. Identify each intended, complete sticker design. "
+        "A sticker may contain many disconnected visual parts (for example eyes, tears, text, sparkles, outlines, or separate limbs); "
+        "all of those parts belong to ONE sticker when they visually form one design. Never return individual details as separate stickers. "
+        "Separate neighbouring stickers only when there is clear visual spacing or a clear design boundary. Do not split a character, "
+        "face, speech bubble, decorative marks, or caption that belongs to the same design. Ignore tiny dust/noise. "
+        "Return JSON only: {\"stickers\":[{\"label\":\"short visual name\",\"x\":0,\"y\":0,\"width\":0,\"height\":0}]}. "
+        "Coordinates are normalized integers from 0 to 1000 relative to the full image: x and y are the top-left; width and height "
+        "cover the entire sticker including all disconnected details. Use tight but safe boxes, do not cut off outlines, and do not "
+        "let one box include a neighbouring sticker. Order boxes top-to-bottom, then left-to-right. If uncertain whether tiny details "
+        "belong together, include them with the nearest coherent main design rather than making a separate sticker."
+    )
+    try:
+        response = httpx.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{settings.gemini_vision_model}:generateContent",
+            params={"key": api_key},
+            json={
+                "contents": [{"parts": [{"text": prompt}, {"inline_data": {"mime_type": mime_type, "data": base64.b64encode(data).decode("ascii")}}]}],
+                "generationConfig": {"temperature": 0.1, "maxOutputTokens": 1800, "responseMimeType": "application/json"}
+            },
+            timeout=55.0
+        )
+        response.raise_for_status()
+        raw = response.json()["candidates"][0]["content"]["parts"][0]["text"]
+        parsed = json.loads(raw)
+        candidates = parsed.get("stickers", parsed.get("regions", [])) if isinstance(parsed, dict) else []
+        regions = []
+        for item in candidates[:60]:
+            if not isinstance(item, dict):
+                continue
+            x = max(0, min(1000, int(float(item.get("x", 0)))))
+            y = max(0, min(1000, int(float(item.get("y", 0)))))
+            width = max(0, min(1000 - x, int(float(item.get("width", 0)))))
+            height = max(0, min(1000 - y, int(float(item.get("height", 0)))))
+            if width >= 28 and height >= 28:
+                regions.append({"x": x, "y": y, "width": width, "height": height,
+                                "label": re.sub(r"\\s+", " ", str(item.get("label", ""))).strip()[:60]})
+        if not regions:
+            raise ValueError("No valid sticker regions were detected.")
+        regions.sort(key=lambda item: (item["y"], item["x"]))
+        return {"regions": regions, "engine": "Gemini vision"}
+    except httpx.HTTPStatusError as exc:
+        logging.warning("Gemini sticker segmentation failed HTTP %s: %s", exc.response.status_code, exc.response.text[:300])
+        raise HTTPException(status_code=502, detail="Gemini could not analyse this sticker sheet. Check the API key and model access.") from exc
+    except (httpx.HTTPError, KeyError, IndexError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        logging.warning("Gemini sticker segmentation failed (%s).", type(exc).__name__)
+        raise HTTPException(status_code=502, detail="Gemini could not identify clear sticker boundaries. Try a clearer sheet or use manual separation.") from exc
 
 
 @app.post("/v1/stickers/suggest-label")
