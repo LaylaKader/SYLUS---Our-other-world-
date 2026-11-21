@@ -2046,9 +2046,9 @@ def suggest_sticker_label(file: UploadFile = File(...), _: None = Depends(requir
                         except json.JSONDecodeError:
                             pass
                 break
-            label = re.sub(r"\\s+", " ", str(label_value)).strip().strip("\"'")[:60]
-            label = re.sub(r"^(?:label|sticker name)\\s*[:=-]\\s*", "", label, flags=re.I).strip()
-            description = re.sub(r"\\s+", " ", str(description_value)).strip()[:900]
+            label = re.sub(r"\s+", " ", str(label_value)).strip().strip("\"'")[:60]
+            label = re.sub(r"^(?:label|sticker name)\s*[:=-]\s*", "", label, flags=re.I).strip()
+            description = re.sub(r"\s+", " ", str(description_value)).strip()[:900]
         else:
             # Preserve a useful vision response even when the provider returns plain text.
             description = re.sub(r"\s+", " ", cleaned).strip().strip(chr(34))[:900]
