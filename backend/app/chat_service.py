@@ -476,7 +476,7 @@ class ExplicitOnlyMemoryWriter:
             "menstrual", "my weight", "my income", "my salary", "my bank", "loan", "debt",
             "credit card", "account number", "criminal record", "arrested",
         )
-        if any(marker in lowered for marker in sensitive_markers) or re.search(r"(?<!\\w)(sex|sexual|erotic|nsfw|adult|explicit|nude|intimate|sensual|orgasm|foreplay)(?!\\w)", lowered):
+        if any(marker in lowered for marker in sensitive_markers) or re.search(r"\b(sex|sexual|erotic|nsfw|adult|explicit|nude|intimate|sensual|orgasm|foreplay)\b", lowered):
             return
         prompt = (
             "You are maintaining a deliberately SMALL, high-quality private memory journal for a long-running fictional companion relationship. "
