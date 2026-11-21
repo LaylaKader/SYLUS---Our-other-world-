@@ -2026,8 +2026,29 @@ def suggest_sticker_label(file: UploadFile = File(...), _: None = Depends(requir
                 except json.JSONDecodeError:
                     continue
         if isinstance(parsed, dict):
-            label = re.sub(r"\s+", " ", str(parsed.get("label", ""))).strip()[:60]
-            description = re.sub(r"\s+", " ", str(parsed.get("description", ""))).strip()[:900]
+            label_value = parsed.get("label", "")
+            description_value = parsed.get("description", "")
+            # Vision providers occasionally put a second JSON object inside the
+            # label string. Unwrap it instead of exposing raw JSON in the UI.
+            for _ in range(2):
+                if isinstance(label_value, dict):
+                    label_value = label_value.get("label", "")
+                if isinstance(label_value, str):
+                    candidate = label_value.strip().strip("`")
+                    if candidate.startswith("{"):
+                        try:
+                            nested = json.loads(candidate)
+                            if isinstance(nested, dict) and nested.get("label"):
+                                label_value = nested.get("label")
+                                if not description_value:
+                                    description_value = nested.get("description", "")
+                                continue
+                        except json.JSONDecodeError:
+                            pass
+                break
+            label = re.sub(r"\\s+", " ", str(label_value)).strip().strip("\"'")[:60]
+            label = re.sub(r"^(?:label|sticker name)\\s*[:=-]\\s*", "", label, flags=re.I).strip()
+            description = re.sub(r"\\s+", " ", str(description_value)).strip()[:900]
         else:
             # Preserve a useful vision response even when the provider returns plain text.
             description = re.sub(r"\s+", " ", cleaned).strip().strip(chr(34))[:900]
