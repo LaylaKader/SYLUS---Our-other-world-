@@ -1943,7 +1943,7 @@ def compose_sound_design(payload: SoundComposeIn, _: None = Depends(require_owne
 def _clean_journal_reflection(value: str) -> str:
     """Turn provider JSON wrappers into the plain spoken reflection shown in the journal."""
     raw = (value or "").strip()
-    candidate = re.sub(r"^\`\`\`(?:json)?\\s*|\\s*\`\`\`$", "", raw, flags=re.I).strip()
+    candidate = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.I).strip()
     try:
         parsed = json.loads(candidate)
         if isinstance(parsed, dict):
