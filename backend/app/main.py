@@ -1940,6 +1940,24 @@ def compose_sound_design(payload: SoundComposeIn, _: None = Depends(require_owne
         raise HTTPException(status_code=502, detail="The AI returned an invalid sound design. Please try a different description.")
 
 
+def _clean_journal_reflection(value: str) -> str:
+    """Turn provider JSON wrappers into the plain spoken reflection shown in the journal."""
+    raw = (value or "").strip()
+    candidate = re.sub(r"^\`\`\`(?:json)?\\s*|\\s*\`\`\`$", "", raw, flags=re.I).strip()
+    try:
+        parsed = json.loads(candidate)
+        if isinstance(parsed, dict):
+            messages = parsed.get("messages")
+            if isinstance(messages, list):
+                return "\\n\\n".join(str(item).strip() for item in messages if str(item).strip()).strip()
+            for key in ("text", "response", "content", "message"):
+                if isinstance(parsed.get(key), str) and parsed[key].strip():
+                    return parsed[key].strip()
+    except (json.JSONDecodeError, TypeError, ValueError):
+        pass
+    return candidate or raw
+
+
 @app.get("/v1/journal")
 def list_journal_entries(_: None = Depends(require_owner)):
     with connection() as conn:
@@ -2007,6 +2025,7 @@ def save_journal_entry(payload: JournalEntryIn, _: None = Depends(require_owner)
             journal_prompt, str(uuid4()), [], time_context=f"Journal date: {payload.entry_date.isoformat()}.",
             persist_state=False, write_memory=False
         ).strip()
+        thoughts = _clean_journal_reflection(thoughts)
     except (ProviderNotConfigured, ProviderRequestFailed) as exc:
         raise HTTPException(status_code=503, detail="Sylus could not prepare his journal reflection. Check the configured chat provider.") from exc
     audio_bytes = None
