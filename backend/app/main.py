@@ -2036,63 +2036,121 @@ def save_journal_entry(payload: JournalEntryIn, _: None = Depends(require_owner)
 
 @app.post("/v1/stickers/segment")
 def segment_sticker_sheet(file: UploadFile = File(...), _: None = Depends(require_owner)):
-    """Ask Gemini to locate complete sticker designs, not individual connected pixel fragments."""
+    """Identify complete sticker designs with Gemini, Groq, or OpenRouter vision."""
     if file.content_type not in ("image/png", "image/jpeg", "image/webp"):
         raise HTTPException(status_code=415, detail="Upload a PNG, JPG, or WebP sticker sheet.")
     data = file.file.read(15 * 1024 * 1024 + 1)
     if len(data) > 15 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Sticker sheet must be 15 MB or smaller.")
-    api_key = settings.call_gemini_api_key or settings.gemini_api_key
-    if not api_key:
-        raise HTTPException(status_code=503, detail="Add CALL_GEMINI_API_KEY or GEMINI_API_KEY to enable AI sticker separation.")
     mime_type = file.content_type
+    encoded = base64.b64encode(data).decode("ascii")
     prompt = (
         "Inspect this complete sticker sheet as a human sticker-sheet editor. Identify each intended, complete sticker design. "
-        "A sticker may contain many disconnected visual parts (for example eyes, tears, text, sparkles, outlines, or separate limbs); "
-        "all of those parts belong to ONE sticker when they visually form one design. Never return individual details as separate stickers. "
+        "A sticker may contain many disconnected visual parts (eyes, tears, text, sparkles, outlines, separate limbs); "
+        "all belong to ONE sticker when they visually form one design. Never return individual details as separate stickers. "
         "Separate neighbouring stickers only when there is clear visual spacing or a clear design boundary. Do not split a character, "
         "face, speech bubble, decorative marks, or caption that belongs to the same design. Ignore tiny dust/noise. "
-        "Return JSON only: {\"stickers\":[{\"label\":\"short visual name\",\"x\":0,\"y\":0,\"width\":0,\"height\":0}]}. "
+        "Return JSON only: {\\"stickers\\":[{\\"label\\":\\"short visual name\\",\\"x\\":0,\\"y\\":0,\\"width\\":0,\\"height\\":0}]}. "
         "Coordinates are normalized integers from 0 to 1000 relative to the full image: x and y are the top-left; width and height "
         "cover the entire sticker including all disconnected details. Use tight but safe boxes, do not cut off outlines, and do not "
         "let one box include a neighbouring sticker. Order boxes top-to-bottom, then left-to-right. If uncertain whether tiny details "
         "belong together, include them with the nearest coherent main design rather than making a separate sticker."
     )
-    try:
-        response = httpx.post(
-            f"https://generativelanguage.googleapis.com/v1beta/models/{settings.gemini_vision_model}:generateContent",
-            params={"key": api_key},
-            json={
-                "contents": [{"parts": [{"text": prompt}, {"inline_data": {"mime_type": mime_type, "data": base64.b64encode(data).decode("ascii")}}]}],
-                "generationConfig": {"temperature": 0.1, "maxOutputTokens": 1800, "responseMimeType": "application/json"}
-            },
-            timeout=55.0
+    providers = []
+    gemini_key = settings.call_gemini_api_key or settings.gemini_api_key
+    if gemini_key:
+        providers.append(("Gemini", "gemini"))
+    groq_key = settings.groq_api_key or (settings.model_api_key if "groq.com" in settings.model_api_base_url else "")
+    if groq_key:
+        providers.append(("Groq", "groq"))
+    if settings.openrouter_api_key:
+        providers.append(("OpenRouter", "openrouter"))
+    if not providers:
+        raise HTTPException(
+            status_code=503,
+            detail="No image-analysis API is configured. Add a Gemini, Groq, or OpenRouter API key in Render."
         )
-        response.raise_for_status()
-        raw = response.json()["candidates"][0]["content"]["parts"][0]["text"]
-        parsed = json.loads(raw)
-        candidates = parsed.get("stickers", parsed.get("regions", [])) if isinstance(parsed, dict) else []
-        regions = []
-        for item in candidates[:60]:
-            if not isinstance(item, dict):
-                continue
-            x = max(0, min(1000, int(float(item.get("x", 0)))))
-            y = max(0, min(1000, int(float(item.get("y", 0)))))
-            width = max(0, min(1000 - x, int(float(item.get("width", 0)))))
-            height = max(0, min(1000 - y, int(float(item.get("height", 0)))))
-            if width >= 28 and height >= 28:
-                regions.append({"x": x, "y": y, "width": width, "height": height,
-                                "label": re.sub(r"\s+", " ", str(item.get("label", ""))).strip()[:60]})
-        if not regions:
-            raise ValueError("No valid sticker regions were detected.")
-        regions.sort(key=lambda item: (item["y"], item["x"]))
-        return {"regions": regions, "engine": "Gemini vision"}
-    except httpx.HTTPStatusError as exc:
-        logging.warning("Gemini sticker segmentation failed HTTP %s: %s", exc.response.status_code, exc.response.text[:300])
-        raise HTTPException(status_code=502, detail="Gemini could not analyse this sticker sheet. Check the API key and model access.") from exc
-    except (httpx.HTTPError, KeyError, IndexError, ValueError, TypeError, json.JSONDecodeError) as exc:
-        logging.warning("Gemini sticker segmentation failed (%s).", type(exc).__name__)
-        raise HTTPException(status_code=502, detail="Gemini could not identify clear sticker boundaries. Try a clearer sheet or use manual separation.") from exc
+
+    failures = []
+    parsed = None
+    for provider_name, provider in providers:
+        try:
+            if provider == "gemini":
+                response = httpx.post(
+                    f"https://generativelanguage.googleapis.com/v1beta/models/{settings.gemini_vision_model}:generateContent",
+                    params={"key": gemini_key},
+                    json={
+                        "contents": [{"parts": [{"text": prompt}, {"inline_data": {"mime_type": mime_type, "data": encoded}}]}],
+                        "generationConfig": {"temperature": 0.1, "maxOutputTokens": 2200, "responseMimeType": "application/json"}
+                    },
+                    timeout=55.0
+                )
+                response.raise_for_status()
+                raw = response.json()["candidates"][0]["content"]["parts"][0]["text"]
+            else:
+                api_key = groq_key if provider == "groq" else settings.openrouter_api_key
+                endpoint = "https://api.groq.com/openai/v1/chat/completions" if provider == "groq" else "https://openrouter.ai/api/v1/chat/completions"
+                model = "qwen/qwen3.8-27b" if provider == "groq" else "openrouter/free"
+                response = httpx.post(
+                    endpoint,
+                    headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                    json={
+                        "model": model,
+                        "messages": [{"role": "user", "content": [
+                            {"type": "text", "text": prompt},
+                            {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{encoded}"}}
+                        ]}],
+                        "temperature": 0.1,
+                        "max_tokens": 2200,
+                        "response_format": {"type": "json_object"}
+                    },
+                    timeout=55.0
+                )
+                response.raise_for_status()
+                raw = response.json()["choices"][0]["message"]["content"]
+            cleaned = raw.strip()
+            parsed_candidate = json.loads(cleaned)
+            if isinstance(parsed_candidate, dict) and isinstance(parsed_candidate.get("stickers", parsed_candidate.get("regions")), list):
+                parsed = parsed_candidate
+                logging.info("Sticker segmentation succeeded with %s.", provider_name)
+                break
+            raise ValueError("Vision provider returned no sticker list.")
+        except httpx.HTTPStatusError as exc:
+            try:
+                body = exc.response.json()
+                error_message = str((body.get("error") or {}).get("message") or body.get("message") or "")[:220]
+            except (ValueError, TypeError):
+                error_message = exc.response.text[:220]
+            failures.append(f"{provider_name} HTTP {exc.response.status_code}")
+            logging.warning("Sticker segmentation provider %s rejected request (HTTP %s): %s",
+                            provider_name, exc.response.status_code, error_message)
+        except (httpx.HTTPError, KeyError, IndexError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            failures.append(f"{provider_name} {type(exc).__name__}")
+            logging.warning("Sticker segmentation provider %s failed (%s).", provider_name, type(exc).__name__)
+
+    if parsed is None:
+        configured_names = ", ".join(name for name, _ in providers)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Image analysis failed with {configured_names}. Check that at least one configured provider has vision access and available quota. ({'; '.join(failures)})"
+        )
+
+    candidates = parsed.get("stickers", parsed.get("regions", []))
+    regions = []
+    for item in candidates[:60]:
+        if not isinstance(item, dict):
+            continue
+        x = max(0, min(1000, int(float(item.get("x", 0)))))
+        y = max(0, min(1000, int(float(item.get("y", 0)))))
+        width = max(0, min(1000 - x, int(float(item.get("width", 0)))))
+        height = max(0, min(1000 - y, int(float(item.get("height", 0)))))
+        if width >= 28 and height >= 28:
+            regions.append({"x": x, "y": y, "width": width, "height": height,
+                            "label": re.sub(r"\\s+", " ", str(item.get("label", ""))).strip()[:60]})
+    if not regions:
+        raise HTTPException(status_code=502, detail="The image model did not identify clear sticker boundaries. Try a clearer sheet.")
+    regions.sort(key=lambda item: (item["y"], item["x"]))
+    return {"regions": regions, "engine": provider_name}
 
 
 @app.post("/v1/stickers/suggest-label")
