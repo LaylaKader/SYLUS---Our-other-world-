@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sylus-shell-v6';
+const CACHE_NAME = 'sylus-shell-v7';
 const SHELL_FILES = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', event => {
@@ -29,14 +29,16 @@ self.addEventListener('push', event => {
     silent: false,
     vibrate: incomingCall ? [450, 180, 450, 180, 700] : [180, 100, 180],
     actions: incomingCall ? [{ action: 'open-call', title: 'Open call' }] : [],
-    data: { url: payload.url || '/' }
+    data: { url: payload.url || '/', kind: incomingCall ? 'call' : 'message' }
   };
   event.waitUntil(self.registration.showNotification(title, options));
 });
 
 self.addEventListener('notificationclick', event => {
   event.notification.close();
-  const target = new URL(event.notification.data?.url || '/', self.location.origin).href;
+  const stored = event.notification.data?.url || '/';
+  const target = new URL(stored, self.location.origin).href;
+  // Explicit call action always routes to the in-app call invitation screen.
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
       for (const client of clients) {
