@@ -574,3 +574,21 @@ body{
 .memory-editor .field-label{margin-top:13px}
 .memory-editor select.settings-input,.memory-main select.settings-input{color:#e7dce6}
 @media(max-width:620px){.memory-shelf-tabs{margin-right:-4px;padding-bottom:9px}.memory-purpose-card{padding:15px}.memory-purpose-card strong{font-size:14px}}
+
+
+/* Media presentation refresh: editorial cards, source chips, and safer responsive layouts. */
+.web-result-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:13px;margin:16px 0 8px;align-items:stretch}
+.web-image-card,.web-link-card{min-width:0;overflow:hidden;border:1px solid rgba(201,168,117,.22);border-radius:17px;background:linear-gradient(145deg,rgba(35,28,40,.96),rgba(19,17,25,.96));box-shadow:0 8px 25px rgba(0,0,0,.18);transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease}
+.web-image-card:hover,.web-link-card:hover{transform:translateY(-2px);border-color:rgba(201,168,117,.42);box-shadow:0 12px 30px rgba(0,0,0,.24)}
+.web-image-open{display:block;overflow:hidden;background:#17131b}
+.web-image-open img{display:block;width:100%;max-height:330px;min-height:160px;object-fit:cover;transition:transform .35s ease}
+.web-image-card:hover .web-image-open img{transform:scale(1.025)}
+.web-result-caption{display:flex;flex-direction:column;gap:5px;padding:12px 14px 14px}
+.web-result-caption strong,.web-link-card strong{color:#f0e5ed;font-size:14px;line-height:1.45;overflow-wrap:anywhere}
+.web-result-caption span,.web-link-source{font-size:11px;color:#bd9eaa;overflow-wrap:anywhere}
+.web-link-card{display:flex;flex-direction:column;gap:10px;padding:17px;text-decoration:none;color:inherit;min-height:150px}
+.web-link-kind{align-self:flex-start;border:1px solid rgba(201,168,117,.28);background:rgba(201,168,117,.09);border-radius:99px;padding:5px 9px;font-size:9px;letter-spacing:1.1px;color:#d9b991;font-weight:700}
+.web-link-description{font-size:12px;color:#b9aebd;line-height:1.65;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.web-link-source{margin-top:auto;padding-top:8px;border-top:1px solid rgba(201,168,117,.12)}
+.web-image-card img[style*="display: none"]{display:none}
+@media(max-width:540px){.web-result-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.web-image-open img{min-height:125px;max-height:230px}.web-link-card{padding:13px;min-height:160px}.web-link-card strong{font-size:13px}.web-result-caption{padding:10px}}
